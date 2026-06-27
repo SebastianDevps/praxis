@@ -1,0 +1,24 @@
+{
+  "name": "praxis",
+  "version": "0.3.0",
+  "description": "Clarity-first agent framework — opinionated taste, a visible process loop, and per-project memory the agent learns. Cross-platform (Claude Code, Codex, Cursor, Gemini, Copilot). Builds systems from scratch at scale without shipping generic AI slop.",
+  "author": {
+    "name": "Sebastian Guerra",
+    "email": "guerrasebastian16@gmail.com"
+  },
+  "homepage": "https://github.com/SebastianDevps/praxis",
+  "repository": "https://github.com/SebastianDevps/praxis",
+  "license": "MIT",
+  "keywords": [
+    "claude-code",
+    "plugin",
+    "agent-framework",
+    "design",
+    "anti-slop",
+    "taste",
+    "frontend",
+    "process",
+    "clarity",
+    "skills"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "name": "praxis",
+  "displayName": "Praxis",
+  "description": "Clarity-first agent framework — opinionated taste, a visible process loop, and per-project memory the agent learns. Builds systems from scratch at scale without shipping generic AI slop.",
+  "version": "0.3.0",
+  "author": {
+    "name": "Sebastian Guerra",
+    "email": "guerrasebastian16@gmail.com"
+  },
+  "homepage": "https://github.com/SebastianDevps/praxis",
+  "repository": "https://github.com/SebastianDevps/praxis",
+  "license": "MIT",
+  "keywords": [
+    "agent-framework",
+    "design",
+    "anti-slop",
+    "taste",
+    "frontend",
+    "process",
+    "clarity",
+    "skills"
+  ],
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks-cursor.json"
+}

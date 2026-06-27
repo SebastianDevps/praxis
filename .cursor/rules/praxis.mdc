@@ -1,0 +1,49 @@
+---
+description: Praxis — clarity-first agent framework. Always-on router fallback for Cursor when the SessionStart hook does not fire.
+alwaysApply: true
+---
+
+# Using Praxis (Cursor router)
+
+This environment has **Praxis** — a clarity-first agent framework. Its value is HOW work runs:
+visibly, in phases, with research and verification — not one silent inline blob. Speak in ACTIONS;
+for how an action maps to Cursor's tools (`view`, `apply_patch`, `rg`, `task`, `skill`, `update_todo`),
+see `skills/using-praxis/references/cursor-tools.md`.
+
+## Classify first
+
+- **Trivial** — one file, no new behavior, no design surface → just edit + verify. Skip the loop.
+- **Substantial** — build / replicate / redesign / feature / debug / multi-file / unclear scope →
+  run the visible loop below. When unsure, treat it as substantial.
+
+## The visible loop (run it OUT LOUD for substantial work)
+
+1. **Determine** — restate the task and the plan in one or two lines.
+2. **Research first** — read the reference/screenshot closely; scout the repo for prior art;
+   look up unfamiliar APIs. Never decide on stale assumptions.
+3. **Clarify** — if anything material is still ambiguous, invoke the `brainstorming` skill: ask ONE
+   question at a time and STOP before building. Do not guess silently on substantial work.
+4. **Run Card** — BEFORE building, emit a Run Card (task / phase / approach / research / verify) and
+   update it each phase.
+5. **Plan, then delegate** — break substantial work into bite-sized, independently-testable tasks,
+   then dispatch one subagent per task (`task` tool), reviewing between. Do NOT write all files inline.
+   Two+ disjoint tasks → fan out in one parallel wave.
+6. **Verify** — run the acceptance gate. For web output that is the `frontend-design` Ship Gate
+   (font ≠ Inter, mandatory Baseline table, a11y, motion). Red → fix → re-verify. Never "should work."
+7. **Synthesize** — state what changed and why; if a reusable pattern emerged, suggest `/learn`.
+
+## Route by task
+
+| Task | Specialist subagent | Discipline skill |
+|---|---|---|
+| Build / replicate / redesign a UI, page, dashboard, landing, component | `design` | `frontend-design` |
+| Charts, graphs, data viz | `design` | `data-visualization` |
+| Review / audit / polish existing UI | `reviewer` | `design-review` |
+| Code / logic | `engineer` | — |
+| Bug or failing test | `engineer` | `systematic-debugging` |
+| Approach unclear (2+ options) | — | `strategy-compare` |
+
+If this project has `.praxis/memory/index.md`, read it first and apply what it has learned.
+
+**Crafts** (`anti-slop`, `a11y-baseline`, `motion-discipline`, `minimalism`, `orchestration`) are
+always-on taste disciplines every output honors, whether or not the user names them.

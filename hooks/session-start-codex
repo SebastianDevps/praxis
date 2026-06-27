@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Codex SessionStart hook for the Praxis plugin.
+# Same intent as hooks/session-start, but emits ONLY the Codex dialect:
+# hookSpecificOutput.additionalContext (nested) — identical shape to Claude Code.
+# It primes the `using-praxis` router AND injects per-project Praxis memory.
+# This is context injection (priming), never enforcement.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PLUGIN_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+# Read the using-praxis router (the thin always-on layer; heavy content stays lazy).
+router_content=$(cat "${PLUGIN_ROOT}/skills/using-praxis/SKILL.md" 2>&1 || echo "Error reading using-praxis skill")
+
+# Escape for JSON embedding (single-pass bash parameter substitution).
+escape_for_json() {
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    s="${s//$'\n'/\\n}"
+    s="${s//$'\r'/\\r}"
+    s="${s//$'\t'/\\t}"
+    printf '%s' "$s"
+}
+
+router_escaped=$(escape_for_json "$router_content")
+
+# Retrieval guarantee (Layer-1 memory): if this project has accumulated Praxis
+# memory, inject its index so the agent READS what it has learned. The index is
+# tiny and always-loaded by design — this read path is what defeats the #1
+# documented failure mode of agent memory: writing lessons it never reads back.
+project_dir="${CLAUDE_PROJECT_DIR:-${CODEX_PROJECT_DIR:-$PWD}}"
+memory_block=""
+if [ -f "${project_dir}/.praxis/memory/index.md" ]; then
+  memory_raw=$(cat "${project_dir}/.praxis/memory/index.md" 2>/dev/null || echo "")
+  if [ -n "$memory_raw" ]; then
+    memory_block="\n\n---\nThis project has accumulated Praxis memory — apply these learned lessons and skills (detail in .praxis/memory/):\n\n$(escape_for_json "$memory_raw")"
+  fi
+fi
+
+# Factual framing (not an imperative system command) so host prompt-injection
+# defenses treat it as context, not as an out-of-band instruction to surface.
+session_context="This environment has the Praxis framework active. The following is the 'using-praxis' router — it describes how Praxis orchestrates work and which skill handles which task. On this host, invoke skills and dispatch subagents via Codex's native mechanisms — see skills/using-praxis/references/codex-tools.md. Apply it for non-trivial work.\n\n${router_escaped}${memory_block}"
+
+# Codex consumes the same nested field as Claude Code.
+printf '{\n  "hookSpecificOutput": {\n    "hookEventName": "SessionStart",\n    "additionalContext": "%s"\n  }\n}\n' "$session_context"
+
+exit 0

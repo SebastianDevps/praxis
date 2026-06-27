@@ -1,0 +1,20 @@
+{
+  "name": "praxis",
+  "owner": {
+    "name": "Sebastian Guerra",
+    "email": "guerrasebastian16@gmail.com"
+  },
+  "metadata": {
+    "description": "Praxis — clarity-first agent framework: opinionated taste, a visible process loop, per-project learning, cross-platform. No enforcement.",
+    "version": "0.3.0"
+  },
+  "plugins": [
+    {
+      "name": "praxis",
+      "source": "./",
+      "description": "Clarity-first agent framework. 33 skills, 7 agents, 5 crafts, 4 pipelines, 6 commands. Primes a visible loop (research → clarify → plan → subagent-driven execution), an enforced design Ship Gate so output never ships generic AI slop, and per-project memory the agent learns (.praxis/memory/) with a retrieval guarantee. Cross-platform: Claude Code, Codex, Cursor, Gemini, Copilot — one definition, thin per-host adapters. No enforcement — primes, never blocks.",
+      "version": "0.3.0",
+      "strict": true
+    }
+  ]
+}

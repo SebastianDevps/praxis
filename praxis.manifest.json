@@ -1,0 +1,11 @@
+{
+  "resourceGlobs": {
+    "agents": "agents/**/*.md",
+    "skills": "skills/**/*.md",
+    "crafts": "crafts/**/*.md",
+    "pipelines": "pipelines/**/*.md",
+    "commands": "commands/**/*.md",
+    "templates": "templates/**/*.md"
+  },
+  "hosts": ["claude", "codex", "cursor", "gemini", "copilot"]
+}

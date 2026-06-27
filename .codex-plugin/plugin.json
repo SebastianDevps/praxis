@@ -1,0 +1,44 @@
+{
+  "name": "praxis",
+  "version": "0.3.0",
+  "description": "Clarity-first agent framework — opinionated taste, a visible process loop (research → clarify → plan → subagent execution → verify), and per-project memory the agent learns. Builds systems from scratch at scale without shipping generic AI slop.",
+  "author": {
+    "name": "Sebastian Guerra",
+    "email": "guerrasebastian16@gmail.com",
+    "url": "https://github.com/SebastianDevps"
+  },
+  "homepage": "https://github.com/SebastianDevps/praxis",
+  "repository": "https://github.com/SebastianDevps/praxis",
+  "license": "MIT",
+  "keywords": [
+    "agent-framework",
+    "design",
+    "anti-slop",
+    "taste",
+    "frontend",
+    "process",
+    "clarity",
+    "skills",
+    "orchestration"
+  ],
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks-codex.json",
+  "interface": {
+    "displayName": "Praxis",
+    "shortDescription": "Clarity-first process, enforced taste, and per-project memory for coding agents",
+    "longDescription": "Use Praxis to run substantial work out loud: classify the task, research first, clarify before guessing, plan into bite-sized tasks, execute one subagent per task, and verify against an enforced design Ship Gate. It learns per project so the agent stops re-deriving what your codebase already decided.",
+    "developerName": "Sebastian Guerra",
+    "category": "Coding",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "I've got an idea for something I'd like to build.",
+      "Let's add a feature to this project."
+    ],
+    "websiteURL": "https://github.com/SebastianDevps/praxis",
+    "brandColor": "#6366F1"
+  }
+}
