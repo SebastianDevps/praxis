@@ -1,0 +1,16 @@
+[
+  {
+    "id": "F1",
+    "category": "<area>",
+    "description": "<expected observable behavior>",
+    "verification": ["<checkable step 1>", "<checkable step 2>"],
+    "passes": false
+  },
+  {
+    "id": "F2",
+    "category": "<area>",
+    "description": "<...>",
+    "verification": ["<...>"],
+    "passes": false
+  }
+]

@@ -3,6 +3,7 @@ name: orchestrator
 description: Coordinates tasks, routes to specialists, renders a Run Card per phase, and keeps every run inspectable.
 kind: agent
 skills:
+  - agentic-lifecycle
   - strategy-compare
   - scout
   - docs-seeker
@@ -79,7 +80,9 @@ Harness rules (see `orchestration` craft for full mechanics):
 
 ### 4. Phases + Run Card
 
-Run the spec lifecycle (`spec-lifecycle`). After each phase, render a Run Card:
+Run the spec lifecycle (`spec-lifecycle`). For the doctrine that frames it — when to plan for
+near-autonomous execution and where the human review gate is non-negotiable — see `agentic-lifecycle`.
+After each phase, render a Run Card:
 
 | Field | Content |
 |---|---|

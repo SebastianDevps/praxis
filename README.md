@@ -38,7 +38,7 @@ The differentiation is measured, not claimed — see [`evals/`](evals/) (6 fixtu
 
 | | Count | What |
 |---|---|---|
-| **skills** | 33 | The taste layer (frontend-design, anti-slop design systems, data-viz, baseline-status…), the process spine (writing-plans, subagent-driven-development, spec-lifecycle, strategy-compare…), the vibe-coder UX (brainstorming clarify gate, scout, docs-seeker), and per-project memory (praxis-memory, learn-graduate, learn-prune). |
+| **skills** | 34 | The taste layer (frontend-design, anti-slop design systems, data-viz, baseline-status…), the process spine (agentic-lifecycle doctrine, writing-plans, subagent-driven-development, spec-lifecycle, strategy-compare…), the vibe-coder UX (brainstorming clarify gate, scout, docs-seeker), and per-project memory (praxis-memory, learn-graduate, learn-prune). |
 | **agents** | 7 | design · engineer · backend · security · reviewer · researcher · orchestrator. |
 | **crafts** | 5 | Always-on taste disciplines: anti-slop · a11y-baseline · motion-discipline · minimalism · orchestration. Any skill `requires` them. |
 | **pipelines** | 4 | Named phase sequences rendered as inspectable Run Cards. |

@@ -27,9 +27,10 @@ function walkMarkdown(dir) {
   }
   for (const entry of entries) {
     const full = join(dir, entry);
-    // `references/` holds supporting docs (e.g. per-host tool maps), not
-    // resources — they have no resource frontmatter, so skip the whole dir.
-    if (entry === "references") continue;
+    // `references/` holds supporting docs (e.g. per-host tool maps) and
+    // `assets/` holds templates — neither are resources, so they carry no
+    // resource frontmatter. Skip both dirs whole.
+    if (entry === "references" || entry === "assets") continue;
     if (statSync(full).isDirectory()) results.push(...walkMarkdown(full));
     else if (entry.endsWith(".md")) results.push(full);
   }

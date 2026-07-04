@@ -2,6 +2,11 @@
 
 All notable changes to Praxis are documented here. Format follows [Keep a Changelog](https://keepachangelog.com); versions follow [SemVer](https://semver.org).
 
+## [Unreleased]
+
+### Added
+- **`agentic-lifecycle` skill.** A doctrinal umbrella for spec-driven, near-autonomous development (decision → verifiable contract → task files with status → auto-loop → review → done). It unifies `spec-lifecycle` (planning phases) and `autonomous-loop` (the ralph loop) and adds the eval-driven pillar plus a research base (`references/research-ai-native-lifecycle-2026.md`). Ships 7 artifact templates under `assets/` (decision record, plan, verifiable `spec.json` contract, task, progress ledger, auto-loop rulebook). Referenced by the `orchestrator` agent. Resource validator now skips `assets/` (as it already did `references/`).
+
 ## [0.3.0] — 2026-06-27
 
 ### Added
