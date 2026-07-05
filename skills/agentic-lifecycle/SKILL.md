@@ -78,5 +78,5 @@ The ★ Spec gate is the most important: if the spec is wrong, autonomous execut
 
 ## Resources
 
-- Templates: `assets/` (the 7 artifacts + the auto-loop rulebook).
+- Templates: `assets/` (the 5 stage templates + the auto-loop rulebook).
 - Research + evidence: `references/research-ai-native-lifecycle-2026.md`

@@ -108,7 +108,7 @@ Supporting constructs:
 - **EAG (Executable Acceptance Gate)** — acceptance criteria expressed as runnable checks, not
   prose. The gate is green or red; not "should work."
 
-Lifecycle files live under `skills/workflow/`. Pointers only here.
+Lifecycle files live under `skills/` (`agentic-lifecycle`, `spec-lifecycle`, `autonomous-loop`). Pointers only here.
 
 ---
 
