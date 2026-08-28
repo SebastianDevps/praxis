@@ -66,6 +66,7 @@ Each step is shown to the user, never implicit. This visibility IS the product.
 | Code / logic | `engineer` | — |
 | Bug or failing test | `engineer` | `systematic-debugging` |
 | Approach unclear (2+ options) | — | `strategy-compare` (decide before building) |
+| CI, containers, test infrastructure | `platform` | `web-testing` |
 
 ## How activation works
 

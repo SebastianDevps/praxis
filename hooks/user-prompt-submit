@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# UserPromptSubmit hook for the Praxis plugin.
+#
+# SessionStart primes the router ONCE. By turn 40 that context is buried and the
+# agent drifts back to inline-everything defaults. This re-states the compact
+# operating contract every turn, at the active intensity.
+#
+# It also owns the dial. Parsing the switch here rather than in a skill is the
+# point: a Markdown command is read by the model and followed most of the time,
+# a flag file is read by the hook and applied every time.
+#
+# Reading stdin is bounded by `read -t`, so a host that never delivers the prompt
+# costs one second and falls through to injecting the contract unchanged.
+
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "${SCRIPT_DIR}/lib.sh"
+PRAXIS_ROOT="$(praxis_root "$SCRIPT_DIR")"
+
+payload=""
+IFS= read -r -d '' -t 1 payload
+prompt=$(printf '%s' "$payload" | sed -n 's/.*"prompt"[[:space:]]*:[[:space:]]*"\(.*\)/\1/p' | head -1)
+
+notice=""
+# Accept `/praxis <mode>` and `/praxis:mode <mode>` — a plugin host may expand a
+# registered command before the hook sees it, or pass the raw text through.
+switch=$(printf '%s' "$prompt" | sed -n 's|^[[:space:]]*/praxis\(:mode\)\{0,1\}[[:space:]]\{1,\}\([a-z]\{1,\}\).*|\2|p' | head -1)
+case "$switch" in
+  fast|full|deep)
+    if praxis_set_mode "$switch"; then
+      notice="PRAXIS MODE CHANGED — ${switch}"$'\n\n'
+    fi
+    ;;
+esac
+
+mode="$(praxis_mode)"
+contract=$(praxis_contract "$PRAXIS_ROOT" orchestrator "$mode")
+[ -n "$contract" ] || exit 0
+
+praxis_emit "UserPromptSubmit" "$(escape_for_json "${notice}PRAXIS — active mode: ${mode}
+
+${contract}")"
+exit 0

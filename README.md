@@ -16,7 +16,7 @@ Built for developers and vibe-coders building systems from scratch at scale (or 
 /reload-plugins
 ```
 
-That's it. Skills activate by description; a SessionStart hook primes each session.
+That's it. Skills activate by description; three lifecycle hooks prime the session, every turn, and every dispatched specialist.
 
 ---
 
@@ -39,15 +39,18 @@ The differentiation is measured, not claimed — see [`evals/`](evals/) (6 fixtu
 | | Count | What |
 |---|---|---|
 | **skills** | 34 | The taste layer (frontend-design, anti-slop design systems, data-viz, baseline-status…), the process spine (agentic-lifecycle doctrine, writing-plans, subagent-driven-development, spec-lifecycle, strategy-compare…), the vibe-coder UX (brainstorming clarify gate, scout, docs-seeker), and per-project memory (praxis-memory, learn-graduate, learn-prune). |
-| **agents** | 7 | design · engineer · backend · security · reviewer · researcher · orchestrator. |
-| **crafts** | 5 | Always-on taste disciplines: anti-slop · a11y-baseline · motion-discipline · minimalism · orchestration. Any skill `requires` them. |
+| **agents** | 8 | design · engineer · backend · platform · security · reviewer · researcher · orchestrator. |
+| **crafts** | 5 | Always-on taste disciplines: anti-slop · a11y-baseline · motion-discipline · minimalism · orchestration. An agent `requires` them and the `SubagentStart` hook injects them on dispatch. |
 | **pipelines** | 4 | Named phase sequences rendered as inspectable Run Cards. |
-| **commands** | 6 | `/praxis:design`, `/praxis:feature`, `/praxis:bug`, `/praxis:refactor`, `/praxis:loop`, `/praxis:learn`. |
+| **commands** | 7 | `/praxis:design`, `/praxis:feature`, `/praxis:bug`, `/praxis:refactor`, `/praxis:loop`, `/praxis:learn`, `/praxis:mode`. |
 
 ## How it works
 
 - **Descriptions are the router.** Skills activate on their `description` — the trigger surface a user actually types lives there.
-- **The SessionStart hook** injects the `using-praxis` router (and this project's learned memory, if any) every session. It only injects context; it blocks nothing.
+- **Three injection points, not one.** `SessionStart` primes the `using-praxis` router (and this project's learned memory, if any). `UserPromptSubmit` restates a compact operating contract every turn, so the method survives a long session instead of drifting back to inline-everything defaults. `SubagentStart` carries that contract into every dispatched specialist, plus the crafts that agent declares under `od.craft.requires` and Level-1 pointers to the skills it declares under `skills:` — session context is parent-thread only, so without it a delegated agent runs Praxis-unaware. All three only inject context; nothing blocks.
+- **Skills reach the specialist that needs them.** A dispatched agent receives name-and-description pointers to the skills its role declares — never the bodies, which cost 4–7× and collapse two levels the host already separates ([the measurement and the sources](docs/context-delivery.md)). The point is not only tokens: unassisted, the model matches a task against all 34 skills; a specialist matches against the 1–5 chosen for its role. [The activation audit](evals/2026-08-28-activation-audit.md) measured why that matters — real debugging, test-strategy and auth prompts where the matching skill never fired.
+- **You set the intensity, not the model.** `/praxis:mode fast | full | deep` — `fast` drops the Run Card and the ledger for a rename or a one-file fix, `deep` adds mandatory research, explicit approach comparison, and an adversarial review pass. The level lives in a flag file, so it holds every turn instead of being re-judged, and it travels into dispatched specialists. It changes the ceremony only: the crafts, the ladder, and the safety carve-outs are identical at every level.
+- **Scope the subagent injection** with `PRAXIS_SUBAGENT_MATCHER`, an extended regex tested against the subagent's `agent_type` (unanchored, case-insensitive: `design|engineer` matches either, `^engineer$` is exact). Unset injects into every subagent. An invalid regex, a missing `agent_type`, or a stalled payload all fail open — scoping never silently drops the method.
 - **Crafts are inherited taste.** `frontend-design` pulls `anti-slop` + `a11y-baseline` + `motion-discipline` and runs the Ship Gate before delivering.
 - **Execution is explicit.** For multi-file builds, ask for a plan + a subagent per task (or `/praxis:loop`) — that's how it stays out of inline-everything context rot.
 
@@ -67,9 +70,34 @@ Measured value ([`evals/2026-06-26-learning-ab.md`](evals/2026-06-26-learning-ab
 
 `/praxis:loop` runs a build to completion on a fresh context per iteration, with all guardrails **outside the model** (max-iterations, wall-clock, no-progress detection, completion-signal threshold, and a verifier-integrity guard that halts if a test file is touched). The discipline (`autonomous-loop` skill) is the [ralph technique](https://ghuntley.com/ralph/), researched — not ported.
 
+## Development
+
+Zero dependencies — no package manager, no build step:
+
+```bash
+node scripts/validate-resources.mjs   # frontmatter contract for every resource
+node --test tests/*.test.mjs          # references, hook behavior, invariants
+```
+
+Both run in CI on every push and pull request. Three gates, each mutation-tested
+so it cannot pass vacuously:
+
+- **references** — every specialist named in a routing table, Run Card, or `od.craft.requires` resolves to a real file on disk. This is what caught the orchestrator routing to `platform` and `incident-responder`, neither of which ever existed.
+- **hooks** — each hook emits valid JSON in each host's dialect, the subagent variant strips orchestrator-only sections, crafts resolve per agent, and a host-supplied `agent_type` cannot traverse out of `agents/`. This caught a shadowed `PLUGIN_ROOT` that made every host look like Codex.
+- **cursor** — the generated `.cursor/rules/craft-*.mdc` files match `crafts/` and every craft has an explicit Cursor scope.
+- **invariants** — the load-bearing phrases survive in every priming surface and every craft. Byte-equality is wrong here (the Cursor adapter legitimately names Cursor's tools), so the gate asserts the *guarantee*, not the text: reword the Inter ban or drop a safety carve-out and it fails.
+
 ## Cross-platform
 
-One shared skill set, thin per-host adapters — the same skills run on **Claude Code, Codex, Cursor, Gemini CLI, and Copilot**. Skills speak in *actions* ("dispatch a subagent", "invoke a skill"); each host's `skills/using-praxis/references/<host>-tools.md` resolves them to that host's real tools. Priming is per-host: a SessionStart hook on Claude/Codex/Cursor/Copilot, a `GEMINI.md` `@import` on Gemini, and an always-apply `.cursor/rules/praxis.mdc` fallback. Per-project memory injects on every hooked host.
+One shared skill set, thin per-host adapters — the same skills run on **Claude Code, Codex, Cursor, Gemini CLI, and Copilot**. Skills speak in *actions* ("dispatch a subagent", "invoke a skill"); each host's `skills/using-praxis/references/<host>-tools.md` resolves them to that host's real tools. Priming is per-host: lifecycle hooks on Claude/Codex (all three events) and Cursor/Copilot (SessionStart), a `GEMINI.md` `@import` on Gemini, and an always-apply `.cursor/rules/praxis.mdc` fallback. Per-project memory injects on every hooked host.
+
+> **Cursor is structurally limited to one injection point.** Its `beforeSubmitPrompt` and
+> `subagentStart` hooks return `user_message`, which is display-only text shown when a prompt is
+> blocked or a subagent denied — it never reaches the model. Only `sessionStart` carries
+> `additional_context`. So on Cursor the per-turn and per-craft layers ship as rule files instead:
+> `.cursor/rules/praxis.mdc` (always-apply router) plus one generated `craft-*.mdc` per craft,
+> glob-scoped for the visual ones. Regenerate with `node scripts/build-cursor-crafts.mjs`; CI fails
+> if they drift from `crafts/`.
 
 > Each adapter is wired; smoke-test it on your host (a vague prompt should prime + activate). Codex needs `multi_agent = true` in `~/.codex/config.toml` for subagent dispatch.
 

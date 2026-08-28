@@ -1,0 +1,31 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Zero dependencies by design: the validator and the test suite are plain
+      # Node stdlib, and the hooks are bash. Nothing to install.
+      - name: Validate resource frontmatter
+        run: node scripts/validate-resources.mjs
+
+      - name: Rebuild generated Cursor rules
+        run: node scripts/build-cursor-crafts.mjs
+
+      - name: Fail if generated files were stale
+        run: git diff --exit-code
+
+      - name: Run tests
+        run: node --test tests/*.test.mjs

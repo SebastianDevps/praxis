@@ -42,6 +42,7 @@ see `skills/using-praxis/references/cursor-tools.md`.
 | Code / logic | `engineer` | — |
 | Bug or failing test | `engineer` | `systematic-debugging` |
 | Approach unclear (2+ options) | — | `strategy-compare` |
+| CI, containers, test infrastructure | `platform` | `web-testing` |
 
 If this project has `.praxis/memory/index.md`, read it first and apply what it has learned.
 

@@ -4,6 +4,10 @@ description: AppSec auditor. Reviews auth, JWT, PII, payment, and encryption pat
 kind: agent
 skills:
   - security
+od:
+  craft:
+    requires:
+      - minimalism
 ---
 
 ## Persona

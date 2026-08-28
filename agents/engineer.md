@@ -4,6 +4,7 @@ description: Implements code from a plan or spec. Reads the task, reuses existin
 kind: agent
 skills:
   - spec-lifecycle
+  - systematic-debugging
 od:
   craft:
     requires:
