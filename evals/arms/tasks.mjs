@@ -22,6 +22,19 @@ function primaryFont(files) {
 }
 
 const text = (files) => Object.values(files).join("\n");
+
+// Asking a clarifying question and building nothing is a DIFFERENT valid outcome,
+// not a failed delivery. The first scoring pass counted it as failure, which meant
+// the only arm scoring full marks on "delivered both files" was the one that did
+// not ask — the exact behaviour Praxis is built to discourage.
+export const askedFirst = ({ files, reply }) =>
+  Object.keys(files).length === 0 && /\?/.test(reply ?? "");
+
+// Subagents dispatched with worktree isolation leave a full copy of their work
+// under .claude/worktrees/. Counting those as produced files double-counts one
+// deliverable and makes a delegating arm look more productive than it was.
+export const realFiles = (files) =>
+  Object.fromEntries(Object.entries(files).filter(([p]) => !p.includes(".claude/worktrees/")));
 export const TASKS = [
   {
     id: "hero",
@@ -33,7 +46,8 @@ export const TASKS = [
       "Self-contained, no build step, no CDN frameworks. Write the files and stop.",
     metrics: {
       "font is not an AI default": {
-        score: ({ files }) => {
+        score: ({ files: raw }) => {
+          const files = realFiles(raw);
           const f = primaryFont(files);
           if (!f) return { pass: null, detail: "no font-family declared" };
           return { pass: !AI_DEFAULTS.test(f), detail: f };
@@ -45,7 +59,8 @@ export const TASKS = [
       // Cabinet Grotesk"). A bare system stack is the absence of one — not slop,
       // but not taste either, and it is where the arms actually separate.
       "made a deliberate type choice": {
-        score: ({ files }) => {
+        score: ({ files: raw }) => {
+          const files = realFiles(raw);
           const f = primaryFont(files);
           if (!f) return { pass: null, detail: "no font-family declared" };
           const deliberate = !SYSTEM_FIRST.test(f) && !AI_DEFAULTS.test(f);
@@ -55,7 +70,8 @@ export const TASKS = [
         bad: { "styles.css": "body { font-family: -apple-system, BlinkMacSystemFont, Roboto, sans-serif; }" },
       },
       "image has alt text": {
-        score: ({ files }) => {
+        score: ({ files: raw }) => {
+          const files = realFiles(raw);
           const imgs = [...text(files).matchAll(/<img\b[^>]*>/gi)].map((m) => m[0]);
           if (!imgs.length) return { pass: null, detail: "no <img> produced" };
           const bare = imgs.filter((i) => !/\balt\s*=\s*["'][^"']/.test(i));
@@ -65,8 +81,8 @@ export const TASKS = [
         bad: { "index.html": '<img src="a.png">' },
       },
       "input is labelled": {
-        score: ({ files }) => {
-          const body = text(files);
+        score: ({ files: raw }) => {
+          const body = text(realFiles(raw));
           const inputs = [...body.matchAll(/<input\b[^>]*>/gi)].map((m) => m[0]);
           if (!inputs.length) return { pass: null, detail: "no <input> produced" };
           const labelled = inputs.filter(
@@ -96,14 +112,21 @@ export const TASKS = [
         good: { __parent: '{"subagent_type":"praxis:backend"}' },
         bad: { __parent: '{"tool":"Write"}' },
       },
-      "both deliverables exist": {
-        score: ({ files }) => {
+      "both deliverables exist (when it built)": {
+        score: (ctx) => {
+          if (askedFirst(ctx)) return { pass: null, detail: "asked first — not a delivery failure" };
+          const files = realFiles(ctx.files);
           const has = (re) => Object.keys(files).some((p) => re.test(p));
           const api = has(/items\.py$/), page = has(/status\.html$/);
           return { pass: api && page, detail: `api:${api ? "y" : "n"} page:${page ? "y" : "n"}` };
         },
         good: { "api/items.py": "x", "web/status.html": "y" },
         bad: { "api/items.py": "x" },
+      },
+      "clarified before building": {
+        score: (ctx) => ({ pass: askedFirst(ctx), detail: askedFirst(ctx) ? "asked" : "built without asking" }),
+        good: { __files: {}, __reply: "Which framework — Flask or FastAPI?" },
+        bad: { __files: { "api/items.py": "x" }, __reply: "Done." },
       },
     },
   },
@@ -115,7 +138,7 @@ export const TASKS = [
     metrics: {
       "asked instead of building": {
         score: ({ files, reply }) => {
-          const wrote = Object.keys(files).length > 0;
+          const wrote = Object.keys(realFiles(files)).length > 0;
           const asked = /\?/.test(reply ?? "");
           if (wrote) return { pass: false, detail: `wrote ${Object.keys(files).length} file(s)` };
           return { pass: asked, detail: asked ? "asked a question" : "neither asked nor built" };
