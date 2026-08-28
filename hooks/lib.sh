@@ -104,6 +104,14 @@ praxis_contract() {
   ' "$file"
 }
 
+# Opt-in trace, inert unless PRAXIS_HOOK_TRACE names a file. Existed because the
+# hooks were only ever verified by direct execution: whether the host actually
+# fires them, and consumes what they emit, needs a live session to answer.
+praxis_trace() {
+  [ -n "${PRAXIS_HOOK_TRACE:-}" ] || return 0
+  printf '%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "${2:-}" >> "$PRAXIS_HOOK_TRACE" 2>/dev/null || true
+}
+
 # Emit context in the dialect the current host actually consumes.
 # Claude Code and Codex read the nested hookSpecificOutput form; Cursor reads a
 # flat additional_context; Copilot reads a flat additionalContext. Claude Code

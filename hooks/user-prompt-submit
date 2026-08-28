@@ -38,6 +38,7 @@ mode="$(praxis_mode)"
 contract=$(praxis_contract "$PRAXIS_ROOT" orchestrator "$mode")
 [ -n "$contract" ] || exit 0
 
+praxis_trace "UserPromptSubmit" "$mode"
 praxis_emit "UserPromptSubmit" "$(escape_for_json "${notice}PRAXIS — active mode: ${mode}
 
 ${contract}")"

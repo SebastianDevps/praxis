@@ -21,5 +21,6 @@ memory_block=$(praxis_memory_block)
 # defenses treat it as context, not as an out-of-band instruction to surface.
 session_context="This environment has the Praxis framework active. The following is the 'using-praxis' router — it describes how Praxis orchestrates work and which skill handles which task. Apply it for non-trivial work.\n\n${router_escaped}${memory_block}"
 
+praxis_trace "SessionStart" ""
 praxis_emit "SessionStart" "$session_context"
 exit 0
