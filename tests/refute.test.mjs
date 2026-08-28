@@ -1,0 +1,100 @@
+// The seeded-defect instrument, guarded like the thing it measures.
+//
+// This eval decides whether the refuter panel stays. An instrument that decides something is worth
+// more scrutiny than the code it judges, not less — and the two ways it can rot silently are:
+//
+//   1. An arm names an agent that no longer exists, so the "condition" is a session with no role.
+//   2. `reviewer-x3` stops being three copies of the SAME agent. It is the control that separates
+//      the mandate from the compute; make its three lenses diverse and the experiment quietly
+//      becomes refuters-vs-refuters while still printing a table that looks like an answer.
+//
+// The second is the one nobody would notice. It reads like an improvement.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { ARMS, agentBody, selftest } from "../evals/refute/run.mjs";
+import { TASKS } from "../evals/refute/tasks.mjs";
+
+const ROOT = new URL("..", import.meta.url).pathname;
+
+test("every arm names agents that exist", () => {
+  const missing = [];
+  for (const [arm, agents] of Object.entries(ARMS)) {
+    for (const a of agents) {
+      if (!existsSync(join(ROOT, "agents", `${a}.md`))) missing.push(`${arm} → ${a}`);
+    }
+  }
+  assert.deepEqual(missing, [], `arm names a nonexistent agent: ${missing.join(", ")}`);
+});
+
+test("reviewer-x3 is the SAME agent three times — the control, not a second panel", () => {
+  const x3 = ARMS["reviewer-x3"];
+  assert.equal(x3.length, 3, "the compute control must run three lenses");
+  assert.equal(new Set(x3).size, 1, "its three lenses must share one mandate, or it controls nothing");
+  assert.equal(x3[0], ARMS.reviewer[0], "it must repeat the single-pass arm's agent");
+});
+
+test("refuters is three DISTINCT lenses, matching the panel as dispatched", () => {
+  const r = ARMS.refuters;
+  assert.equal(r.length, 3);
+  assert.equal(new Set(r).size, 3, "the panel's value is diversity; duplicate lenses defeat it");
+  assert.equal(r.length, ARMS["reviewer-x3"].length, "the arms must cost the same to be comparable");
+});
+
+test("agentBody returns the instructions and strips the frontmatter", () => {
+  const body = agentBody("refuter-correctness");
+  assert.ok(body.length > 500, "body is too short to be the role definition");
+  assert.doesNotMatch(body, /^---/, "frontmatter reached the prompt as if it were instruction");
+  assert.match(body, /mandate/i, "the mandate section is missing from the injected role");
+  // The lens that Praxis specifically lacked. If someone trims the body, this is the line to keep.
+  assert.match(body, /can it pass/i, "the both-directions gate question was dropped");
+});
+
+test("every seeded task ships a metric with good, bad, alt and near probes", () => {
+  for (const task of TASKS) {
+    for (const [name, m] of Object.entries(task.metrics)) {
+      assert.ok(m.good?.__reply, `${task.id}/${name}: no good reference`);
+      assert.ok(m.bad?.__reply, `${task.id}/${name}: no bad reference`);
+      // The adversarial probes are what stop the scorer from silently rejecting a real find
+      // phrased differently — two of them failed on the first pass and would have biased the run.
+      assert.ok((m.alt ?? []).length > 0, `${task.id}/${name}: no alt probe (a genuine find, worded differently)`);
+      assert.ok((m.near ?? []).length > 0, `${task.id}/${name}: no near probe (the area named without the defect)`);
+    }
+  }
+});
+
+test("the scorers pass their own selftest", () => {
+  assert.equal(selftest(true), 0, "a scorer failed its own good/bad/alt/near probes");
+});
+
+test("the clean fixture SATISFIES its contract, clause by clause", () => {
+  // The first version of this test only checked that the three known defects were absent. The
+  // fixture still violated its own contract — paginate() existed and routes.js never called it —
+  // and all six review cells correctly reported a blocker the metric then scored as a false
+  // positive. Absence of the defects you thought of is not the same as satisfying the contract.
+  const clean = TASKS.find((t) => t.id === "clean");
+  const f = clean.setup;
+  const routes = f["src/routes.js"];
+
+  // clause 1 — "one page at a time"
+  assert.match(routes, /import \{ paginate \}/, "paginate is not imported, so it cannot be applied");
+  assert.match(routes, /paginate\(/, "paginate is imported but never called — the contract is unmet");
+
+  // clause 1 — "the signed-in user's OWN invoices"
+  assert.match(routes, /req\.session\.userId/, "the user id must come from the session");
+  assert.doesNotMatch(routes, /req\.query\.userId/, "the authorization gap leaked into the clean fixture");
+
+  // clause 2 — "expired tokens are rejected", proved by a test that can fail
+  const tokenTest = f["test/token.test.js"];
+  assert.ok(tokenTest, "no token test, so the rejection clause is unverified");
+  assert.match(tokenTest, /result\.ok\)\.toBe\(false\)/, "the expired-token test must assert the rejection");
+  assert.doesNotMatch(tokenTest, /toBeDefined/, "the vacuous assertion leaked into the clean fixture");
+
+  // clause 3 — "nothing sensitive reaches the logs"
+  const errors = f["src/errors.js"];
+  assert.doesNotMatch(errors, /body:\s*req\.body/, "the credential leak leaked into the clean fixture");
+
+  // and the boundary defect, which belongs to its own task
+  assert.doesNotMatch(f["src/paginate.js"], /limit\s*-\s*1/, "the off-by-one leaked into the clean fixture");
+});
