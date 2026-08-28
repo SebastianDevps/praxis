@@ -15,10 +15,29 @@
 const AI_DEFAULTS = /^(Inter|Roboto|Open Sans|Helvetica Neue)$/i;
 const SYSTEM_FIRST = /^(-apple-system|system-ui|BlinkMacSystemFont|sans-serif|serif|ui-sans-serif)$/i;
 
+// Custom properties must be resolved before classifying, or indirection defeats
+// the check: an arm declaring `--font-sans: -apple-system, ...` and using
+// `font-family: var(--font-sans)` reads as a deliberate choice when it is the
+// same system stack everyone else emitted. That false positive appeared on the
+// first result that favoured the layer under test, which is exactly where a
+// scorer must be least trusted.
 function primaryFont(files) {
-  const m = text(files).match(/font-family\s*:\s*([^;}]+)/i);
-  if (!m) return null;
-  return m[1].split(",")[0].trim().replace(/^["']|["']$/g, "");
+  const css = text(files);
+  const vars = new Map(
+    [...css.matchAll(/(--[a-z0-9-]+)\s*:\s*([^;]+)/gi)].map(([, k, v]) => [k, v.trim()]),
+  );
+  const resolve = (value, depth = 0) => {
+    const m = /^var\(\s*(--[a-z0-9-]+)/i.exec(value.trim());
+    if (!m || depth > 5) return value;
+    const next = vars.get(m[1]);
+    return next === undefined ? value : resolve(next, depth + 1);
+  };
+  const decl = css.match(/font-family\s*:\s*([^;}]+)/i);
+  if (!decl) return null;
+  const resolved = resolve(decl[1]);
+  const first = resolved.split(",")[0].trim().replace(/^["']|["']$/g, "");
+  // An unresolvable var() is not evidence of taste either way.
+  return /^var\(/i.test(first) ? null : first;
 }
 
 const text = (files) => Object.values(files).join("\n");
@@ -67,7 +86,7 @@ export const TASKS = [
           return { pass: deliberate, detail: deliberate ? f : `${f} (default stack)` };
         },
         good: { "styles.css": "body { font-family: 'Cabinet Grotesk', sans-serif; }" },
-        bad: { "styles.css": "body { font-family: -apple-system, BlinkMacSystemFont, Roboto, sans-serif; }" },
+        bad: { "styles.css": ":root { --font-sans: -apple-system, BlinkMacSystemFont, Roboto, sans-serif; } body { font-family: var(--font-sans); }" },
       },
       "image has alt text": {
         score: ({ files: raw }) => {
@@ -123,7 +142,50 @@ export const TASKS = [
           return { pass: deliberate, detail: deliberate ? f : `${f} (default stack)` };
         },
         good: { "a.css": "body { font-family: 'Satoshi', sans-serif; }" },
-        bad: { "a.css": "body { font-family: system-ui, sans-serif; }" },
+        bad: { "a.css": ":root { --f: system-ui, sans-serif; } body { font-family: var(--f); }" },
+      },
+      // The type metric covers ONE rule of anti-slop. The craft bans a dozen more,
+      // most of them greppable, and converging on a system font stack is a weak
+      // signal because every model does it regardless. These test the rest of the
+      // craft on the same paid cells, for free.
+      "no placeholder or startup-slop naming": {
+        score: ({ files: raw }) => {
+          const body = text(realFiles(raw));
+          const hits = body.match(/\b(John Doe|Jane Smith|Acme|Nexus|Synergy|Apex|Nova|Lorem ipsum)\b/gi) ?? [];
+          return { pass: hits.length === 0, detail: hits.length ? [...new Set(hits)].join(", ") : "none" };
+        },
+        good: { "a.html": "<h1>Payroll for Bogotá teams</h1><p>Used by Lucía Restrepo.</p>" },
+        bad: { "a.html": "<h1>Acme Pricing</h1><p>John Doe, CEO</p>" },
+      },
+      "no AI cliché copy": {
+        score: ({ files: raw }) => {
+          const body = text(realFiles(raw));
+          const hits = body.match(/\b(seamless|unleash|elevate|delve|tapestry|game-?changer|empower|supercharge|effortless)\b/gi) ?? [];
+          return { pass: hits.length === 0, detail: hits.length ? [...new Set(hits.map((h) => h.toLowerCase()))].join(", ") : "none" };
+        },
+        good: { "a.html": "<p>Runs payroll on the 28th. Cancel any time.</p>" },
+        bad: { "a.html": "<p>Seamless billing that will elevate your workflow.</p>" },
+      },
+      "no round fake pricing": {
+        score: ({ files: raw }) => {
+          const body = text(realFiles(raw));
+          const prices = body.match(/\$\s?\d[\d,]*(?:\.\d{2})?/g) ?? [];
+          if (!prices.length) return { pass: null, detail: "no prices produced" };
+          const round = prices.filter((p) => /^\$\s?\d+(?:\.00)?$/.test(p) && Number(p.replace(/[^\d.]/g, "")) % 10 === 0);
+          return { pass: round.length === 0, detail: round.length ? `round: ${[...new Set(round)].join(", ")}` : prices.slice(0, 3).join(", ") };
+        },
+        good: { "a.html": "<span>$29</span><span>$79</span>" },
+        bad: { "a.html": "<span>$10</span><span>$100.00</span>" },
+      },
+      "off-black and off-white, not pure": {
+        score: ({ files: raw }) => {
+          const body = text(realFiles(raw));
+          const pure = body.match(/#(?:000|fff|000000|ffffff)\b/gi) ?? [];
+          if (!/#[0-9a-f]{3,6}\b/i.test(body)) return { pass: null, detail: "no hex colours" };
+          return { pass: pure.length === 0, detail: pure.length ? [...new Set(pure.map((h) => h.toLowerCase()))].join(", ") : "off-black/white" };
+        },
+        good: { "a.css": "body { background: #fafafa; color: #0a0a0a; }" },
+        bad: { "a.css": "body { background: #fff; color: #000; }" },
       },
       "toggle is a real labelled control": {
         score: ({ files: raw }) => {
