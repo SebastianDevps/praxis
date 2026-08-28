@@ -96,37 +96,87 @@ export const TASKS = [
     },
   },
   {
-    id: "delegate",
-    // Two disjoint domains in one ticket. The orchestration craft says fan out;
-    // an unaided agent typically writes both inline.
+    id: "dispatch-ui",
+    // The first run could not test the layer at all: SubagentStart fired in 0 of 6
+    // praxis cells, so crafts and skill pointers were never exercised. These tasks
+    // instruct the dispatch generically — no Praxis agent is named, so every arm
+    // can honour it with whatever subagents it has — and put a crafts-governed
+    // surface on the other side of it.
     prompt:
-      "This repo needs two unrelated things: a REST endpoint in api/items.py that returns a JSON " +
-      "list of items, and a standalone web/status.html page showing a service status badge. " +
-      "They share no files. Do both.",
+      "Delegate this to a subagent and do not implement it yourself: create pricing.html and " +
+      "pricing.css — a three-tier pricing section with a monthly/annual toggle control. " +
+      "Self-contained, no build step, no CDN frameworks.",
     metrics: {
-      "dispatched at least one specialist": {
+      "actually dispatched (test validity)": {
         score: ({ parent }) => {
           const n = [...parent.matchAll(/"subagent_type"\s*:\s*"[^"]+"/g)].length;
           return { pass: n > 0, detail: `${n} dispatches` };
         },
-        good: { __parent: '{"subagent_type":"praxis:backend"}' },
+        good: { __parent: '{"subagent_type":"general-purpose"}' },
         bad: { __parent: '{"tool":"Write"}' },
       },
-      "both deliverables exist (when it built)": {
-        score: (ctx) => {
-          if (askedFirst(ctx)) return { pass: null, detail: "asked first — not a delivery failure" };
-          const files = realFiles(ctx.files);
-          const has = (re) => Object.keys(files).some((p) => re.test(p));
-          const api = has(/items\.py$/), page = has(/status\.html$/);
-          return { pass: api && page, detail: `api:${api ? "y" : "n"} page:${page ? "y" : "n"}` };
+      "made a deliberate type choice": {
+        score: ({ files: raw }) => {
+          const f = primaryFont(realFiles(raw));
+          if (!f) return { pass: null, detail: "no font-family declared" };
+          const deliberate = !SYSTEM_FIRST.test(f) && !AI_DEFAULTS.test(f);
+          return { pass: deliberate, detail: deliberate ? f : `${f} (default stack)` };
         },
-        good: { "api/items.py": "x", "web/status.html": "y" },
-        bad: { "api/items.py": "x" },
+        good: { "a.css": "body { font-family: 'Satoshi', sans-serif; }" },
+        bad: { "a.css": "body { font-family: system-ui, sans-serif; }" },
       },
-      "clarified before building": {
-        score: (ctx) => ({ pass: askedFirst(ctx), detail: askedFirst(ctx) ? "asked" : "built without asking" }),
-        good: { __files: {}, __reply: "Which framework — Flask or FastAPI?" },
-        bad: { __files: { "api/items.py": "x" }, __reply: "Done." },
+      "toggle is a real labelled control": {
+        score: ({ files: raw }) => {
+          const body = text(realFiles(raw));
+          const controls = [...body.matchAll(/<(input|button)\b[^>]*>/gi)].map((m) => m[0]);
+          if (!controls.length) return { pass: null, detail: "no control produced" };
+          const named = controls.filter((c) => /\baria-label\s*=|\bid\s*=/.test(c));
+          return { pass: named.length > 0, detail: `${named.length}/${controls.length} identifiable` };
+        },
+        good: { "a.html": '<input id="billing" type="checkbox">' },
+        bad: { "a.html": "<button onclick='t()'>Annual</button>" },
+      },
+    },
+  },
+  {
+    id: "dispatch-native",
+    // The over-build trap, on the far side of a dispatch. The minimalism craft's
+    // ladder says reach for the platform before building a component; that craft
+    // reaches a specialist and nothing else, so this is the sharpest test of
+    // whether the injection changes the work.
+    prompt:
+      "signup.html has a form. Delegate to a subagent, and do not implement it yourself: " +
+      "add a date-of-birth field to that form. Self-contained, no build step.",
+    setup: { "signup.html": "<form id=\"signup\">\n  <label for=\"email\">Email</label>\n  <input id=\"email\" type=\"email\">\n</form>\n" },
+    metrics: {
+      "actually dispatched (test validity)": {
+        score: ({ parent }) => {
+          const n = [...parent.matchAll(/"subagent_type"\s*:\s*"[^"]+"/g)].length;
+          return { pass: n > 0, detail: `${n} dispatches` };
+        },
+        good: { __parent: '{"subagent_type":"general-purpose"}' },
+        bad: { __parent: '{"tool":"Write"}' },
+      },
+      "used the native date input": {
+        score: ({ files: raw }) => {
+          const body = text(realFiles(raw));
+          if (!/<input\b/i.test(body)) return { pass: null, detail: "no input produced" };
+          const native = /<input\b[^>]*type\s*=\s*["']date["']/i.test(body);
+          return { pass: native, detail: native ? "native <input type=date>" : "hand-built or library picker" };
+        },
+        good: { "signup.html": '<input id="dob" type="date">' },
+        bad: { "signup.html": '<div class="calendar"><input id="dob" type="text" readonly></div>' },
+      },
+      "the field is labelled": {
+        score: ({ files: raw }) => {
+          const body = text(realFiles(raw));
+          const dob = /<input\b[^>]*\bid\s*=\s*["']([^"']*d(?:ob|ate)[^"']*)["'][^>]*>/i.exec(body);
+          if (!dob) return { pass: null, detail: "no identifiable date field" };
+          const labelled = new RegExp(`<label[^>]*\\bfor\\s*=\\s*["']${dob[1]}["']`, "i").test(body);
+          return { pass: labelled, detail: labelled ? "has <label for>" : "unlabelled" };
+        },
+        good: { "a.html": '<label for="dob">Date of birth</label><input id="dob" type="date">' },
+        bad: { "a.html": '<input id="dob" type="date">' },
       },
     },
   },

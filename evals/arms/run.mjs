@@ -103,6 +103,9 @@ function cell(task, arm, routerDir, workRoot, i) {
   const work = join(workRoot, `${task.id}__${arm}__${i}`);
   mkdirSync(work, { recursive: true });
   execFileSync("git", ["init", "-q"], { cwd: work });
+  // Some tasks edit an existing file rather than starting from nothing; seeding it
+  // keeps the ask ("add a field to this form") honest.
+  for (const [name, body] of Object.entries(task.setup ?? {})) writeFileSync(join(work, name), body);
 
   let result = {};
   try {
