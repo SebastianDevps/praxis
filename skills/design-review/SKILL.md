@@ -1,6 +1,6 @@
 ---
 name: design-review
-description: Use when asked to review, audit, critique, polish, or redesign an existing page, component, or interface — checks against anti-slop, a11y-baseline, and motion-discipline crafts, then fixes with atomic changes.
+description: Use when asked to review, audit, critique, polish, or redesign an existing page, component, or interface — checks against anti-slop, a11y-baseline, and motion-discipline crafts, then fixes with atomic changes. NOT building it in the first place (that is `frontend-design`), NOT code correctness (that is the `reviewer` agent).
 kind: skill
 od:
   category: creative-direction

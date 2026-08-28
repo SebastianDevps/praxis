@@ -135,3 +135,25 @@ test("every agent+skill pairing in the route table is declared by that agent", (
   assert.ok(pairs >= 4, `only ${pairs} pairings parsed — the table format probably changed`);
   assert.deepEqual(broken, []);
 });
+
+// Counts in prose go stale silently, and a README that misstates what ships is the cheapest kind
+// of lie to tell for fourteen releases without noticing. Assert the table against the filesystem.
+test("the README resource table matches what is on disk", () => {
+  const readme = read("README.md");
+  const actual = {
+    skills: dirNames("skills").length,
+    agents: readdirSync(join(ROOT, "agents")).filter((f) => f.endsWith(".md")).length,
+    crafts: dirNames("crafts").length,
+    pipelines: readdirSync(join(ROOT, "pipelines")).filter((f) => f.endsWith(".md")).length,
+    commands: readdirSync(join(ROOT, "commands")).filter((f) => f.endsWith(".md")).length,
+  };
+  for (const [kind, n] of Object.entries(actual)) {
+    const m = new RegExp(`\\|\\s*\\*\\*${kind}\\*\\*\\s*\\|\\s*(\\d+)\\s*\\|`).exec(readme);
+    assert.ok(m, `README has no count row for ${kind}`);
+    assert.equal(
+      Number(m[1]),
+      n,
+      `README says ${m[1]} ${kind}, the repo has ${n}`,
+    );
+  }
+});

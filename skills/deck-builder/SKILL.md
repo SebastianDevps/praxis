@@ -1,6 +1,6 @@
 ---
 name: deck-builder
-description: Use when building slides, a deck, presentation, or pitch — one idea per slide, a narrative arc, and visual hierarchy instead of bullet soup.
+description: Use when building slides, a deck, presentation, or pitch — one idea per slide, a narrative arc, and visual hierarchy instead of bullet soup. NOT long-form reading layout (that is `editorial-layout`), NOT the words alone (that is `copywriting`).
 kind: skill
 od:
   category: creative-direction

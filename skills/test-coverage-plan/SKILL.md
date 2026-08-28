@@ -1,6 +1,6 @@
 ---
 name: test-coverage-plan
-description: Use when planning what to test for a change (test plan, what to test, testing strategy) — lists behaviors and edge cases, maps each to a unit/integration/e2e level, and flags gaps.
+description: Use when planning what to test for a change (test plan, what to test, testing strategy) — lists behaviors and edge cases, maps each to a unit/integration/e2e level, and flags gaps. NOT wiring the runner (that is `web-testing`), NOT diagnosing a failure (that is `systematic-debugging`).
 kind: skill
 od:
   category: testing

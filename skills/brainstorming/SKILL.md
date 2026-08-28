@@ -1,6 +1,6 @@
 ---
 name: brainstorming
-description: Use when a build, feature, or design request is ambiguous or underspecified, BEFORE writing any code — clarify scope and key decisions with the user one question at a time until the approach is clear.
+description: Use when a build, feature, or design request is ambiguous or underspecified, BEFORE writing any code — clarify scope and key decisions with the user one question at a time until the approach is clear. NOT choosing between approaches you already have (that is `strategy-compare`), NOT writing the task list (that is `writing-plans`).
 kind: skill
 od:
   triggers: ["clarify scope", "before building", "ambiguous request"]

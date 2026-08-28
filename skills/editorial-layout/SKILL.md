@@ -1,6 +1,6 @@
 ---
 name: editorial-layout
-description: Use when laying out a long-form article, blog post, or editorial reading page — typographic rhythm, line measure, and readable flow.
+description: Use when laying out a long-form article, blog post, or editorial reading page — typographic rhythm, line measure, and readable flow. NOT the grid system in the abstract (that is `design-system-swiss`), NOT slides (that is `deck-builder`).
 kind: skill
 od:
   category: creative-direction

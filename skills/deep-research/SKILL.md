@@ -1,6 +1,6 @@
 ---
 name: deep-research
-description: Use when a question needs evidence from multiple independent sources — investigating a topic, comparing options, or checking prior art — scopes the question, gathers, cross-checks, then synthesizes with citations.
+description: Use when a question needs evidence from multiple independent sources — investigating a topic, comparing options, or checking prior art — scopes the question, gathers, cross-checks, then synthesizes with citations. NOT a quick recon of this repo (that is `scout`), NOT fetching one library's docs (that is `docs-seeker`).
 kind: skill
 od:
   category: research

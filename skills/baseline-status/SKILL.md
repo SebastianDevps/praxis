@@ -1,6 +1,6 @@
 ---
 name: baseline-status
-description: Use whenever you emit modern CSS/JS (:has(), container queries, backdrop-filter, color-mix(), View Transitions) or ask is this feature safe / can I use it — checks web platform Baseline status (Widely, Newly, Limited) and picks a fallback.
+description: Use whenever you emit modern CSS/JS (:has(), container queries, backdrop-filter, color-mix(), View Transitions) or ask is this feature safe / can I use it — checks web platform Baseline status (Widely, Newly, Limited) and picks a fallback. NOT library API docs (that is `docs-seeker`) — this is web platform feature support only.
 kind: skill
 od:
   surface: web

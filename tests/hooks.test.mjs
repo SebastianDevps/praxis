@@ -276,3 +276,70 @@ test("the skill pointer path rejects a traversing agent_type", () => {
   const ctx = context(claude("subagent-start", { input: '{"agent_type":"../agents/design"}' }));
   assert.doesNotMatch(ctx, /Skills declared for/);
 });
+
+// ── subagent-stop: the memory write path ──────────────────────────────────────────────────────
+//
+// The hook is deliberately INERT in a project with no `.praxis/` directory. That is the property
+// most likely to be mistaken for a broken hook, so it is asserted in both directions: silent where
+// it should be silent, and writing where it should write.
+
+import { mkdirSync, existsSync as fsExists, readFileSync as fsRead } from "node:fs";
+
+const stopIn = (projectDir, input = "") =>
+  execFileSync("bash", [join(ROOT, "hooks", "subagent-stop")], {
+    env: { ...CLEAN, CLAUDE_PLUGIN_ROOT: ROOT, CLAUDE_PROJECT_DIR: projectDir },
+    input,
+    encoding: "utf8",
+    timeout: 10_000,
+  });
+
+test("subagent-stop is inert in a project with no .praxis directory", () => {
+  const project = mkdtempSync(join(tmpdir(), "praxis-nostore-"));
+  stopIn(project, '{"agent_type":"praxis:design"}');
+  assert.ok(
+    !fsExists(join(project, ".praxis")),
+    "capture scaffolded a store into a project that never opted in",
+  );
+});
+
+test("subagent-stop appends one pending row per dispatch", () => {
+  const project = mkdtempSync(join(tmpdir(), "praxis-store-"));
+  mkdirSync(join(project, ".praxis"), { recursive: true });
+
+  stopIn(project, '{"agent_type":"praxis:design","status":"done"}');
+  stopIn(project, '{"agent_type":"engineer"}');
+
+  const lines = fsRead(join(project, ".praxis", "memory", "sessions.jsonl"), "utf8")
+    .trim()
+    .split("\n")
+    .map((l) => JSON.parse(l)); // throws if a row was ever written malformed
+
+  assert.equal(lines.length, 2);
+  assert.equal(lines[0].agent, "design", "the plugin namespace must be stripped");
+  assert.equal(lines[0].status, "done");
+  assert.equal(lines[0].state, "pending", "capture writes pending rows; consolidation consumes them");
+  // A subagent that returned no status line is a real state, not a reason to invent one.
+  assert.equal(lines[1].status, "unreported");
+  assert.equal(lines[1].agent, "engineer");
+});
+
+test("subagent-stop refuses a traversing agent_type rather than writing it to disk", () => {
+  const project = mkdtempSync(join(tmpdir(), "praxis-traverse-"));
+  mkdirSync(join(project, ".praxis"), { recursive: true });
+
+  stopIn(project, '{"agent_type":"../../etc/passwd"}');
+
+  const row = JSON.parse(fsRead(join(project, ".praxis", "memory", "sessions.jsonl"), "utf8").trim());
+  assert.equal(row.agent, "unknown", "a traversing agent_type reached the record");
+});
+
+test("subagent-stop survives a host that sends no payload at all", () => {
+  const project = mkdtempSync(join(tmpdir(), "praxis-nopayload-"));
+  mkdirSync(join(project, ".praxis"), { recursive: true });
+
+  stopIn(project, "");
+
+  const row = JSON.parse(fsRead(join(project, ".praxis", "memory", "sessions.jsonl"), "utf8").trim());
+  assert.equal(row.agent, "unknown");
+  assert.ok(row.ts, "the row still carries a timestamp");
+});

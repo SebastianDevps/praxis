@@ -1,6 +1,6 @@
 ---
 name: autonomous-loop
-description: Use when running an agent in a repeating self-driven loop ("ralph", run until done, keep iterating, autonomous build) — re-run on a fresh context each iteration with progress in files and git, doing ONE thing per loop.
+description: Use when running an agent in a repeating self-driven loop ("ralph", run until done, keep iterating, autonomous build) — re-run on a fresh context each iteration with progress in files and git, doing ONE thing per loop. NOT a planned multi-task run with review between tasks (that is `subagent-driven-development`), NOT the doctrine framing it (that is `agentic-lifecycle`).
 kind: skill
 od:
   triggers: ["ralph loop", "run until done", "keep iterating", "autonomous loop", "loop until"]

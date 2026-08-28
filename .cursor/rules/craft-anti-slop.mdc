@@ -36,3 +36,16 @@ alwaysApply: false
 - No round fake numbers: `99.99%` and `$100.00` read as fake. Use organic figures like `47.2%`, `$99`.
 - No startup-slop names: Acme, Nexus, Synergy, Apex, Nova.
 - No AI clichés in copy: Elevate, Seamless, Unleash, Delve, Tapestry, Game-changer, Empower, Transform.
+
+## Prose
+
+The five tells that survive every rewrite. Full named-tell audit → `prose-tells` skill.
+
+- **"Not just X, but Y."** State the point directly.
+- **The rule of three.** Use the number of items the facts have, not three.
+- **Em dashes as connectors.** End the sentence or use a comma. Parentheses trade one tell for another.
+- **Fancy ways to say "is":** serves as, stands as, boasts, features → is, has.
+- **Bold on every proper noun.** Bold only what the reader must not miss.
+
+Stripping tells is half the job. A text with the tells removed and nothing put back reads sterile,
+which is its own tell — have an opinion, vary the sentence length, be specific.

@@ -1,6 +1,6 @@
 ---
 name: copywriting
-description: Use when writing UI microcopy, CTAs, error or empty states, headlines, or marketing copy — clear, verb-first, free of AI clichés.
+description: Use when writing UI microcopy, CTAs, error or empty states, headlines, or marketing copy — clear, verb-first, free of AI clichés. NOT auditing a finished text against named AI tells (that is `prose-tells`), NOT the brand voice definition (that is `brand`).
 kind: skill
 od:
   category: creative-direction
@@ -55,7 +55,7 @@ Strip these before delivering — they signal slop:
 | Leverage | Use / apply |
 | Game-changer | — (show, don't claim) |
 
-More patterns in `anti-slop` craft.
+More patterns in the `anti-slop` craft. Auditing a finished text tell by tell is `prose-tells`.
 
 ## Brand Voice Matching
 

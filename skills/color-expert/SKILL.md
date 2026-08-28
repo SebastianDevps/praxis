@@ -1,6 +1,6 @@
 ---
 name: color-expert
-description: Use when building a color palette, choosing an accent, fixing contrast, or adding dark mode — produces semantic, contrast-safe color tokens with tinted shadows.
+description: Use when building a color palette, choosing an accent, fixing contrast, or adding dark mode — produces semantic, contrast-safe color tokens with tinted shadows. NOT the full identity (that is `brand`), NOT contrast auditing of a built page (that is `design-review`).
 kind: skill
 od:
   category: creative-direction

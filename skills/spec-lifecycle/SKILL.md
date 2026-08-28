@@ -1,6 +1,6 @@
 ---
 name: spec-lifecycle
-description: Use when managing a change through a spec-driven workflow — moving it across research, design, plan, and implement phases — lean lifecycle with controlled status advancement.
+description: Use when managing a change through a spec-driven workflow — moving it across research, design, plan, and implement phases — lean lifecycle with controlled status advancement. NOT the doctrine behind it (that is `agentic-lifecycle`), NOT the task checklist (that is `writing-plans`).
 kind: skill
 od:
   category: workflow

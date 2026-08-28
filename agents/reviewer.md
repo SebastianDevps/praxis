@@ -1,6 +1,6 @@
 ---
 name: reviewer
-description: Read-only code review. Reports findings by severity. Only flags real issues.
+description: Read-only code review. Reports findings by severity. Only flags real issues. NOT the adversarial evidence gate on a finished change (those are the `refuter-*` agents), NOT factual exploration (that is `researcher`).
 kind: agent
 skills:
   - design-review

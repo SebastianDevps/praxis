@@ -1,6 +1,6 @@
 ---
 name: using-praxis
-description: Use when starting any non-trivial task — establishes how Praxis orchestrates work and routes to its skills, agents, and crafts.
+description: Use when starting any non-trivial task — establishes how Praxis orchestrates work and routes to its skills, agents, and crafts. NOT any single discipline — this is the router that dispatches to them.
 kind: skill
 od:
   triggers: ["using praxis", "how does praxis work"]
@@ -66,6 +66,8 @@ Each step is shown to the user, never implicit. This visibility IS the product.
 | Code / logic | `engineer` | — |
 | Bug or failing test | `engineer` | `systematic-debugging` |
 | Approach unclear (2+ options) | — | `strategy-compare` (decide before building) |
+| A consequential decision needs attacking before commitment | — | `decision-challenge` |
+| Substantial change is green and about to be called done | `refuter-correctness` + `refuter-security` + `refuter-tests` (one wave) | — |
 | CI, containers, test infrastructure | `platform` | `web-testing` |
 
 ## How activation works

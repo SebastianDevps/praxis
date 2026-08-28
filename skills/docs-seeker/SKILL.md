@@ -1,6 +1,6 @@
 ---
 name: docs-seeker
-description: Use when coding against an unfamiliar or fast-moving library and you need its current docs or API reference — resolves the exact installed version and fetches topic-scoped docs instead of trusting stale training memory.
+description: Use when coding against an unfamiliar or fast-moving library and you need its current docs or API reference — resolves the exact installed version and fetches topic-scoped docs instead of trusting stale training memory. NOT web platform support status (that is `baseline-status`), NOT multi-source investigation (that is `deep-research`).
 kind: skill
 od:
   category: research

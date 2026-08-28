@@ -1,0 +1,35 @@
+skill: learn-graduate
+
+should_trigger:
+  - prompt: "This candidate skill has been in probation a while. Can we trust it now?"
+    why: "Promotion decision on a candidate — the core job."
+  - prompt: "Pressure-test the learned deploy skill before we make it active."
+    why: "The pressure test that gates promotion."
+  - prompt: "¿Este skill candidato ya puede pasar a activo?"
+    why: "Promotion question, in Spanish."
+  - prompt: "Prove this learned pattern actually beats not having it."
+    why: "The baseline-versus-with comparison the promotion rests on."
+  - prompt: "Graduate the candidates that have earned it and retire the ones that haven't."
+    why: "Names the promotion and retirement decision directly."
+
+should_not_trigger:
+  - prompt: "The lessons index is full of stale entries. Trim it."
+    route_to: "learn-prune"
+    why: "Curating what went stale, not promoting a candidate."
+  - prompt: "Write this new lesson into memory."
+    route_to: "praxis-memory"
+    why: "The store itself, not the promotion gate."
+  - prompt: "Review this code before merge."
+    route_to: "reviewer"
+    why: "Code review, unrelated to learned skills."
+  - prompt: "Compare these two approaches."
+    route_to: "strategy-compare"
+    why: "A decision between options, not a promotion test."
+
+capability:
+  - scenario: "A candidate learned skill is up for promotion to active."
+    must_include:
+      - "Compares WITH the skill against a baseline WITHOUT it, rather than judging it by reading."
+      - "Verifies the baseline arm did not see the skill or its grading criteria — a contaminated control is not a measurement."
+      - "Promotes only on evidence of beating the baseline, and retires it otherwise."
+      - "Records the real result even when it fails, rather than rounding up to a pass."

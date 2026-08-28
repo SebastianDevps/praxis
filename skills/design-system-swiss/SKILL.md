@@ -1,6 +1,6 @@
 ---
 name: design-system-swiss
-description: Use when building a Swiss or International style, editorial, or typographic content-first layout — strict grid, type-driven hierarchy, minimal color.
+description: Use when building a Swiss or International style, editorial, or typographic content-first layout — strict grid, type-driven hierarchy, minimal color. NOT the article page itself (that is `editorial-layout`), NOT soft consumer SaaS (that is `design-system-clean`).
 kind: skill
 od:
   category: design-systems

@@ -1,0 +1,35 @@
+skill: prose-tells
+
+should_trigger:
+  - prompt: "Does this README read like AI wrote it? Clean it up."
+    why: "Auditing a finished text against named tells — the core job."
+  - prompt: "Make this post sound human before I publish it."
+    why: "A text about to leave, needing the tell audit plus voice restoration."
+  - prompt: "Quita el tono de IA de este correo pero no cambies lo que dice."
+    why: "Tell removal preserving meaning, in Spanish."
+  - prompt: "Every paragraph here has an em dash and a rule of three. Fix it."
+    why: "Names two catalogued tells directly."
+  - prompt: "Audit this PR description — it feels machine-written."
+    why: "A short text about to ship, with the tells to be located by name."
+
+should_not_trigger:
+  - prompt: "Write the empty-state copy for this screen."
+    route_to: "copywriting"
+    why: "Authoring UI microcopy from scratch, not auditing a finished text."
+  - prompt: "Define our permanent brand voice."
+    route_to: "brand"
+    why: "A reusable voice system, not a one-text audit."
+  - prompt: "Review this code for bugs."
+    route_to: "reviewer"
+    why: "Code, which wants precision rather than voice."
+  - prompt: "Lay out the article page."
+    route_to: "editorial-layout"
+    why: "Layout, not the prose itself."
+
+capability:
+  - scenario: "A README written by an agent must be audited before publishing."
+    must_include:
+      - "NAMES each tell it found and where, rather than reporting a general impression."
+      - "Preserves meaning, facts, numbers and links while rewriting in place."
+      - "Puts voice back after the cuts, so the result is not sterile — which is its own tell."
+      - "Does not swap em dashes for parentheses, which trades one tell for another."

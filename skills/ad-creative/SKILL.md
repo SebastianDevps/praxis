@@ -1,6 +1,6 @@
 ---
 name: ad-creative
-description: Use when designing an ad, social creative, banner, or paid campaign asset — hook first, one message, format-fit per platform, clear CTA.
+description: Use when designing an ad, social creative, banner, or paid campaign asset — hook first, one message, format-fit per platform, clear CTA. NOT the words alone (that is `copywriting`), NOT the brand system itself (that is `brand`).
 kind: skill
 od:
   category: creative-direction

@@ -1,15 +1,14 @@
 ---
 name: praxis-memory
-description: Use when reading or writing the project's accumulated Praxis memory (.praxis/memory/) — lessons and learned skills that persist across sessions.
+description: Use when reading or writing the project's accumulated Praxis memory (.praxis/memory/) — lessons and learned skills that persist across sessions. NOT promoting a candidate skill (that is `learn-graduate`), NOT curating what went stale (that is `learn-prune`).
 kind: skill
 od:
   category: memory
   triggers:
-    - "praxis memory"
     - ".praxis/memory"
-    - "read memory"
-    - "project lessons"
-    - "learned skill"
+    - "what has this project learned"
+    - "remember this convention"
+    - "accumulated project knowledge"
 ---
 
 # Praxis Memory — the per-project learning store
@@ -18,14 +17,36 @@ Layer 1 of Praxis learning: the agent LEARNS per project, accumulating knowledge
 team shares via git. Memory lives in the USER's project at `.praxis/memory/` — never in the plugin.
 It is created at runtime by `/praxis:learn`; do not scaffold it ahead of need.
 
-## The three artifacts
+## The five artifacts
 
 ```
 .praxis/memory/
   index.md              # tiny, always-loaded retrieval index — the read path
   lessons.md            # detail for facts / corrections / conventions
+  gaps.md               # append-only: what this memory does NOT know
+  sessions.jsonl        # raw capture, written by the SubagentStop hook
   skills/<name>/SKILL.md # a learned procedure (candidate → active)
 ```
+
+## Capture and consolidation are separate
+
+```
+CAPTURE       hooks/subagent-stop, automatic, deterministic
+              -> appends one pending row per dispatch to sessions.jsonl
+CONSOLIDATION /praxis:learn, invoked
+              -> reads pending rows, decides what is durable, writes index.md,
+                 marks the rows consumed
+```
+
+Capture is cheap — no LLM, no network, one append — so it runs on every dispatch without asking.
+Consolidation costs a model call and a judgement, so it is deliberate. Running consolidation on
+every subagent would charge for sessions that taught nothing; running capture only on request
+loses the evidence before anyone asks for it.
+
+**Capture is inert until this project has a `.praxis/` directory.** Praxis does not scaffold one
+into every repo it touches. That is a real cost, not a footnote: until `/praxis:learn` runs once,
+nothing is being recorded. Say so when reporting — an inert mechanism must never read as an armed
+one that found nothing.
 
 ### `index.md` — the only thing read every session
 
@@ -54,6 +75,24 @@ One entry per lesson:
 - conf: <0.x>
 - last_verified: <YYYY-MM-DD>
 ```
+
+### `gaps.md` — what the memory does not know
+
+Append-only. Each line is a hole someone noticed, and it is what gives `/praxis:learn` a work
+queue instead of waiting for a lesson to arrive by accident.
+
+```
+- <YYYY-MM-DD> <the gap> · seen in <where it came up>
+```
+
+Three things belong here:
+
+- a question this memory could not answer when it was asked;
+- a convention referenced repeatedly with no entry behind it;
+- a lesson that was contradicted and left unresolved.
+
+A gap is not a lesson. It is the absence of one, recorded so it can be closed on purpose. Remove a
+line only when the gap is actually closed — never to tidy the file.
 
 ### `skills/<name>/SKILL.md` — a learned procedure
 

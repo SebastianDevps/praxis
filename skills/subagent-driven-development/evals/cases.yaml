@@ -1,0 +1,35 @@
+skill: subagent-driven-development
+
+should_trigger:
+  - prompt: "The plan is written. Execute it, one implementer per task, reviewing between."
+    why: "Executing an existing ledger with per-task dispatch — the core job."
+  - prompt: "Don't build all of this inline. Hand each task to a subagent."
+    why: "Explicit refusal of the inline blob, which is what this pattern replaces."
+  - prompt: "Ejecuta el ledger tarea por tarea y actualiza el progreso en el archivo."
+    why: "Ledger-tracked, task-by-task execution."
+  - prompt: "These four tasks are independent. Fan them out and reconcile after."
+    why: "Parallel dispatch of disjoint tasks with a gather step."
+  - prompt: "Work through the checklist and keep the progress file current as you go."
+    why: "Progress in a ledger rather than in conversation."
+
+should_not_trigger:
+  - prompt: "Just keep iterating unattended until it works."
+    route_to: "autonomous-loop"
+    why: "An unattended self-driven loop, not reviewed per-task dispatch."
+  - prompt: "I don't have a plan yet. Make one."
+    route_to: "writing-plans"
+    why: "The ledger must exist before it can be executed."
+  - prompt: "Review this finished change adversarially before we merge."
+    route_to: "refuter-correctness"
+    why: "The adversarial gate on a completed change, not execution."
+  - prompt: "Change this one string in the config."
+    route_to: "none"
+    why: "Trivial single-file work stays inline; dispatch would cost more than it saves."
+
+capability:
+  - scenario: "A five-task ledger is ready and execution should begin."
+    must_include:
+      - "Dispatches ONE implementer subagent per task rather than one agent for the whole ledger."
+      - "Reviews between tasks instead of only at the end."
+      - "Updates the ledger file as tasks complete, so state survives a lost context."
+      - "Runs disjoint tasks in one parallel wave and keeps file-sharing tasks sequential."

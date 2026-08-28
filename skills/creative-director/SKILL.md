@@ -1,6 +1,6 @@
 ---
 name: creative-director
-description: Use when setting design direction before building anything — concept, mood, references, and taste decisions; produces a direction brief, not code.
+description: Use when setting design direction before building anything — concept, mood, references, and taste decisions; produces a direction brief, not code. NOT building it (that is `frontend-design`), NOT the durable token system (that is `brand`) — this produces a brief, not code.
 kind: skill
 od:
   category: creative-direction

@@ -1,6 +1,6 @@
 ---
 name: frontend-design
-description: Use whenever asked to build, replicate, or redesign a web page, site, landing page, dashboard, hero section, pricing page, app interface, or component — even without the word design — replicating from a screenshot or designing immersive from scratch.
+description: Use whenever asked to build, replicate, or redesign a web page, site, landing page, dashboard, hero section, pricing page, app interface, or component — even without the word design — replicating from a screenshot or designing immersive from scratch. NOT critiquing something that already exists (that is `design-review`), NOT direction before building (that is `creative-director`).
 kind: skill
 od:
   mode: prototype

@@ -1,0 +1,35 @@
+skill: frontend-design
+
+should_trigger:
+  - prompt: "Build a landing page for our API product."
+    why: "Building a web page from scratch — the core job, even without the word design."
+  - prompt: "Replicate this screenshot as closely as you can."
+    why: "Faithful replication from a reference is the skill's other mode."
+  - prompt: "Rediseña el dashboard, se ve genérico."
+    why: "Redesign of a web surface, in Spanish."
+  - prompt: "I need a pricing page with three tiers and a comparison table."
+    why: "A named web surface to build."
+  - prompt: "Make me a hero section for the homepage."
+    why: "A component of a web page, built from scratch."
+
+should_not_trigger:
+  - prompt: "Here's our existing dashboard. Tell me what's wrong with it."
+    route_to: "design-review"
+    why: "Critique of something that already exists, not building."
+  - prompt: "Before we build anything, what's the concept and mood?"
+    route_to: "creative-director"
+    why: "Direction produces a brief, not code — it precedes building."
+  - prompt: "Build this screen to feel native on iOS."
+    route_to: "apple-hig"
+    why: "Apple platform conventions rather than web layout."
+  - prompt: "Chart the signup funnel."
+    route_to: "data-visualization"
+    why: "The chart is its own discipline."
+
+capability:
+  - scenario: "A user asks for a landing page hero, from scratch, with no reference."
+    must_include:
+      - "Makes a DELIBERATE type choice and does not fall back to Inter, Roboto or Open Sans."
+      - "Avoids the AI purple/blue gradient hero unless the brand actually calls for it."
+      - "Runs the Ship Gate before calling it done — font, a11y, motion, and a stated Baseline check."
+      - "Uses min-h dvh rather than h-screen, and constrains max width instead of spanning ultra-wide."

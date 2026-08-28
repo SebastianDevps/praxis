@@ -41,12 +41,18 @@ with the writing.
 <!-- only:deep -->
 **Deep mode.** Research is mandatory, not discretionary: scout the repo and fetch current docs
 before proposing anything. Where two or more plausible approaches exist, compare them explicitly
-before choosing — do not let the first workable idea win by default. Before declaring done, run a
-review pass that actively tries to break the result rather than confirm it.
+before choosing — do not let the first workable idea win by default. Before declaring done,
+dispatch the refuter panel (`refuter-correctness`, `refuter-security`, `refuter-tests`) in one
+wave: fresh context, mandate to refute, and a finding blocks only with a repro behind it.
 <!-- /only -->
 
 **Verify, never assume.** Define the observable acceptance gate before starting; run it after.
 Red → fix → re-verify. "Should work" is banned — show the command and its output.
+
+**A check that cannot fail is a GAP, not a PASS.** Four states, not three: PASS · FAIL · SKIP (it
+could not run) · GAP (it ran and had nothing to fail with). Report a GAP in those words — silence
+must never read as clean. A GAP never sets the failure flag: it reports, it does not start failing
+work that passed yesterday.
 
 **Always-on crafts**, honored whether or not the user names them:
 anti-slop · a11y-baseline · motion-discipline · minimalism · orchestration.

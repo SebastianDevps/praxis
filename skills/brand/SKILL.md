@@ -1,6 +1,6 @@
 ---
 name: brand
-description: Use when extracting a brand from a logo or screenshots, defining one from scratch, or asked for brand guidelines or brand tokens — outputs design tokens for type, color, spacing, and voice.
+description: Use when extracting a brand from a logo or screenshots, defining one from scratch, or asked for brand guidelines or brand tokens — outputs design tokens for type, color, spacing, and voice. NOT direction and mood before the system exists (that is `creative-director`), NOT the palette alone (that is `color-expert`).
 kind: skill
 od:
   category: creative-direction

@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# SubagentStop hook — the write path Praxis memory never had.
+#
+# `.praxis/memory/` had a read path from day one: session-start injects index.md
+# every session. It had no automatic write path. Something was only recorded if
+# the person driving remembered to run `/praxis:learn` — a binding rule resting
+# on someone remembering, which is the failure class this plugin exists to fix.
+#
+# The split is deliberate and mirrors what every memory system that works does:
+#
+#   CAPTURE      here, automatic, deterministic. No LLM, no network, one append.
+#                Cheap enough to run on every dispatch without asking.
+#   CONSOLIDATE  `/praxis:learn`, invoked. Reads the pending rows, decides what is
+#                durable, writes index.md. Costs a model call, so it is deliberate.
+#
+# Running consolidation here would charge for every subagent regardless of whether
+# anything was learned. Running capture only on request loses the evidence.
+#
+# OPT-IN, AND SAID OUT LOUD: this writes only into a project that already has a
+# `.praxis/` directory. Praxis does not scaffold one into every repo it touches.
+# Until `/praxis:learn` runs once, this hook is INERT — that is a real cost, not a
+# detail, so `/praxis:learn` reports it rather than letting silence read as "no
+# activity". An inert gate must never look like an armed one.
+
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "${SCRIPT_DIR}/lib.sh"
+
+project="$(praxis_project_dir)"
+mem="${project}/.praxis/memory"
+
+# No memory store in this project -> nothing to capture. Exit clean: a hook that
+# errors on an ordinary repo trains people to remove it.
+[ -d "${project}/.praxis" ] || exit 0
+mkdir -p "$mem" 2>/dev/null || exit 0
+
+# stdin is bounded exactly as in subagent-start: a host that never delivers the
+# payload costs one second and we still record the dispatch.
+payload=""
+IFS= read -r -d '' -t 1 payload
+
+field() {
+  printf '%s' "$payload" \
+    | sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" \
+    | head -1
+}
+
+agent="$(field agent_type)"
+agent="${agent##*:}"                     # praxis:design -> design
+[ -n "$agent" ] || agent="unknown"
+# Confine to a bare token: agent_type is host-supplied and this value is written
+# to a file. No traversal, no quotes, no newlines reaching the JSON line.
+case "$agent" in */*|*..*|*\"*) agent="unknown" ;; esac
+
+# A verdict if the envelope carried one; never invented. "unreported" is a real
+# and useful state — it says the subagent returned without a status line.
+status="$(field status)"
+[ -n "$status" ] || status="unreported"
+case "$status" in *\"*|*/*) status="unreported" ;; esac
+
+head="$(git -C "$project" rev-parse --short HEAD 2>/dev/null || printf 'nogit')"
+ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+# One append, well under PIPE_BUF (4096 bytes), so a parallel wave of subagents
+# cannot interleave two rows into one malformed line. The fields are bounded
+# above precisely so this stays true — that is the reason for the length limits,
+# not tidiness.
+printf '{"ts":"%s","agent":"%s","status":"%s","head":"%s","state":"pending"}\n' \
+  "$ts" "${agent:0:64}" "${status:0:32}" "$head" \
+  >> "${mem}/sessions.jsonl" 2>/dev/null || true
+
+praxis_trace "SubagentStop" "$agent"
+exit 0

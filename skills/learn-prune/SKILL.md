@@ -1,12 +1,12 @@
 ---
 name: learn-prune
-description: Use when curating accumulated project memory — prune stale or unused lessons and learned skills, resolve contradictions, keep the index small.
+description: Use when curating accumulated project memory — prune stale or unused lessons and learned skills, resolve contradictions, keep the index small. NOT promoting a candidate (that is `learn-graduate`), NOT the store itself (that is `praxis-memory`).
 kind: skill
 od:
   category: memory
   triggers:
-    - "prune memory"
-    - "curate memory"
+    - "prune the index"
+    - "curate accumulated lessons"
     - "stale lessons"
     - "resolve contradiction"
     - "shrink index"

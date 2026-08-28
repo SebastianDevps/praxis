@@ -1,6 +1,6 @@
 ---
 name: data-visualization
-description: Use when building any chart, graph, metric card, dashboard panel, or D3 data viz — picks the right chart for the question, removes chartjunk, labels directly, and keeps it accessible.
+description: Use when building any chart, graph, metric card, dashboard panel, or D3 data viz — picks the right chart for the question, removes chartjunk, labels directly, and keeps it accessible. NOT the surrounding page (that is `frontend-design`), NOT the visual language of the tiles (that is `design-system-bento`).
 kind: skill
 od:
   category: data-viz

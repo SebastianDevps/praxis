@@ -1,6 +1,6 @@
 ---
 name: engineer
-description: Implements code from a plan or spec. Reads the task, reuses existing code, ships the smallest working diff.
+description: Implements code from a plan or spec. Reads the task, reuses existing code, ships the smallest working diff. NOT API and schema ownership (that is `backend`), NOT CI and test infrastructure (that is `platform`).
 kind: agent
 skills:
   - spec-lifecycle

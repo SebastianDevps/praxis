@@ -1,6 +1,6 @@
 ---
 name: security
-description: Use when code touches auth, input, secrets, payments, or user data, or when asked about OWASP, injection, or vulnerabilities — security checklist and threat-modeling framing to run before merge.
+description: Use when code touches auth, input, secrets, payments, or user data, or when asked about OWASP, injection, or vulnerabilities — security checklist and threat-modeling framing to run before merge. NOT generic code review (that is the `reviewer` agent) — this is the threat surface only.
 kind: skill
 od:
   category: security

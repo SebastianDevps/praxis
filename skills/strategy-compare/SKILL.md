@@ -1,6 +1,6 @@
 ---
 name: strategy-compare
-description: Use when 2–4 plausible approaches exist and you must pick one (which approach, how should we do this) — scores scope fit, risk, effort, and reversibility, surfaces ties, and recommends one.
+description: Use when 2–4 plausible approaches exist and you must pick one (which approach, how should we do this) — scores scope fit, risk, effort, and reversibility, surfaces ties, and recommends one. NOT eliciting the requirement when it is still fuzzy (that is `brainstorming`) — the options must already exist.
 kind: skill
 od:
   category: reasoning

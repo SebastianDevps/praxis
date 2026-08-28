@@ -1,6 +1,6 @@
 ---
 name: writing-plans
-description: Use when about to build something substantial, multi-file, or multi-step, BEFORE writing code — break the work into a written checklist of bite-sized, independently-testable tasks saved to a ledger.
+description: Use when about to build something substantial, multi-file, or multi-step, BEFORE writing code — break the work into a written checklist of bite-sized, independently-testable tasks saved to a ledger. NOT executing the plan (that is `subagent-driven-development`), NOT resolving ambiguity first (that is `brainstorming`).
 kind: skill
 od:
   triggers: ["write a plan", "plan this", "break this down", "before building"]

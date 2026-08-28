@@ -1,6 +1,6 @@
 ---
 name: researcher
-description: Read-only codebase and doc exploration. Produces a factual findings document. Never implements.
+description: Read-only codebase and doc exploration. Produces a factual findings document. Never implements. NOT judging code quality (that is `reviewer`) — it reports facts, never verdicts.
 kind: agent
 skills:
   - scout

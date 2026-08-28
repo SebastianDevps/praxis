@@ -155,6 +155,49 @@ function scoreAll(records) {
   return rows;
 }
 
+// Did the control arms actually run without Praxis?
+//
+// `--setting-sources project,local` is the MECHANISM, and the mechanism was never verified. A
+// lift measured against a control that saw the treatment is a lower bound of unknown size, and
+// publishing it as a number is the claim-without-evidence this repo keeps paying for.
+//
+// This answers it from the transcripts — never from the flags we passed ourselves, which is the
+// tautology that makes a check like this feel done while proving nothing.
+//
+// It returns "unchecked" when the transcripts are gone (an old --rescore, a cleared projects dir).
+// That is reported in those words. Silence must not read as clean.
+const PRIMED = "PRAXIS";
+const TREATMENT_ARMS = new Set(["praxis", "router-only"]);
+
+function checkIntegrity(records) {
+  const base = join(homedir(), ".claude", "projects");
+  if (!existsSync(base)) return { state: "unchecked", reason: "no transcripts directory" };
+
+  const files = new Map(); // session_id -> text
+  const walk = (dir) => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const p = join(dir, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (e.name.endsWith(".jsonl")) files.set(e.name.slice(0, -6), p);
+    }
+  };
+  try { walk(base); } catch { return { state: "unchecked", reason: "transcripts unreadable" }; }
+
+  const contaminated = [];
+  let checked = 0;
+  for (const r of records) {
+    if (TREATMENT_ARMS.has(r.arm) || !r.session_id) continue;
+    const path = files.get(r.session_id);
+    if (!path) continue; // this control cell's transcript is gone; counted as unchecked below
+    checked++;
+    if (readFileSync(path, "utf8").includes(PRIMED)) contaminated.push(`${r.task}/${r.arm}#${r.i}`);
+  }
+  const controls = records.filter((r) => !TREATMENT_ARMS.has(r.arm)).length;
+  if (checked === 0) return { state: "unchecked", reason: `0 of ${controls} control transcripts found` };
+  if (contaminated.length) return { state: "BLOCKED", checked, controls, contaminated };
+  return { state: "clean", checked, controls };
+}
+
 function report(records, rows) {
   const arms = [...new Set(records.map((r) => r.arm))];
   const pad = (s, n) => String(s).padEnd(n);
@@ -173,6 +216,20 @@ function report(records, rows) {
   const errors = records.filter((r) => r.error);
   console.log(`\ncells: ${records.length}   spend: $${spend.toFixed(2)}   errors: ${errors.length}`);
   for (const e of errors.slice(0, 3)) console.log(`  ! ${e.task}/${e.arm}#${e.i}: ${e.error}`);
+
+  // The integrity line is printed on EVERY run, including when it could not be established.
+  // A scorecard that only mentions integrity when it is clean teaches the reader that no line
+  // means no problem.
+  const ig = checkIntegrity(records);
+  if (ig.state === "clean") {
+    console.log(`integrity: clean — ${ig.checked}/${ig.controls} control transcripts carry no Praxis context`);
+  } else if (ig.state === "BLOCKED") {
+    console.log(`integrity: BLOCKED — Praxis context found in ${ig.contaminated.length} control cell(s): ${ig.contaminated.join(", ")}`);
+    console.log("the numbers above are withheld as a measurement: a control that saw the treatment measures nothing");
+  } else {
+    console.log(`integrity: NOT CHECKED — ${ig.reason}. Treat the numbers as unverified, not as clean.`);
+  }
+
   console.log("\nn is small; read this as direction, not a rate. Workspaces are kept for --rescore.\n");
 }
 

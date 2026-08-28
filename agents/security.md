@@ -1,6 +1,6 @@
 ---
 name: security
-description: AppSec auditor. Reviews auth, JWT, PII, payment, and encryption paths against OWASP + STRIDE and reports findings by severity.
+description: AppSec auditor. Reviews auth, JWT, PII, payment, and encryption paths against OWASP + STRIDE and reports findings by severity. NOT general code review (that is `reviewer`), NOT the adversarial security lens on a finished diff (that is `refuter-security`).
 kind: agent
 skills:
   - security

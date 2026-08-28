@@ -1,6 +1,6 @@
 ---
 name: design-system-clean
-description: Use when building a clean, minimal SaaS, consumer app, or soft restrained UI — whitespace, soft shadows, rounded corners, one accent.
+description: Use when building a clean, minimal SaaS, consumer app, or soft restrained UI — whitespace, soft shadows, rounded corners, one accent. NOT raw and expressive (that is `design-system-brutalist`), NOT tiled feature grids (that is `design-system-bento`).
 kind: skill
 od:
   category: design-systems

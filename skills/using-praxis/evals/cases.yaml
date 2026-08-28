@@ -1,0 +1,35 @@
+skill: using-praxis
+
+should_trigger:
+  - prompt: "How does Praxis work?"
+    why: "Direct question about the framework's operation."
+  - prompt: "Build me a dashboard from this screenshot."
+    why: "Any non-trivial task enters through the router, which classifies and routes it."
+  - prompt: "¿Cómo enruta Praxis el trabajo entre sus agentes y skills?"
+    why: "Routing question, in Spanish."
+  - prompt: "Which specialist should handle a database migration here?"
+    why: "The routing table is what answers this."
+  - prompt: "Refactor the auth module across these four files."
+    why: "Substantial multi-file work — the router decides the loop and the specialist."
+
+should_not_trigger:
+  - prompt: "Fix the typo in the README heading."
+    route_to: "none"
+    why: "Trivial single-file edit — the router itself says to skip the loop."
+  - prompt: "What has this project learned so far?"
+    route_to: "praxis-memory"
+    why: "The memory store, not the router."
+  - prompt: "Compare these two caching approaches."
+    route_to: "strategy-compare"
+    why: "A specific discipline the router would delegate to."
+  - prompt: "Attack this finished change before merge."
+    route_to: "refuter-correctness"
+    why: "A specific agent, not the router."
+
+capability:
+  - scenario: "A user sends a vague substantial request with no scope."
+    must_include:
+      - "Classifies trivial versus substantial BEFORE acting, and treats the unclear case as substantial."
+      - "Runs the loop out loud — determine, research, clarify, Run Card, delegate, verify — rather than implicitly."
+      - "Asks ONE clarifying question and stops, instead of guessing silently on substantial work."
+      - "Delegates multi-file work to specialists rather than writing every file inline in the main thread."

@@ -1,14 +1,14 @@
 ---
 name: learn-graduate
-description: Use when a candidate learned skill must be pressure-tested before it is trusted (promoted to active).
+description: Use when a candidate learned skill must be pressure-tested before it is trusted (promoted to active). NOT removing what went stale (that is `learn-prune`), NOT the store itself (that is `praxis-memory`).
 kind: skill
 od:
   category: memory
   triggers:
-    - "graduate skill"
-    - "promote candidate"
-    - "pressure-test skill"
-    - "trust learned skill"
+    - "graduate a candidate"
+    - "promote to active"
+    - "pressure-test before trusting"
+    - "did it beat the baseline"
 ---
 
 # Learn-Graduate — the probation gate

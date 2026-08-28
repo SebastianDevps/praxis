@@ -1,6 +1,6 @@
 ---
 name: design
-description: Senior product designer + frontend engineer. Routes design tasks by input type to the right skill.
+description: Senior product designer + frontend engineer. Routes design tasks by input type to the right skill. NOT reviewing an interface that already exists (that is `reviewer`), NOT server-side work (that is `backend`).
 kind: agent
 skills:
   - frontend-design

@@ -1,6 +1,6 @@
 ---
 name: web-testing
-description: Use when setting up or expanding tests for a web app with Playwright E2E, component, or visual-regression coverage — pyramid balance, a11y checks, and flakiness control.
+description: Use when setting up or expanding tests for a web app with Playwright E2E, component, or visual-regression coverage — pyramid balance, a11y checks, and flakiness control. NOT deciding what to cover (that is `test-coverage-plan`), NOT diagnosing a flake's root cause (that is `systematic-debugging`).
 kind: skill
 od:
   category: testing

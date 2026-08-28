@@ -1,6 +1,6 @@
 ---
 name: apple-hig
-description: Use when designing for iOS, iPadOS, macOS, visionOS, watchOS, or building native-feeling mobile UI — applies Apple Human Interface Guidelines on touch targets, safe areas, and native components.
+description: Use when designing for iOS, iPadOS, macOS, visionOS, watchOS, or building native-feeling mobile UI — applies Apple Human Interface Guidelines on touch targets, safe areas, and native components. NOT web layout (that is `frontend-design`), NOT the visual system (that is a `design-system-*` skill).
 kind: skill
 od:
   surface: mobile

@@ -1,6 +1,6 @@
 ---
 name: design-system-brutalist
-description: Use when building a brutalist, raw, anti-design, or bold expressive interface — visible structure, system fonts, sharp edges, high contrast.
+description: Use when building a brutalist, raw, anti-design, or bold expressive interface — visible structure, system fonts, sharp edges, high contrast. NOT soft and restrained (that is `design-system-clean`), NOT disciplined typographic grid (that is `design-system-swiss`).
 kind: skill
 od:
   category: design-systems

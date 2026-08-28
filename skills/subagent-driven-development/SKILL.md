@@ -1,6 +1,6 @@
 ---
 name: subagent-driven-development
-description: Use when executing a multi-task plan or ledger — dispatch one implementer subagent per task, review between tasks, and track progress in a ledger file instead of doing everything inline.
+description: Use when executing a multi-task plan or ledger — dispatch one implementer subagent per task, review between tasks, and track progress in a ledger file instead of doing everything inline. NOT writing the plan (that is `writing-plans`), NOT an unattended self-driven run (that is `autonomous-loop`).
 kind: skill
 od:
   triggers: ["execute the plan", "run the tasks", "implement the plan", "work through the ledger"]

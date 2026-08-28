@@ -1,6 +1,6 @@
 ---
 name: design-system-bento
-description: Use when building a bento grid, modular tile layout, feature showcase, or card grid — varied tile sizes for feature sections and dashboards.
+description: Use when building a bento grid, modular tile layout, feature showcase, or card grid — varied tile sizes for feature sections and dashboards. NOT restrained SaaS surfaces (that is `design-system-clean`), NOT grid-and-type editorial (that is `design-system-swiss`).
 kind: skill
 od:
   category: design-systems

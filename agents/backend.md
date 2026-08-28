@@ -1,6 +1,6 @@
 ---
 name: backend
-description: Senior backend engineer. Designs and implements APIs, database schemas, and service layers with data integrity, performance, and security in mind.
+description: Senior backend engineer. Designs and implements APIs, database schemas, and service layers with data integrity, performance, and security in mind. NOT client-side work (that is `design`), NOT the pipeline that ships it (that is `platform`).
 kind: agent
 skills:
   - scout
