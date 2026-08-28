@@ -41,7 +41,7 @@ Each step is shown to the user, never implicit. This visibility IS the product.
    ```
    RUN CARD — <task>
    phase:    <current phase>
-   approach: <inline | delegate → design / engineer / backend / security / platform / researcher>
+   approach: <inline | delegate → design / engineer / backend / security / reviewer / researcher>
    research: <what you checked>
    verify:   <the acceptance gate — how you will prove it is right>
    ```

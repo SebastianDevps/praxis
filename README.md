@@ -16,7 +16,7 @@ Built for developers and vibe-coders building systems from scratch at scale (or 
 /reload-plugins
 ```
 
-That's it. Skills activate by description; a SessionStart hook primes each session.
+That's it. Skills activate by description; three lifecycle hooks prime the session, every turn, and every dispatched specialist.
 
 ---
 
@@ -47,7 +47,8 @@ The differentiation is measured, not claimed — see [`evals/`](evals/) (6 fixtu
 ## How it works
 
 - **Descriptions are the router.** Skills activate on their `description` — the trigger surface a user actually types lives there.
-- **The SessionStart hook** injects the `using-praxis` router (and this project's learned memory, if any) every session. It only injects context; it blocks nothing.
+- **Three injection points, not one.** `SessionStart` primes the `using-praxis` router (and this project's learned memory, if any). `UserPromptSubmit` restates a compact operating contract every turn, so the method survives a long session instead of drifting back to inline-everything defaults. `SubagentStart` carries that contract into every dispatched specialist, plus the crafts that agent declares under `od.craft.requires` — session context is parent-thread only, so without it a delegated agent runs Praxis-unaware. All three only inject context; nothing blocks.
+- **Scope the subagent injection** with `PRAXIS_SUBAGENT_MATCHER`, an extended regex tested against the subagent's `agent_type` (unanchored, case-insensitive: `design|engineer` matches either, `^engineer$` is exact). Unset injects into every subagent. An invalid regex, a missing `agent_type`, or a stalled payload all fail open — scoping never silently drops the method.
 - **Crafts are inherited taste.** `frontend-design` pulls `anti-slop` + `a11y-baseline` + `motion-discipline` and runs the Ship Gate before delivering.
 - **Execution is explicit.** For multi-file builds, ask for a plan + a subagent per task (or `/praxis:loop`) — that's how it stays out of inline-everything context rot.
 
@@ -67,9 +68,25 @@ Measured value ([`evals/2026-06-26-learning-ab.md`](evals/2026-06-26-learning-ab
 
 `/praxis:loop` runs a build to completion on a fresh context per iteration, with all guardrails **outside the model** (max-iterations, wall-clock, no-progress detection, completion-signal threshold, and a verifier-integrity guard that halts if a test file is touched). The discipline (`autonomous-loop` skill) is the [ralph technique](https://ghuntley.com/ralph/), researched — not ported.
 
+## Development
+
+Zero dependencies — no package manager, no build step:
+
+```bash
+node scripts/validate-resources.mjs   # frontmatter contract for every resource
+node --test tests/*.test.mjs          # references, hook behavior, invariants
+```
+
+Both run in CI on every push and pull request. Three gates, each mutation-tested
+so it cannot pass vacuously:
+
+- **references** — every specialist named in a routing table, Run Card, or `od.craft.requires` resolves to a real file on disk. This is what caught the orchestrator routing to `platform` and `incident-responder`, neither of which ever existed.
+- **hooks** — each hook emits valid JSON in each host's dialect, the subagent variant strips orchestrator-only sections, crafts resolve per agent, and a host-supplied `agent_type` cannot traverse out of `agents/`. This caught a shadowed `PLUGIN_ROOT` that made every host look like Codex.
+- **invariants** — the load-bearing phrases survive in every priming surface and every craft. Byte-equality is wrong here (the Cursor adapter legitimately names Cursor's tools), so the gate asserts the *guarantee*, not the text: reword the Inter ban or drop a safety carve-out and it fails.
+
 ## Cross-platform
 
-One shared skill set, thin per-host adapters — the same skills run on **Claude Code, Codex, Cursor, Gemini CLI, and Copilot**. Skills speak in *actions* ("dispatch a subagent", "invoke a skill"); each host's `skills/using-praxis/references/<host>-tools.md` resolves them to that host's real tools. Priming is per-host: a SessionStart hook on Claude/Codex/Cursor/Copilot, a `GEMINI.md` `@import` on Gemini, and an always-apply `.cursor/rules/praxis.mdc` fallback. Per-project memory injects on every hooked host.
+One shared skill set, thin per-host adapters — the same skills run on **Claude Code, Codex, Cursor, Gemini CLI, and Copilot**. Skills speak in *actions* ("dispatch a subagent", "invoke a skill"); each host's `skills/using-praxis/references/<host>-tools.md` resolves them to that host's real tools. Priming is per-host: lifecycle hooks on Claude/Codex (all three events) and Cursor/Copilot (SessionStart), a `GEMINI.md` `@import` on Gemini, and an always-apply `.cursor/rules/praxis.mdc` fallback. Per-project memory injects on every hooked host.
 
 > Each adapter is wired; smoke-test it on your host (a vague prompt should prime + activate). Codex needs `multi_agent = true` in `~/.codex/config.toml` for subagent dispatch.
 

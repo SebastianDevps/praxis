@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# SubagentStart hook for the Praxis plugin.
+#
+# SessionStart context is parent-thread only and never reaches subagents, so
+# without this every dispatched specialist runs Praxis-unaware: no crafts, no
+# verify discipline, no research-first. The whole premise — a team of seniors
+# that self-orchestrates — needs the method to travel WITH the dispatch.
+#
+# Injects two things: the operating contract (subagent variant, orchestrator-only
+# sections stripped) and the crafts the dispatched agent declares under
+# od.craft.requires. That frontmatter existed all along and nothing read it, so
+# "always-on crafts" was a claim in a README rather than a mechanism.
+#
+# Scoping (opt-in): set PRAXIS_SUBAGENT_MATCHER to an extended regex and the
+# contract is injected only into subagents whose agent_type matches. Unanchored
+# and case-insensitive: "design|engineer" matches either, "^engineer$" is exact.
+# Unset injects into every subagent. A bad regex, a missing agent_type, or a
+# stalled payload all FAIL OPEN (inject) — scoping must never silently drop the
+# method, and neither must craft resolution.
+
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "${SCRIPT_DIR}/lib.sh"
+PRAXIS_ROOT="$(praxis_root "$SCRIPT_DIR")"
+
+contract=$(praxis_contract "$PRAXIS_ROOT" subagent)
+[ -n "$contract" ] || exit 0
+
+# Resolving crafts needs agent_type, so stdin is read on every spawn. Safe here
+# because bash's `read -t` is bounded: a host that never delivers the payload
+# costs one second and falls through to the contract-only path. (Node's stdin is
+# event-based with no native timeout, which is why ponytail had to avoid this.)
+payload=""
+IFS= read -r -d '' -t 1 payload
+agent_type=$(printf '%s' "$payload" | sed -n 's/.*"agent_type"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+
+# Skip only on a definite mismatch against a valid regex.
+if [ -n "${PRAXIS_SUBAGENT_MATCHER:-}" ] && [ -n "$agent_type" ]; then
+  # grep exits 0 = match, 1 = no match, >=2 = invalid regex. Only a clean 1 skips.
+  # stderr is discarded: an invalid regex must fail open quietly, not surface as
+  # hook noise on every subagent spawn.
+  printf '%s' "$agent_type" | grep -Eiq -- "${PRAXIS_SUBAGENT_MATCHER}" 2>/dev/null
+  [ $? -eq 1 ] && exit 0
+fi
+
+crafts=$(praxis_agent_crafts "$PRAXIS_ROOT" "$agent_type")
+if [ -n "$crafts" ]; then
+  contract="${contract}
+
+---
+
+# Crafts required by \`${agent_type}\`
+
+These are non-negotiable disciplines for this role, honored whether or not the
+task names them.
+${crafts}"
+fi
+
+praxis_emit "SubagentStart" "$(escape_for_json "$contract")"
+exit 0

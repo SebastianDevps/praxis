@@ -12,8 +12,8 @@ framework learns from experience by authoring new skills. It runs on any host
 - **Clarity over machinery.** Skills and guides carry only the non-obvious delta beyond what the
   model already knows. If the model knows it, cut it. ("Redundancy Mirror")
 - **No enforcement.** No gates; nothing blocks an action. Trust comes from transparency and
-  measurement, not guardrails. One SessionStart hook *primes* the session (see Activation) — it
-  injects context only; it never blocks. Priming is orientation, not a gate.
+  measurement, not guardrails. Three lifecycle hooks *prime* the run (see Activation) — they
+  inject context only; they never block. Priming is orientation, not a gate.
 - **Brevity as a constraint.** Terse beats thorough. Default to short; expand only when the task
   genuinely requires it.
 - **Learning by authoring.** The framework grows by producing new skills from real experience — no
@@ -50,8 +50,10 @@ Run Cards are the primary transparency mechanism — not logs, not dashboards.
 
 ### Crafts
 
-Crafts are always-on disciplines. Any skill or agent can declare `requires: [craft]` to opt in.
-They are not enforced; they are inherited taste. See `crafts/` for full definitions.
+Crafts are always-on disciplines. An agent declares them under `od.craft.requires`, and the
+`SubagentStart` hook resolves that declaration and injects the craft bodies when the agent is
+dispatched — inherited taste, delivered mechanically rather than hoped for. Still not enforcement:
+the craft arrives as context, nothing gates the agent's actions. See `crafts/` for full definitions.
 
 ---
 
@@ -63,6 +65,7 @@ They are not enforced; they are inherited taste. See `crafts/` for full definiti
 | `anti-slop` | Avoid generic AI design fingerprints: boilerplate structure, hollow summaries, filler phrases. |
 | `a11y-baseline` | Semantic HTML, keyboard nav, ARIA roles, contrast ≥ 4.5:1 where applicable. |
 | `motion-discipline` | Motion serves meaning. Respect `prefers-reduced-motion`. No decorative animation. |
+| `orchestration` | Delegate substantial work, fan out disjoint tasks, keep orchestrator context thin, render Run Cards. |
 
 ---
 
@@ -74,15 +77,22 @@ description-matching alone fires roughly a third of the time, and a host's own a
 every world-class tool does (Cursor `alwaysApply`, Cline `.clinerules`, Copilot/Codex `AGENTS.md`,
 first-party SessionStart hooks).
 
-### A — SessionStart router (default, Claude Code)
+### A — Lifecycle hooks (default, Claude Code and Codex)
 
-`hooks/session-start` injects the thin `using-praxis` router at session start. It **primes, never
-blocks** — pure context injection, fully consistent with No Enforcement. Heavy content stays
-lazy-loaded; the router only points the model at the right skill, agent, or craft.
+Three events, all pure context injection, all consistent with No Enforcement:
+
+| Hook | Injects | Why |
+|---|---|---|
+| `session-start` | the thin `using-praxis` router + this project's learned memory | orientation, once |
+| `user-prompt-submit` | the compact operating contract (`hooks/context/contract.md`) | anti-drift — a router read at turn 1 is buried by turn 40 |
+| `subagent-start` | the contract + the dispatched agent's required crafts | session context is parent-thread only; without it a delegated agent runs Praxis-unaware |
+
+Heavy content stays lazy-loaded. Scope the subagent injection with the `PRAXIS_SUBAGENT_MATCHER`
+regex; it fails open on a bad pattern, a missing `agent_type`, or a stalled payload.
 
 ### C — Portable fallback (any host)
 
-The hook runs only in Claude Code. On other hosts — or to force priming everywhere — add this line
+The hooks run on Claude Code and Codex. On other hosts — or to force priming everywhere — add this line
 to your always-on rules file (`~/.claude/CLAUDE.md`, `AGENTS.md`, `.cursorrules`, `.clinerules`):
 
 > This environment uses Praxis. For substantial work, orchestrate via the `orchestrator` agent
@@ -144,6 +154,21 @@ a FUTURE, optional add-on. It is NOT built; Layer 1 stands alone.
   Markdown (see Learning) — any host that can read files participates; no MCP server required.
 
 Adding a new host: write one adapter file that points here. No framework changes required.
+
+---
+
+## Verification
+
+Praxis has no enforcement at runtime, but it does have gates at author time — the
+claims in this file are tested, not asserted:
+
+```bash
+node scripts/validate-resources.mjs   # frontmatter contract
+node --test tests/*.test.mjs          # references · hooks · invariants
+```
+
+A routing table that names a nonexistent agent, a craft that loses its
+load-bearing rule, or a hook that stops emitting a host's dialect all fail CI.
 
 ---
 

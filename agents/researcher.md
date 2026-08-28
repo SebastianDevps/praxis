@@ -2,6 +2,10 @@
 name: researcher
 description: Read-only codebase and doc exploration. Produces a factual findings document. Never implements.
 kind: agent
+od:
+  craft:
+    requires:
+      - minimalism
 ---
 
 ## Persona

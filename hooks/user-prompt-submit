@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# UserPromptSubmit hook for the Praxis plugin.
+#
+# SessionStart primes the router ONCE. By turn 40 that context is buried and the
+# agent drifts back to inline-everything defaults. This re-states the compact
+# operating contract every turn — the same anti-drift reflex ponytail proved out.
+#
+# It injects context and blocks nothing. It never reads stdin, so it cannot hang
+# a prompt: on Windows the PowerShell wrapper can swallow the piped JSON and a
+# stdin-waiting hook would freeze the session.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "${SCRIPT_DIR}/lib.sh"
+PRAXIS_ROOT="$(praxis_root "$SCRIPT_DIR")"
+
+contract=$(praxis_contract "$PRAXIS_ROOT" orchestrator) || contract=""
+[ -n "$contract" ] || exit 0
+
+praxis_emit "UserPromptSubmit" "$(escape_for_json "$contract")"
+exit 0
