@@ -5,7 +5,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync, accessSync, constants } from "node:fs";
+import { readFileSync, accessSync, constants, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const ROOT = new URL("..", import.meta.url).pathname;
@@ -134,4 +135,68 @@ test("every host hook config is valid JSON and points at an executable script", 
       assert.doesNotThrow(() => accessSync(join(ROOT, "hooks", script), constants.X_OK), `missing hook script: ${script}`);
     }
   }
+});
+
+// The intensity dial. Its whole value is determinism — a Markdown command is
+// read by the model and followed most of the time; a flag file is read by the
+// hook and applied every time. That only holds if the switch actually persists.
+const withHome = (input, env = {}) => {
+  const home = mkdtempSync(join(tmpdir(), "praxis-mode-"));
+  const call = (payload) =>
+    run("user-prompt-submit", {
+      input: JSON.stringify({ prompt: payload }),
+      env: { CLAUDE_PLUGIN_ROOT: ROOT, HOME: home, ...env },
+    });
+  return { call, first: call(input) };
+};
+
+test("the dial defaults to full and states the active level every turn", () => {
+  const { first } = withHome("fix the typo");
+  const ctx = context(first);
+  assert.match(ctx, /active mode: full/);
+  assert.match(ctx, /RUN CARD/);
+});
+
+test("a mode switch persists to the next turn", () => {
+  const { call } = withHome("noop");
+  assert.match(context(call("/praxis fast")), /MODE CHANGED — fast/);
+  const next = context(call("now fix the bug"));
+  assert.match(next, /active mode: fast/, "the level must outlive the turn that set it");
+  assert.doesNotMatch(next, /RUN CARD/, "fast drops the ceremony");
+  assert.match(next, /Fast mode/);
+});
+
+test("/praxis:mode deep adds the deep-only discipline", () => {
+  const { call } = withHome("noop");
+  call("/praxis:mode deep");
+  const ctx = context(call("design the schema"));
+  assert.match(ctx, /active mode: deep/);
+  assert.match(ctx, /Deep mode/);
+  assert.match(ctx, /RUN CARD/, "deep keeps everything full has");
+});
+
+test("an unrecognized level is ignored rather than applied", () => {
+  const { call } = withHome("noop");
+  call("/praxis deep");
+  const ctx = context(call("/praxis banana"));
+  assert.match(ctx, /active mode: deep/, "a bad argument must not silently change the level");
+});
+
+test("the dial changes ceremony, never the crafts or the safety carve-outs", () => {
+  const { call } = withHome("noop");
+  call("/praxis fast");
+  const ctx = context(call("ship it"));
+  for (const kept of [/ladder/, /trust boundaries/, /accessibility/, /anti-slop/]) {
+    assert.match(ctx, kept, "fast mode must not trim discipline");
+  }
+});
+
+test("a dispatched specialist inherits the active level", () => {
+  const home = mkdtempSync(join(tmpdir(), "praxis-mode-"));
+  const env = { CLAUDE_PLUGIN_ROOT: ROOT, HOME: home };
+  run("user-prompt-submit", { input: '{"prompt":"/praxis deep"}', env });
+  const ctx = context(run("subagent-start", { input: '{"agent_type":"engineer"}', env }));
+  assert.match(ctx, /active mode: deep/, "the dial must travel with the dispatch");
+  assert.match(ctx, /Deep mode/);
+  assert.doesNotMatch(ctx, /RUN CARD/, "a specialist still never renders Run Cards");
 });

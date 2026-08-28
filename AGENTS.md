@@ -69,6 +69,16 @@ the craft arrives as context, nothing gates the agent's actions. See `crafts/` f
 
 ---
 
+## Intensity
+
+`fast | full | deep`, default `full`, set with `/praxis:mode` and held in a flag file so it holds
+every turn rather than being re-judged. `fast` drops the Run Card and the ledger; `deep` adds
+mandatory research, explicit approach comparison, and an adversarial review pass. The dial governs
+ceremony only — crafts, the ladder, and the safety carve-outs are identical at every level. The
+active level travels into dispatched specialists.
+
+---
+
 ## Activation
 
 Praxis only lands if the host actually reaches for it. Passive Markdown does not reliably activate:

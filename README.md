@@ -39,15 +39,16 @@ The differentiation is measured, not claimed — see [`evals/`](evals/) (6 fixtu
 | | Count | What |
 |---|---|---|
 | **skills** | 34 | The taste layer (frontend-design, anti-slop design systems, data-viz, baseline-status…), the process spine (agentic-lifecycle doctrine, writing-plans, subagent-driven-development, spec-lifecycle, strategy-compare…), the vibe-coder UX (brainstorming clarify gate, scout, docs-seeker), and per-project memory (praxis-memory, learn-graduate, learn-prune). |
-| **agents** | 7 | design · engineer · backend · security · reviewer · researcher · orchestrator. |
-| **crafts** | 5 | Always-on taste disciplines: anti-slop · a11y-baseline · motion-discipline · minimalism · orchestration. Any skill `requires` them. |
+| **agents** | 8 | design · engineer · backend · platform · security · reviewer · researcher · orchestrator. |
+| **crafts** | 5 | Always-on taste disciplines: anti-slop · a11y-baseline · motion-discipline · minimalism · orchestration. An agent `requires` them and the `SubagentStart` hook injects them on dispatch. |
 | **pipelines** | 4 | Named phase sequences rendered as inspectable Run Cards. |
-| **commands** | 6 | `/praxis:design`, `/praxis:feature`, `/praxis:bug`, `/praxis:refactor`, `/praxis:loop`, `/praxis:learn`. |
+| **commands** | 7 | `/praxis:design`, `/praxis:feature`, `/praxis:bug`, `/praxis:refactor`, `/praxis:loop`, `/praxis:learn`, `/praxis:mode`. |
 
 ## How it works
 
 - **Descriptions are the router.** Skills activate on their `description` — the trigger surface a user actually types lives there.
 - **Three injection points, not one.** `SessionStart` primes the `using-praxis` router (and this project's learned memory, if any). `UserPromptSubmit` restates a compact operating contract every turn, so the method survives a long session instead of drifting back to inline-everything defaults. `SubagentStart` carries that contract into every dispatched specialist, plus the crafts that agent declares under `od.craft.requires` — session context is parent-thread only, so without it a delegated agent runs Praxis-unaware. All three only inject context; nothing blocks.
+- **You set the intensity, not the model.** `/praxis:mode fast | full | deep` — `fast` drops the Run Card and the ledger for a rename or a one-file fix, `deep` adds mandatory research, explicit approach comparison, and an adversarial review pass. The level lives in a flag file, so it holds every turn instead of being re-judged, and it travels into dispatched specialists. It changes the ceremony only: the crafts, the ladder, and the safety carve-outs are identical at every level.
 - **Scope the subagent injection** with `PRAXIS_SUBAGENT_MATCHER`, an extended regex tested against the subagent's `agent_type` (unanchored, case-insensitive: `design|engineer` matches either, `^engineer$` is exact). Unset injects into every subagent. An invalid regex, a missing `agent_type`, or a stalled payload all fail open — scoping never silently drops the method.
 - **Crafts are inherited taste.** `frontend-design` pulls `anti-slop` + `a11y-baseline` + `motion-discipline` and runs the Ship Gate before delivering.
 - **Execution is explicit.** For multi-file builds, ask for a plan + a subagent per task (or `/praxis:loop`) — that's how it stays out of inline-everything context rot.

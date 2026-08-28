@@ -43,21 +43,65 @@ praxis_memory_block() {
   printf '%s' "\\n\\n---\\nThis project has accumulated Praxis memory — apply these learned lessons and skills (detail in .praxis/memory/):\\n\\n$(escape_for_json "$raw")"
 }
 
-# The compact operating contract, single source of truth.
-#   praxis_contract orchestrator  -> full text
-#   praxis_contract subagent      -> orchestrator-only block stripped
+# --- Intensity dial -----------------------------------------------------------
 #
-# One file, filtered per target. Two files would drift; a dispatched specialist
-# must not be told to dispatch specialists of its own or to render Run Cards.
+# Trivial-vs-substantial was decided by the model on every turn. That is the one
+# call the person driving should own: a typo fix should not cost a Run Card, and
+# an architectural change should not be judged trivial because the diff is small.
+# Three levels, held in a file so the answer is the same every turn.
+
+PRAXIS_DEFAULT_MODE=full
+
+praxis_state_dir() {
+  if [ -n "${PLUGIN_DATA:-}" ]; then printf '%s' "$PLUGIN_DATA"
+  elif [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -z "${COPILOT_CLI:-}" ]; then printf '%s' "${HOME}/.claude"
+  else printf '%s' "${HOME}/.praxis"
+  fi
+}
+
+# An unreadable or unrecognized value is not an error worth surfacing mid-session:
+# fall back to the default so a corrupt flag can never leave a session unprimed.
+praxis_mode() {
+  local raw
+  raw=$(cat "$(praxis_state_dir)/.praxis-mode" 2>/dev/null | tr -d '[:space:]')
+  case "$raw" in
+    fast|full|deep) printf '%s' "$raw" ;;
+    *) printf '%s' "${PRAXIS_DEFAULT_MODE}" ;;
+  esac
+}
+
+praxis_set_mode() {
+  local mode="$1" dir; dir="$(praxis_state_dir)"
+  case "$mode" in fast|full|deep) ;; *) return 1 ;; esac
+  mkdir -p "$dir" 2>/dev/null || return 1
+  printf '%s' "$mode" > "${dir}/.praxis-mode" 2>/dev/null || return 1
+}
+
+# The compact operating contract, single source of truth.
+#
+#   praxis_contract <root> <target> <mode>
+#
+# One file, filtered by tag. A block wrapped in `<!-- only:a,b -->` survives when
+# any of its tags is active; the active set is the target, the mode, and the
+# composite `<target>-<mode>` for rules that need both. Two files would drift, and
+# a dispatched specialist must not be told to dispatch specialists of its own.
 praxis_contract() {
-  local root="$1" target="${2:-orchestrator}"
+  local root="$1" target="${2:-orchestrator}" mode="${3:-$PRAXIS_DEFAULT_MODE}"
   local file="${root}/hooks/context/contract.md"
   [ -f "$file" ] || return 0
-  if [ "$target" = "subagent" ]; then
-    awk '/<!-- orchestrator-only -->/{skip=1} /<!-- \/orchestrator-only -->/{skip=0;next} !skip' "$file"
-  else
-    grep -v '^<!-- /\?orchestrator-only -->$' "$file"
-  fi
+  awk -v active=",${target},${mode},${target}-${mode}," '
+    /^<!-- only:/ {
+      tags = $0
+      sub(/^<!-- only:/, "", tags); sub(/[ \t]*-->[ \t]*$/, "", tags)
+      keep = 0
+      n = split(tags, t, ",")
+      for (i = 1; i <= n; i++) { gsub(/[ \t]/, "", t[i]); if (index(active, "," t[i] ",")) keep = 1 }
+      skip = !keep
+      next
+    }
+    /^<!-- \/only -->[ \t]*$/ { skip = 0; next }
+    !skip
+  ' "$file"
 }
 
 # Emit context in the dialect the current host actually consumes.

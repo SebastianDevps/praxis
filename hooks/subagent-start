@@ -6,8 +6,8 @@
 # verify discipline, no research-first. The whole premise — a team of seniors
 # that self-orchestrates — needs the method to travel WITH the dispatch.
 #
-# Injects two things: the operating contract (subagent variant, orchestrator-only
-# sections stripped) and the crafts the dispatched agent declares under
+# Injects two things: the operating contract (subagent variant at the active
+# intensity, orchestrator-only sections stripped) and the crafts declared under
 # od.craft.requires. That frontmatter existed all along and nothing read it, so
 # "always-on crafts" was a claim in a README rather than a mechanism.
 #
@@ -24,7 +24,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 . "${SCRIPT_DIR}/lib.sh"
 PRAXIS_ROOT="$(praxis_root "$SCRIPT_DIR")"
 
-contract=$(praxis_contract "$PRAXIS_ROOT" subagent)
+mode="$(praxis_mode)"
+contract=$(praxis_contract "$PRAXIS_ROOT" subagent "$mode")
 [ -n "$contract" ] || exit 0
 
 # Resolving crafts needs agent_type, so stdin is read on every spawn. Safe here
@@ -57,5 +58,7 @@ task names them.
 ${crafts}"
 fi
 
-praxis_emit "SubagentStart" "$(escape_for_json "$contract")"
+praxis_emit "SubagentStart" "$(escape_for_json "PRAXIS — active mode: ${mode}
+
+${contract}")"
 exit 0

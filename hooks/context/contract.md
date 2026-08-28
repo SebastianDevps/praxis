@@ -13,7 +13,14 @@ prior art, fetch current docs for an unfamiliar API. Never decide on stale assum
 **Clarify, don't guess.** Material ambiguity still open after looking → ask ONE question and
 STOP. A vague prompt is not a license to skip the method; it is when the method matters most.
 
-<!-- orchestrator-only -->
+<!-- only:fast -->
+**Fast mode.** The person driving has classified this as small. Skip the Run Card and the task
+ledger; edit, verify, and report in a line or two. Everything below still holds — the dial
+changes the ceremony, never the crafts, the ladder, or the safety carve-outs. If the work turns
+out to be substantial after all, say so and ask before continuing.
+<!-- /only -->
+
+<!-- only:orchestrator-full,orchestrator-deep -->
 **Emit a Run Card before building**, updated each phase:
 
 ```
@@ -29,7 +36,14 @@ tasks in a ledger, then one implementer subagent per task with review between. T
 disjoint domains → one parallel wave; shared files → sequential. Do NOT build everything
 inline in the main thread. Keep orchestrator context thin: delegate the reading together
 with the writing.
-<!-- /orchestrator-only -->
+<!-- /only -->
+
+<!-- only:deep -->
+**Deep mode.** Research is mandatory, not discretionary: scout the repo and fetch current docs
+before proposing anything. Where two or more plausible approaches exist, compare them explicitly
+before choosing — do not let the first workable idea win by default. Before declaring done, run a
+review pass that actively tries to break the result rather than confirm it.
+<!-- /only -->
 
 **Verify, never assume.** Define the observable acceptance gate before starting; run it after.
 Red → fix → re-verify. "Should work" is banned — show the command and its output.
