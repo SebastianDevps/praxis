@@ -111,12 +111,26 @@ if (COMPARE) {
   // invocations per primed session, and say so when coverage moved — otherwise a
   // hook fix reads as a routing improvement it did not cause.
   const rate = (n, snap) => (snap.primed ? n / snap.primed : 0);
-  const cover = (snap) => (snap.usedPraxis ? 1 - snap.usedWithoutPriming / snap.usedPraxis : 1);
+  // Unknown, not 100%: a sample with nothing in it has no coverage to report, and
+  // returning 1 invented a jump that fired a false CONFOUND warning.
+  const cover = (snap) => (snap.usedPraxis ? 1 - snap.usedWithoutPriming / snap.usedPraxis : null);
+  const pct = (c) => (c === null ? "n/a" : `${(c * 100).toFixed(0)}%`);
 
   console.log(`\n${COMPARE}  →  now${SINCE ? ` (since ${SINCE})` : ""}`);
   console.log(`primed sessions:  ${before.primed} → ${now.primed}`);
-  console.log(`priming coverage: ${(cover(before) * 100).toFixed(0)}% → ${(cover(now) * 100).toFixed(0)}%` +
-    (Math.abs(cover(now) - cover(before)) > 0.05
+
+  // An empty sample is not a collapse to zero. Every rate would divide by zero and
+  // print "down" for resources nobody stopped using, which reads as a regression.
+  if (now.primed === 0) {
+    console.log(
+      `\nNo primed sessions after the cutoff${SINCE ? ` (${SINCE})` : ""} — nothing to compare yet.` +
+      `\nRe-run once the change has seen real use; until then the baseline stands alone.\n`,
+    );
+    process.exit(0);
+  }
+
+  console.log(`priming coverage: ${pct(cover(before))} → ${pct(cover(now))}` +
+    (cover(before) !== null && cover(now) !== null && Math.abs(cover(now) - cover(before)) > 0.05
       ? `   <-- CONFOUND: coverage moved, so part of any gain below is the hook firing more often, not better routing`
       : ""));
   if (!SINCE) console.log(`NOTE: no --since, so this sample still contains the baseline period.`);

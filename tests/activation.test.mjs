@@ -96,3 +96,39 @@ test("--compare warns when priming coverage moved, and when no cutoff was given"
   assert.match(out, /CONFOUND/, "a coverage jump must be flagged, not silently read as better routing");
   assert.match(out, /no --since/, "an overlapping sample must be called out");
 });
+
+// An empty "after" sample is the normal state right after a change lands, and the
+// first version of this comparison handled it badly: coverage fell back to 1 and
+// printed a fake 100% with a CONFOUND warning, while every resource read "down"
+// from dividing by zero — a regression report for a change nobody had used yet.
+test("--compare against an empty sample says so instead of reporting a collapse", () => {
+  const before = fixture({ "a.jsonl": { body: transcript({ skills: ["scout"] }), mtime: "2026-01-01T00:00:00Z" } });
+  const snap = join(mkdtempSync(join(tmpdir(), "praxis-snap-")), "baseline.json");
+  run(["--transcripts", before, "--save", snap]);
+
+  const out = run(["--transcripts", before, "--since", "2026-06-01", "--compare", snap]);
+  assert.match(out, /primed sessions:\s+1 → 0/);
+  assert.match(out, /nothing to compare yet/);
+  assert.doesNotMatch(out, /CONFOUND/, "no data cannot be a confound");
+  assert.doesNotMatch(out, /down/, "no data is not a regression");
+  assert.doesNotMatch(out, /100%/, "coverage over an empty sample is unknown, not perfect");
+});
+
+// Primed but unused is the common case, not an edge one: Praxis loads in every
+// session and most of them never invoke a resource. Coverage is undefined there —
+// there is nothing whose priming could have succeeded or failed — and reporting it
+// as 100% would manufacture a jump against a baseline that had a real gap.
+test("coverage is unknown, not perfect, when nothing was invoked", () => {
+  const before = fixture({
+    "a.jsonl": { body: transcript({ primed: false, skills: ["scout"] }) },
+    "b.jsonl": { body: transcript({ primed: true, skills: ["scout"] }) },
+  });
+  const snap = join(mkdtempSync(join(tmpdir(), "praxis-snap-")), "baseline.json");
+  run(["--transcripts", before, "--save", snap]);
+
+  // Primed, but invoking nothing.
+  const after = fixture({ "a.jsonl": { body: transcript({ primed: true }) } });
+  const out = run(["--transcripts", after, "--compare", snap]);
+  assert.match(out, /priming coverage:\s+50% → n\/a/);
+  assert.doesNotMatch(out, /CONFOUND/, "an unknown cannot be compared against a number");
+});
