@@ -200,3 +200,19 @@ test("a dispatched specialist inherits the active level", () => {
   assert.match(ctx, /Deep mode/);
   assert.doesNotMatch(ctx, /RUN CARD/, "a specialist still never renders Run Cards");
 });
+
+// A SessionStart matcher that omits a session type means every session of that
+// type runs unprimed. The Claude config omitted `resume` while the Codex sibling
+// included it, and the activation report showed most real sessions that used a
+// Praxis resource had never been primed.
+test("every host primes the same session types", () => {
+  const matchers = ["hooks/hooks.json", "hooks/hooks-codex.json"].map((f) => {
+    const cfg = JSON.parse(readFileSync(join(ROOT, f), "utf8"));
+    return [f, cfg.hooks.SessionStart[0].matcher];
+  });
+  for (const [file, matcher] of matchers) {
+    for (const kind of ["startup", "resume", "clear", "compact"]) {
+      assert.ok(matcher.includes(kind), `${file} never primes on "${kind}"`);
+    }
+  }
+});
