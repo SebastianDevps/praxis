@@ -21,5 +21,11 @@ jobs:
       - name: Validate resource frontmatter
         run: node scripts/validate-resources.mjs
 
+      - name: Rebuild generated Cursor rules
+        run: node scripts/build-cursor-crafts.mjs
+
+      - name: Fail if generated files were stale
+        run: git diff --exit-code
+
       - name: Run tests
         run: node --test tests/*.test.mjs

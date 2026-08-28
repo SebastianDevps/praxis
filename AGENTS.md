@@ -90,6 +90,15 @@ Three events, all pure context injection, all consistent with No Enforcement:
 Heavy content stays lazy-loaded. Scope the subagent injection with the `PRAXIS_SUBAGENT_MATCHER`
 regex; it fails open on a bad pattern, a missing `agent_type`, or a stalled payload.
 
+### B — Rule files (Cursor)
+
+Cursor cannot receive the per-turn or per-subagent layers through hooks: `beforeSubmitPrompt` and
+`subagentStart` return `user_message`, which is display-only text shown when a prompt is blocked or
+a subagent denied — it never reaches the model. Only `sessionStart` carries `additional_context`.
+On Cursor the rule files are therefore the mechanism: `.cursor/rules/praxis.mdc` (always-apply
+router) plus one generated `craft-*.mdc` per craft. They are generated from `crafts/` by
+`scripts/build-cursor-crafts.mjs` and CI fails when they drift.
+
 ### C — Portable fallback (any host)
 
 The hooks run on Claude Code and Codex. On other hosts — or to force priming everywhere — add this line

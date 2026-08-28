@@ -19,7 +19,7 @@ STOP. A vague prompt is not a license to skip the method; it is when the method 
 ```
 RUN CARD — <task>
 phase:    <current phase>
-approach: <inline | delegate → design / engineer / backend / security / reviewer / researcher>
+approach: <inline | delegate → design / engineer / backend / security / platform / researcher>
 research: <what you checked>
 verify:   <the acceptance gate — how you will prove it is right>
 ```

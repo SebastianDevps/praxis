@@ -82,11 +82,20 @@ so it cannot pass vacuously:
 
 - **references** — every specialist named in a routing table, Run Card, or `od.craft.requires` resolves to a real file on disk. This is what caught the orchestrator routing to `platform` and `incident-responder`, neither of which ever existed.
 - **hooks** — each hook emits valid JSON in each host's dialect, the subagent variant strips orchestrator-only sections, crafts resolve per agent, and a host-supplied `agent_type` cannot traverse out of `agents/`. This caught a shadowed `PLUGIN_ROOT` that made every host look like Codex.
+- **cursor** — the generated `.cursor/rules/craft-*.mdc` files match `crafts/` and every craft has an explicit Cursor scope.
 - **invariants** — the load-bearing phrases survive in every priming surface and every craft. Byte-equality is wrong here (the Cursor adapter legitimately names Cursor's tools), so the gate asserts the *guarantee*, not the text: reword the Inter ban or drop a safety carve-out and it fails.
 
 ## Cross-platform
 
 One shared skill set, thin per-host adapters — the same skills run on **Claude Code, Codex, Cursor, Gemini CLI, and Copilot**. Skills speak in *actions* ("dispatch a subagent", "invoke a skill"); each host's `skills/using-praxis/references/<host>-tools.md` resolves them to that host's real tools. Priming is per-host: lifecycle hooks on Claude/Codex (all three events) and Cursor/Copilot (SessionStart), a `GEMINI.md` `@import` on Gemini, and an always-apply `.cursor/rules/praxis.mdc` fallback. Per-project memory injects on every hooked host.
+
+> **Cursor is structurally limited to one injection point.** Its `beforeSubmitPrompt` and
+> `subagentStart` hooks return `user_message`, which is display-only text shown when a prompt is
+> blocked or a subagent denied — it never reaches the model. Only `sessionStart` carries
+> `additional_context`. So on Cursor the per-turn and per-craft layers ship as rule files instead:
+> `.cursor/rules/praxis.mdc` (always-apply router) plus one generated `craft-*.mdc` per craft,
+> glob-scoped for the visual ones. Regenerate with `node scripts/build-cursor-crafts.mjs`; CI fails
+> if they drift from `crafts/`.
 
 > Each adapter is wired; smoke-test it on your host (a vague prompt should prime + activate). Codex needs `multi_agent = true` in `~/.codex/config.toml` for subagent dispatch.
 

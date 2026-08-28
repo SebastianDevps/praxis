@@ -68,6 +68,7 @@ The orchestrator dispatches; it does not implement. Route by domain:
 | Security / auth | `security` |
 | Code review | `reviewer` |
 | Research | `researcher` |
+| CI / containers / test infra | `platform` |
 
 Harness rules (see `orchestration` craft for full mechanics):
 
