@@ -33,3 +33,21 @@ is what exposed the `resume` matcher gap.
 - **Silence has two causes** and this cannot separate them: the task never arose, or the task arose
   and the description failed to match. The second is a routing bug; the first is nothing. Read a
   silent skill against sessions where its trigger plausibly applied.
+
+---
+
+# Description audit
+
+```bash
+node evals/activation/descriptions.mjs            # trigger matches vs. actual invocations
+node evals/activation/descriptions.mjs --show web-testing   # inspect the matched prompts
+```
+
+Separates the two causes of silence the activation report cannot tell apart: the task never arose,
+or the task arose and the description failed to route. Only the second is a bug.
+
+**Heuristic, not proof.** Keyword overlap is not intent. Matching is Unicode word-boundary (an
+earlier substring version reported `ad-creative` at 986 hits — "ad" inside "ciudad") and compaction
+summaries are excluded (they quote the whole session, so every trigger matched at once). A
+single-word trigger still over-matches; those rows are marked low precision. Always inspect with
+`--show` before believing a count.
