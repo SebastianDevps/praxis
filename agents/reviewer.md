@@ -2,6 +2,8 @@
 name: reviewer
 description: Read-only code review. Reports findings by severity. Only flags real issues.
 kind: agent
+skills:
+  - design-review
 od:
   craft:
     requires:

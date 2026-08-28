@@ -249,18 +249,25 @@ for (const agent of ["design", "orchestrator", "engineer"]) {
     const declared = declaredSkills(agent);
     assert.ok(declared.length > 0, `${agent} declares no skills — update this test if that is intended`);
     const ctx = context(claude("subagent-start", { input: JSON.stringify({ agent_type: `praxis:${agent}` }) }));
+    // Scope the leak check to the skills section: crafts ARE injected in full and
+    // legitimately share generic heading names with skills ("## Color" lives in
+    // both the anti-slop craft and the data-visualization skill).
+    const section = ctx.split(/^# Skills declared for/m)[1];
+    assert.ok(section, `${agent} received no skills section`);
 
     for (const skill of declared) {
-      assert.match(ctx, new RegExp(`\`${skill}\``), `pointer missing for ${skill}`);
+      assert.match(section, new RegExp(`\`${skill}\``), `pointer missing for ${skill}`);
       for (const heading of skillParts(skill).headings) {
-        assert.ok(!ctx.includes(`## ${heading}`), `${skill} body leaked into the dispatch: "## ${heading}"`);
+        assert.ok(!section.includes(`## ${heading}`), `${skill} body leaked into the dispatch: "## ${heading}"`);
       }
     }
   });
 }
 
-test("an agent that declares no skills still receives contract and crafts", () => {
-  const ctx = context(claude("subagent-start", { input: '{"agent_type":"reviewer"}' }));
+test("an agent with no declaration still receives the contract", () => {
+  // A stock host agent, not a Praxis one: every Praxis agent now declares skills,
+  // so the undeclared case is the one that comes from outside the plugin.
+  const ctx = context(claude("subagent-start", { input: '{"agent_type":"Explore"}' }));
   assert.match(ctx, /ladder/);
   assert.doesNotMatch(ctx, /Skills declared for/, "no declaration means no empty section");
 });

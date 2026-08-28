@@ -7,6 +7,7 @@ skills:
   - baseline-status
   - apple-hig
   - design-review
+  - data-visualization
 od:
   craft:
     requires:

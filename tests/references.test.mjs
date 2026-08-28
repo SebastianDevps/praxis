@@ -95,3 +95,43 @@ test("every craft on disk is documented in AGENTS.md", () => {
   const undocumented = CRAFTS.filter((c) => !agentsMd.includes(`\`${c}\``));
   assert.deepEqual(undocumented, [], `crafts exist but AGENTS.md never mentions them: ${undocumented}`);
 });
+
+// The router's route table pairs a specialist with the discipline skill for that
+// row. If the agent does not declare that skill, the dispatch never carries it —
+// the table promises a pairing the frontmatter does not deliver. This is what
+// left `reviewer` paired with `design-review` in two route tables while
+// declaring no skills at all.
+test("every agent+skill pairing in the route table is declared by that agent", () => {
+  const declaredSkills = (agent) => {
+    const fm = read(`agents/${agent}.md`).split("---")[1] ?? "";
+    const block = fm.split(/^skills:\s*$/m)[1];
+    if (!block) return [];
+    const out = [];
+    let started = false;
+    for (const line of block.split("\n")) {
+      const m = line.match(/^\s*-\s+(\S+)/);
+      if (m) { out.push(m[1]); started = true; continue; }
+      if (started || line.trim() !== "") break;
+    }
+    return out;
+  };
+
+  const broken = [];
+  let pairs = 0;
+  for (const file of ["skills/using-praxis/SKILL.md", ".cursor/rules/praxis.mdc"]) {
+    let inTable = false;
+    for (const line of read(file).split("\n")) {
+      if (!line.trim().startsWith("|")) { inTable = false; continue; }
+      if (line.includes("Specialist")) { inTable = true; continue; }
+      if (!inTable) continue;
+      const cells = line.split("|").map((c) => c.trim());
+      const agent = cells.find((c) => /^`[a-z-]+`$/.test(c) && AGENTS.has(c.slice(1, -1)))?.slice(1, -1);
+      const skill = cells.slice(-2)[0]?.match(/^`([a-z-]+)`$/)?.[1];
+      if (!agent || !skill || !SKILLS.has(skill)) continue;
+      pairs++;
+      if (!declaredSkills(agent).includes(skill)) broken.push(`${file}: ${agent} is paired with ${skill} but does not declare it`);
+    }
+  }
+  assert.ok(pairs >= 4, `only ${pairs} pairings parsed — the table format probably changed`);
+  assert.deepEqual(broken, []);
+});
