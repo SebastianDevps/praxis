@@ -2,3 +2,6 @@ node_modules
 dist
 *.tsbuildinfo
 .DS_Store
+
+# Preserved eval workspaces — kept locally for --rescore, never committed.
+evals/arms/runs/
