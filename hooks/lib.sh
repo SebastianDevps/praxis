@@ -184,3 +184,49 @@ $(praxis_agent_craft_names "$file")
 EOF
   printf '%s' "$out"
 }
+
+# The skills a dispatched agent declares, as Level-1 pointers: name + description,
+# never the body. See docs/context-delivery.md — Anthropic's published Level-1 cost
+# is ~100 tokens per skill against under 5k for a body, and measured here injecting
+# bodies costs 4-7x to collapse two levels the host already separates.
+#
+# The value is not only the tokens. Unassisted, the model matches a prompt against
+# all 34 skills; a specialist matches against the 1-5 its role declares, already
+# filtered by domain. That narrowing is what the activation audit says was missing.
+praxis_agent_skills() {
+  local root="$1" agent="${2##*:}"
+  [ -n "$agent" ] || return 0
+  case "$agent" in */*|*..*) return 0 ;; esac
+  local file="${root}/agents/${agent}.md"
+  [ -f "$file" ] || return 0
+
+  local names out="" skill desc
+  names=$(awk '
+    NR == 1 && /^---[ \t]*$/ { fm = 1; next }
+    fm && /^---[ \t]*$/       { exit }
+    fm && /^skills:[ \t]*$/   { want = 1; next }
+    want && /^[[:space:]]*-[[:space:]]+/ { sub(/^[[:space:]]*-[[:space:]]+/, ""); print; next }
+    want { want = 0 }
+  ' "$file")
+
+  while IFS= read -r skill; do
+    [ -n "$skill" ] || continue
+    case "$skill" in */*|*..*) continue ;; esac
+    local sf="${root}/skills/${skill}/SKILL.md"
+    [ -f "$sf" ] || continue
+    # description may be a single line or a folded block; take it through to the
+    # next top-level key so a wrapped description is not truncated mid-sentence.
+    desc=$(awk '
+      NR == 1 && /^---[ \t]*$/ { fm = 1; next }
+      fm && /^---[ \t]*$/      { exit }
+      fm && /^description:/    { sub(/^description:[ \t]*>?-?[ \t]*/, ""); if (length($0)) print; want = 1; next }
+      want && /^[[:space:]]+[^[:space:]]/ { sub(/^[[:space:]]+/, " "); printf "%s", $0; next }
+      want { exit }
+    ' "$sf" | tr '\n' ' ' | sed 's/[[:space:]]\{1,\}/ /g; s/^ //; s/ $//')
+    out="${out}- \`${skill}\` — ${desc}
+"
+  done <<EOF
+$names
+EOF
+  printf '%s' "$out"
+}

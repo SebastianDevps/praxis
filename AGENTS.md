@@ -52,7 +52,9 @@ Run Cards are the primary transparency mechanism — not logs, not dashboards.
 
 Crafts are always-on disciplines. An agent declares them under `od.craft.requires`, and the
 `SubagentStart` hook resolves that declaration and injects the craft bodies when the agent is
-dispatched — inherited taste, delivered mechanically rather than hoped for. Still not enforcement:
+dispatched. Skills go the other way: an agent declares them under `skills:` and the same hook injects
+only name and description, because a craft always applies and a skill applies sometimes. That split
+is progressive disclosure — see `docs/context-delivery.md` — inherited taste, delivered mechanically rather than hoped for. Still not enforcement:
 the craft arrives as context, nothing gates the agent's actions. See `crafts/` for full definitions.
 
 ---

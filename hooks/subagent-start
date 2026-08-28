@@ -58,6 +58,25 @@ task names them.
 ${crafts}"
 fi
 
+# Level-1 pointers only. The framing is load-bearing: a specialist matching a
+# task against the 1-5 skills its role declares is a far easier decision than
+# matching against all 34, and "declared for your role" says these were chosen
+# for this work — not that they merely exist somewhere.
+skills=$(praxis_agent_skills "$PRAXIS_ROOT" "$agent_type")
+if [ -n "$skills" ]; then
+  contract="${contract}
+
+---
+
+# Skills declared for \`${agent_type}\`
+
+Your role declares these. Invoke the one that fits before working from memory —
+each carries the non-obvious delta beyond what you already know. Listed by name
+and trigger only; invoking one loads its full instructions.
+
+${skills}"
+fi
+
 praxis_emit "SubagentStart" "$(escape_for_json "PRAXIS — active mode: ${mode}
 
 ${contract}")"

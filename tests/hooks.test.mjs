@@ -216,3 +216,56 @@ test("every host primes the same session types", () => {
     }
   }
 });
+
+// Skills reach a specialist as Level-1 pointers: name and description, never the
+// body. See docs/context-delivery.md — bodies cost 4-7x here and collapse two
+// levels the host already separates. The test is generic rather than keyed to a
+// hand-picked phrase: every declared skill's description must arrive and its
+// body's own section headings must not.
+function declaredSkills(agent) {
+  const fm = readFileSync(join(ROOT, "agents", `${agent}.md`), "utf8").split("---")[1] ?? "";
+  const block = fm.split(/^skills:\s*$/m)[1];
+  if (!block) return [];
+  const out = [];
+  let started = false;
+  for (const line of block.split("\n")) {
+    const m = line.match(/^\s*-\s+(\S+)/);
+    if (m) { out.push(m[1]); started = true; continue; }
+    // The split leaves a leading empty string before the first item; only a
+    // non-blank line that is not a list item ends the block.
+    if (started || line.trim() !== "") break;
+  }
+  return out;
+}
+const skillParts = (skill) => {
+  const raw = readFileSync(join(ROOT, "skills", skill, "SKILL.md"), "utf8");
+  const [, fm = "", ...rest] = raw.split(/^---[ \t]*$/m);
+  const body = rest.join("---");
+  return { fm, headings: [...body.matchAll(/^##\s+(.+)$/gm)].map((m) => m[1].trim()) };
+};
+
+for (const agent of ["design", "orchestrator", "engineer"]) {
+  test(`${agent} receives its declared skills as pointers, not bodies`, () => {
+    const declared = declaredSkills(agent);
+    assert.ok(declared.length > 0, `${agent} declares no skills — update this test if that is intended`);
+    const ctx = context(claude("subagent-start", { input: JSON.stringify({ agent_type: `praxis:${agent}` }) }));
+
+    for (const skill of declared) {
+      assert.match(ctx, new RegExp(`\`${skill}\``), `pointer missing for ${skill}`);
+      for (const heading of skillParts(skill).headings) {
+        assert.ok(!ctx.includes(`## ${heading}`), `${skill} body leaked into the dispatch: "## ${heading}"`);
+      }
+    }
+  });
+}
+
+test("an agent that declares no skills still receives contract and crafts", () => {
+  const ctx = context(claude("subagent-start", { input: '{"agent_type":"reviewer"}' }));
+  assert.match(ctx, /ladder/);
+  assert.doesNotMatch(ctx, /Skills declared for/, "no declaration means no empty section");
+});
+
+test("the skill pointer path rejects a traversing agent_type", () => {
+  const ctx = context(claude("subagent-start", { input: '{"agent_type":"../agents/design"}' }));
+  assert.doesNotMatch(ctx, /Skills declared for/);
+});

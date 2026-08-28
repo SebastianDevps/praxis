@@ -71,11 +71,21 @@ test("every craft an agent requires exists on disk", () => {
   for (const agent of AGENTS) {
     const block = (read(`agents/${agent}.md`).split("---")[1] ?? "").split(/^\s*requires:\s*$/m)[1];
     if (!block) continue;
+    let started = false;
+    let seen = 0;
     for (const line of block.split("\n")) {
       const m = line.match(/^\s*-\s+(\S+)/);
-      if (!m) break;
-      if (!CRAFTS.includes(m[1])) missing.push(`${agent} → ${m[1]}`);
+      if (m) {
+        started = true; seen++;
+        if (!CRAFTS.includes(m[1])) missing.push(`${agent} → ${m[1]}`);
+        continue;
+      }
+      // The split leaves a leading empty string before the first item; only a
+      // non-blank line that is not a list item ends the block. Breaking on the
+      // empty one made this gate read zero requirements and pass vacuously.
+      if (started || line.trim() !== "") break;
     }
+    assert.ok(seen > 0, `${agent} declares requires: but no craft was parsed`);
   }
   assert.deepEqual(missing, [], `agents require nonexistent crafts: ${missing}`);
 });
