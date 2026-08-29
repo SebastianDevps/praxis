@@ -191,6 +191,59 @@ test("the dial changes ceremony, never the crafts or the safety carve-outs", () 
   }
 });
 
+// The approval handshake. `full` and `deep` stop when the shape of the work is unclear; `fast`
+// has no ledger to gate, so it has nothing to stop for. The three tests below pin the parts of
+// that contract that a well-meaning edit would quietly undo.
+test("the approval handshake reaches full and deep, and never fast", () => {
+  const { first } = withHome("build the thing");
+  assert.match(context(first), /Needs your decision/, "full lost the halt state");
+
+  const deep = withHome("noop");
+  deep.call("/praxis:mode deep");
+  assert.match(context(deep.call("design the schema")), /Needs your decision/, "deep lost the halt state");
+
+  const fast = withHome("noop");
+  fast.call("/praxis fast");
+  assert.doesNotMatch(
+    context(fast.call("rename it")),
+    /Needs your decision/,
+    "fast has no ledger to gate — offering to stop for approval is ceremony it exists to drop",
+  );
+});
+
+test("no mode tells the agent to escalate ambiguity into ceremony", () => {
+  // The line this replaces — "When unsure, treat it as substantial" — was injected unconditionally,
+  // so `fast` received both it and "the person driving has classified this as small". Ambiguity
+  // belongs in a question to the user, not in a heavier process chosen without them.
+  for (const level of ["fast", "full", "deep"]) {
+    const { call } = withHome("noop");
+    call(`/praxis ${level}`);
+    const ctx = context(call("do the thing"));
+    assert.doesNotMatch(ctx, /treat it as substantial/, `${level} still escalates ambiguity into ceremony`);
+    assert.match(ctx, /ask ONE question and\s+STOP/, `${level} lost the clarify rule that replaced it`);
+  }
+});
+
+test("a question is answerable at every level without entering the process", () => {
+  for (const level of ["fast", "full", "deep"]) {
+    const { call } = withHome("noop");
+    call(`/praxis ${level}`);
+    assert.match(
+      context(call("how does routing work here?")),
+      /Answer first/,
+      `${level} has no exit for a question — the dial scales ceremony, and a question has none`,
+    );
+  }
+
+  // …and it is orchestrator-only. A dispatched specialist receives a task, never a bare question,
+  // so the line would be paid for on every dispatch and usable on none.
+  assert.doesNotMatch(
+    context(claude("subagent-start", { input: '{"agent_type":"engineer"}' })),
+    /Answer first/,
+    "a specialist is dispatched with work, not with a question — this line is dead weight there",
+  );
+});
+
 test("a dispatched specialist inherits the active level", () => {
   const home = mkdtempSync(join(tmpdir(), "praxis-mode-"));
   const env = { CLAUDE_PLUGIN_ROOT: ROOT, HOME: home };

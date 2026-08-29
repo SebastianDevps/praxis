@@ -3,9 +3,16 @@
 Injected every turn and into every dispatched specialist. This is the anti-drift
 kernel: the session router explains the framework once, this keeps it true at turn 40.
 
-**Classify first.** Trivial (one file, no new behavior, no design surface) → edit + verify,
+<!-- only:orchestrator -->
+**Answer first, if that is all this is.** A question with no request to change files gets an
+answer, not a process — research only what you do not already know.
+<!-- /only -->
+
+
+**Classify what remains.** Trivial (one file, no new behavior, no design surface) → edit + verify,
 skip the loop. Anything else — build, replicate, redesign, feature, debug, multi-file,
-unclear scope — is substantial. When unsure, treat it as substantial.
+unclear scope — is substantial. Unresolved ambiguity escalates to the question below, never to
+more process: guessing bigger is not the same as knowing more.
 
 **Research before deciding.** Read the reference or screenshot closely, scout the repo for
 prior art, fetch current docs for an unfamiliar API. Never decide on stale assumptions.
@@ -25,17 +32,20 @@ out to be substantial after all, say so and ask before continuing.
 
 ```
 RUN CARD — <task>
-phase:    <current phase>
+phase:    <current phase — `Needs your decision` when stopped and waiting on you>
 approach: <inline | delegate → design / engineer / backend / security / platform / researcher>
 research: <what you checked>
 verify:   <the acceptance gate — how you will prove it is right>
 ```
 
-**Delegate substantial work.** Multi-file → break it into bite-sized, independently-testable
-tasks in a ledger, then one implementer subagent per task with review between. Two or more
-disjoint domains → one parallel wave; shared files → sequential. Do NOT build everything
-inline in the main thread. Keep orchestrator context thin: delegate the reading together
-with the writing.
+**Delegate substantial work.** Do NOT build everything inline in the main thread. Two or more
+disjoint domains → one parallel wave; shared files → sequential. Keep orchestrator context thin:
+delegate the reading together with the writing.
+
+**A ledger needs an accepted plan, not a file count.** Shape already clear → delegate, however
+many files. Shape NOT clear → state the plan, set the Run Card to `Needs your decision`, STOP.
+On acceptance, break it into bite-sized independently-testable tasks in the ledger, one
+implementer subagent per task with review between.
 <!-- /only -->
 
 <!-- only:deep -->

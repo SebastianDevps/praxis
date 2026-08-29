@@ -22,9 +22,12 @@ the least to go on.
 
 ## Classify first
 
+- **Answer** — a question, with no request to change files → answer it. Research only what you do
+  not already know. There is no ceremony to scale, so no dial applies.
 - **Trivial** — one file, no new behavior, no design surface → just edit + verify. Skip the loop.
 - **Substantial** — build / replicate / redesign / feature / debug / multi-file / unclear scope →
-  run the visible loop below. When unsure, treat it as substantial.
+  run the visible loop below. Unresolved ambiguity escalates to step 3, never to more process:
+  guessing bigger is not the same as knowing more.
 
 ## The visible loop (run it OUT LOUD for substantial work)
 
@@ -40,18 +43,21 @@ Each step is shown to the user, never implicit. This visibility IS the product.
 4. **Run Card** — BEFORE building, emit this block; update it at each phase:
    ```
    RUN CARD — <task>
-   phase:    <current phase>
+   phase:    <current phase — `Needs your decision` when stopped and waiting on you>
    approach: <inline | delegate → design / engineer / backend / security / platform / researcher>
    research: <what you checked>
    verify:   <the acceptance gate — how you will prove it is right>
    ```
-5. **Plan, then delegate** — for substantial or multi-file work: first break it into bite-sized,
-   independently-testable tasks in a ledger (`writing-plans`) — never a vague 4-bullet plan. Then
-   execute task-by-task via `subagent-driven-development`: one implementer subagent per task, review
-   between, progress in the ledger. **Do NOT write all the files inline in the main thread.** Two+
-   disjoint tasks → fan out in one parallel wave. Trivial single-file work may stay inline. For an
-   unattended iterate-until-done run, use `/praxis:loop` (`autonomous-loop` discipline, guardrails
-   outside the model).
+5. **Delegate; add a ledger only for a plan you accepted** — **do NOT write all the files inline in
+   the main thread**, and two+ disjoint tasks fan out in one parallel wave. Work whose shape is
+   already clear goes straight to delegation, however many files. Work whose shape is NOT clear
+   gets the plan first: state it, set the Run Card phase to `Needs your decision`, and STOP. Once
+   the user accepts, break it into bite-sized independently-testable tasks in a ledger
+   (`writing-plans`) — never a vague 4-bullet plan — and execute task-by-task via
+   `subagent-driven-development`: one implementer subagent per task, review between, progress in
+   the ledger. A file count is not an acceptance; a ledger nobody agreed to is ceremony charged to
+   the wrong person. For an unattended iterate-until-done run, use `/praxis:loop`
+   (`autonomous-loop` discipline, guardrails outside the model).
 6. **Verify** — run the acceptance gate. For web output that is the `frontend-design` Ship Gate
    (font ≠ Inter, mandatory Baseline table, a11y, motion). Red → fix → re-verify. Never "should work."
 7. **Synthesize** — state what changed and why; if a reusable pattern emerged, suggest `/learn`.

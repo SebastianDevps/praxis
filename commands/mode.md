@@ -27,11 +27,19 @@ to be substantial, the contract instructs the agent to say so and ask before con
 
 ## When to reach for each
 
-| Level | Use it for |
-|---|---|
-| `fast` | a rename, a copy fix, a config tweak, a one-file bug with an obvious cause |
-| `full` | ordinary feature work, anything multi-file, anything with a design surface |
-| `deep` | an architectural decision, a security-sensitive path, work you will not revisit soon |
+| Level | Use it for | Stops for your approval |
+|---|---|---|
+| `fast` | a rename, a copy fix, a config tweak, a one-file bug with an obvious cause | no |
+| `full` | ordinary feature work, anything multi-file, anything with a design surface | when the shape is unclear |
+| `deep` | an architectural decision, a security-sensitive path, work you will not revisit soon | when the shape is unclear |
+
+A question is answered at every level without entering any of this — the dial scales ceremony, and
+a question has none to scale.
+
+The approval column is the handshake: at `full` and `deep`, work whose shape is not yet clear gets
+a plan stated and the Run Card set to `Needs your decision`, then STOPS. Work whose shape IS clear
+proceeds without asking, however many files it touches. **A file count is not a reason to stop and
+never was** — being unsure what to build is.
 
 Setting `deep` on everything is the same mistake as setting `fast` on everything: the dial only
 helps if it tracks the actual stakes.
