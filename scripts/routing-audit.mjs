@@ -35,8 +35,14 @@ export const FLOORS = {
   top3: 68,           // …or at least in the top three
   routedTop3: 76,     // a near-miss prompt reaches its declared sibling
   maxOwnerAtOne: 16,  // a near-miss must NOT be won by the skill it was written against
-  maxCollision: 0.62, // two descriptions this alike cannot be told apart by a reader either
+  maxCollision: 0.38, // two descriptions this alike cannot be told apart by a reader either
 };
+
+// maxCollision was 0.62, set against a number the doctrine inflated by design: a `NOT x (that is
+// \`y\`)` clause puts y's vocabulary inside x's document, so the pair scores as MORE similar the
+// harder we work to distinguish them. Measured 2026-08-29 and re-based onto the boundary-free
+// text (worst pair 0.57 → 0.32, floor 0.38). This is a ratchet DOWN because the instrument was
+// wrong, not because the corpus improved — the descriptions on disk did not change.
 
 // WHY rank-1 SITS NEAR 54 AND NOT 90 — read before "fixing" it.
 //
@@ -105,21 +111,48 @@ function triggers(fm) {
   return out;
 }
 
+// A description's boundary clauses — `NOT critiquing … (that is \`design-review\`)` — are the
+// discriminative half of the doctrine, and they are ALSO the reason the collision number was wrong.
+//
+// The clause names the sibling. Under a bag-of-words ranker that injects the sibling's vocabulary
+// into this document, so the two vectors point at each other and similarity RISES. Measured
+// 2026-08-29: learn-prune ↔ praxis-memory 0.565 → 0.324 with the clauses removed;
+// autonomous-loop ↔ subagent-driven-development 0.440 → 0.130. The construct meant to reduce
+// collision was inflating the metric that watches for it.
+//
+// So the two numbers are computed on two texts. Ranking uses the FULL description, because that is
+// what a real router reads. Collision uses the boundary-free one, because the question it asks —
+// "are these two skills describing the same territory?" — is about the positive claim, not about
+// which siblings each one disclaims. Gating the raw number would ratchet against our own doctrine.
+//
+// The clauses are always trailing, so the rule is "from the first standalone NOT to the end".
+// Asserted in tests/routing.test.mjs against a known pair: a stripper that silently returns its
+// input unchanged would restore the exact bug this exists to remove.
+export function stripBoundaries(description) {
+  return description.replace(/\s*\bNOT\b.*$/s, "").trim();
+}
+
 export function loadCorpus(root = ROOT) {
   const out = [];
+  const entry = (id, kind, description, trig = []) => ({
+    id,
+    kind,
+    text: [id.replace(/-/g, " "), description, ...trig].join(" "),
+    plain: [id.replace(/-/g, " "), stripBoundaries(description), ...trig].join(" "),
+  });
   const skillsDir = join(root, "skills");
   for (const id of readdirSync(skillsDir).sort()) {
     const file = join(skillsDir, id, "SKILL.md");
     if (!existsSync(file)) continue;
     const fm = frontmatter(readFileSync(file, "utf8"));
-    out.push({ id, kind: "skill", text: [id.replace(/-/g, " "), field(fm, "description"), ...triggers(fm)].join(" ") });
+    out.push(entry(id, "skill", field(fm, "description"), triggers(fm)));
   }
   const agentsDir = join(root, "agents");
   for (const f of readdirSync(agentsDir).sort()) {
     if (!f.endsWith(".md")) continue;
     const id = f.slice(0, -3);
     const fm = frontmatter(readFileSync(join(agentsDir, f), "utf8"));
-    out.push({ id, kind: "agent", text: [id.replace(/-/g, " "), field(fm, "description")].join(" ") });
+    out.push(entry(id, "agent", field(fm, "description")));
   }
   return out;
 }
@@ -158,8 +191,10 @@ export function loadCases(root = ROOT) {
 }
 
 // ── ranking ───────────────────────────────────────────────────────────────────────────────────
-export function buildRanker(corpus) {
-  const docs = corpus.map((c) => tokenize(c.text));
+// `field` selects which text is ranked: "text" (the full description, what a router reads) or
+// "plain" (boundary clauses stripped, used only for the collision metric — see stripBoundaries).
+export function buildRanker(corpus, field = "text") {
+  const docs = corpus.map((c) => tokenize(c[field] ?? c.text));
   const df = new Map();
   for (const doc of docs) for (const w of new Set(doc)) df.set(w, (df.get(w) ?? 0) + 1);
   const N = docs.length;
@@ -233,11 +268,19 @@ export function audit(root = ROOT) {
     if (top.slice(0, 3).includes(c.routeTo)) routedTop3++;
   }
 
+  // Two collision readings over the same pairs. `collisions` (boundary-free) is the gated one;
+  // `inflated` is reported beside it so the gap stays visible rather than becoming folklore.
+  const plainRanker = buildRanker(corpus, "plain");
   const collisions = [];
   for (let i = 0; i < corpus.length; i++)
     for (let j = i + 1; j < corpus.length; j++)
-      collisions.push({ pair: [corpus[i].id, corpus[j].id], score: ranker.similarity(i, j) });
+      collisions.push({
+        pair: [corpus[i].id, corpus[j].id],
+        score: plainRanker.similarity(i, j),
+        inflated: ranker.similarity(i, j),
+      });
   collisions.sort((a, b) => b.score - a.score);
+  const worstInflated = Math.max(0, ...collisions.map((c) => c.inflated));
 
   const pct = (n, d) => (d === 0 ? 0 : (n / d) * 100);
   return {
@@ -252,6 +295,7 @@ export function audit(root = ROOT) {
     routable,
     deadRoutes,
     collisions: collisions.slice(0, 10),
+    worstInflated,
     gaps: [...gaps.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10),
   };
 }
@@ -268,8 +312,11 @@ function main() {
     console.log(`\nDEAD ROUTES — route_to names a resource that does not exist:`);
     for (const d of r.deadRoutes) console.log(`  ${d}`);
   }
-  console.log(`\nhighest description overlaps:`);
-  for (const c of r.collisions.slice(0, 6)) console.log(`  ${c.score.toFixed(2)}  ${c.pair[0]} ↔ ${c.pair[1]}`);
+  console.log(`\nhighest description overlaps (boundary clauses excluded — the gated number):`);
+  for (const c of r.collisions.slice(0, 6))
+    console.log(`  ${c.score.toFixed(2)}  ${c.pair[0]} ↔ ${c.pair[1]}   (${c.inflated.toFixed(2)} with NOT clauses)`);
+  console.log(`  worst with NOT clauses included: ${r.worstInflated.toFixed(2)} — not gated; naming a sibling`);
+  console.log(`  makes two descriptions look alike to a bag-of-words ranker. See stripBoundaries.`);
   if (r.gaps.length) console.log(`\nown prompts outside top-5: ${r.gaps.map(([k, v]) => `${k} (${v})`).join(", ")}`);
 
   const worst = r.collisions[0]?.score ?? 0;

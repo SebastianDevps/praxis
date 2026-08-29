@@ -26,6 +26,20 @@ is `Y`" tells the router where to go instead, and `tests/routing.test.mjs` check
 `scripts/routing-audit.mjs` measures the result. Two descriptions above the collision ceiling
 cannot be told apart by a reader either.
 
+**The measurement has a trap, and it is worth understanding before trusting the number.** Naming
+the sibling puts the sibling's vocabulary inside this description. A bag-of-words ranker sees the
+shared words and scores the two as *more* alike — so the harder a pair works to separate itself,
+the worse it looks. Measured 2026-08-29: `learn-prune` ↔ `praxis-memory` reads 0.57 with the
+boundary clauses and 0.32 without; `autonomous-loop` ↔ `subagent-driven-development` 0.44 → 0.13.
+The collision ceiling was set against the inflated reading and gated against the doctrine it was
+meant to enforce.
+
+The audit now strips boundary clauses before measuring collision and ranks on the full text, and
+prints both readings. Do not read the fix as "the boundaries were wrong" — an LLM router, which is
+what actually reads these, resolves `NOT x (that is \`y\`)` in a way a lexical proxy cannot
+represent. What was wrong was the instrument. The general form: **when a metric moves in the
+direction opposite to the practice it scores, suspect the metric before the practice.**
+
 ---
 
 ## 2. Length is a cost, never a credit

@@ -13,7 +13,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { loadCorpus, loadCases, buildRanker, audit, FLOORS } from "../scripts/routing-audit.mjs";
+import { loadCorpus, loadCases, buildRanker, audit, FLOORS, stripBoundaries } from "../scripts/routing-audit.mjs";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 const SKILLS = readdirSync(join(ROOT, "skills"), { withFileTypes: true })
@@ -119,6 +119,42 @@ test("loadCorpus reads descriptions AND triggers, not just names", () => {
     /accumulated project knowledge/,
     "od.triggers are not reaching the corpus — the parser is silently returning nothing",
   );
+});
+
+test("stripBoundaries removes the NOT clause and keeps the positive claim", () => {
+  const d =
+    "Use when curating accumulated project memory — prune stale lessons. " +
+    "NOT promoting a candidate (that is `learn-graduate`), NOT the store itself (that is `praxis-memory`).";
+  const out = stripBoundaries(d);
+  assert.doesNotMatch(out, /\bNOT\b/, "a boundary clause survived the strip");
+  assert.doesNotMatch(out, /learn-graduate|praxis-memory/, "a sibling name survived — the whole point is to not carry it");
+  assert.match(out, /prune stale lessons/, "the positive claim was destroyed along with the boundary");
+  // A stripper that returns its input unchanged passes every assertion above except this one.
+  assert.notEqual(out, d, "stripBoundaries is a no-op");
+});
+
+test("the corpus carries both texts, and `plain` is genuinely shorter where boundaries exist", () => {
+  const corpus = loadCorpus(ROOT);
+  const withBoundaries = corpus.filter((c) => /\bNOT\b/.test(c.text));
+  assert.ok(withBoundaries.length > 10, "almost nothing has boundary clauses — is the corpus loading descriptions?");
+  for (const c of withBoundaries) {
+    assert.ok(c.plain.length < c.text.length, `${c.id}: plain is not shorter, so the strip did nothing`);
+    assert.doesNotMatch(c.plain, /\bNOT\b/, `${c.id}: a boundary clause reached the collision text`);
+  }
+  // Triggers live AFTER the description in the joined text. Stripping to end-of-string would take
+  // them with it and silently shrink the collision number for the wrong reason.
+  const fd = corpus.find((c) => c.id === "frontend-design");
+  assert.match(fd.plain, /landing page/, "triggers were stripped along with the boundary clauses");
+});
+
+test("the collision metric is measured on the boundary-free text, not the shipped one", () => {
+  // The bug this replaces: `NOT x (that is \`y\`)` injects y's vocabulary into x, so the pair the
+  // doctrine works hardest to separate scores as the MOST similar. Gating that number ratchets
+  // against our own descriptions. If someone reverts the metric to `text`, these diverge no more.
+  const r = audit(ROOT);
+  const top = r.collisions[0];
+  assert.ok(top.inflated > top.score, "the raw and boundary-free readings agree — the metric is back on `text`");
+  assert.ok(r.worstInflated > FLOORS.maxCollision, "the inflated reading no longer exceeds the floor; re-check the re-base");
 });
 
 test("loadCases reads every section it claims to", () => {
