@@ -1,6 +1,6 @@
 ---
 name: copywriting
-description: Use when writing UI microcopy, CTAs, error or empty states, headlines, or marketing copy — clear, verb-first, free of AI clichés. NOT auditing a finished text against named AI tells (that is `prose-tells`), NOT the brand voice definition (that is `brand`).
+description: Use when writing UI microcopy — button labels, error messages, tooltips, empty states, CTAs, headlines, or marketing copy — clear, verb-first, free of AI clichés. NOT auditing a finished text against named AI tells (that is `prose-tells`), NOT the brand voice definition (that is `brand`).
 kind: skill
 od:
   category: creative-direction

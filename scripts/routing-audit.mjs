@@ -31,7 +31,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // corpus they were meant to describe. That is the wrong direction: a floor is a description of
 // what holds today, and a ratchet upward when a change earns it.
 export const FLOORS = {
-  rank1: 50,          // a positive prompt puts its own skill first
+  rank1: 65,          // an ENGLISH positive prompt puts its own skill first (see isSpanish)
   top3: 68,           // …or at least in the top three
   routedTop3: 76,     // a near-miss prompt reaches its declared sibling
   maxOwnerAtOne: 16,  // a near-miss must NOT be won by the skill it was written against
@@ -253,6 +253,25 @@ export function buildRanker(corpus, field = "text") {
 }
 
 // ── audit ─────────────────────────────────────────────────────────────────────────────────────
+// Every description in the corpus is English; the eval prompts are deliberately bilingual, because
+// Praxis is used in Spanish. A lexical ranker cannot cross that gap — a Spanish prompt shares almost
+// no tokens with an English description, so whichever document happens to hold an incidental match
+// wins. Measured 2026-08-29: rank-1 is 62.3% on English prompts and 23.5% on Spanish, and the
+// Spanish winners are near-random (`ad-creative` took five unrelated prompts, `editorial-layout`
+// took a debugging one).
+//
+// This is a property of the PROXY, not of the descriptions. The real router is an LLM and crosses
+// languages without difficulty. So the two are reported apart and only the English figure is gated:
+// gating the blend would push someone to stuff Spanish keywords into English descriptions, which
+// would raise this number and make the descriptions worse. Same reasoning as stripBoundaries — do
+// not ratchet against a number the instrument computes wrong.
+//
+// Detection is deliberately crude: accented characters, inverted punctuation, and a short list of
+// high-frequency Spanish function words that are not English words. It only has to split a corpus
+// we wrote ourselves, and it is asserted in tests/routing.test.mjs against known prompts.
+const SPANISH = /[¿¡áéíóúñ]|\b(qué|cómo|cuál|para|esta|este|nuestro|debería|deberíamos|hazla|dame|quiero|antes|mira|solo|con|los|las|una|del)\b/i;
+export const isSpanish = (prompt) => SPANISH.test(prompt);
+
 export function audit(root = ROOT) {
   const corpus = loadCorpus(root);
   const known = new Set(corpus.map((c) => c.id));
@@ -263,10 +282,13 @@ export function audit(root = ROOT) {
   const negatives = cases.filter((c) => c.kind === "negative");
 
   let r1 = 0, r3 = 0, r5 = 0;
+  const byLang = { en: { n: 0, w: 0 }, es: { n: 0, w: 0 } };
   const gaps = new Map(); // owner -> count of its own prompts outside top-5
   for (const c of positives) {
     const top = ranker.rank(c.prompt).slice(0, 5).map((x) => x.id);
-    if (top[0] === c.owner) r1++;
+    const lang = isSpanish(c.prompt) ? "es" : "en";
+    byLang[lang].n++;
+    if (top[0] === c.owner) { r1++; byLang[lang].w++; }
     if (top.slice(0, 3).includes(c.owner)) r3++;
     if (top.includes(c.owner)) r5++;
     else gaps.set(c.owner, (gaps.get(c.owner) ?? 0) + 1);
@@ -304,6 +326,9 @@ export function audit(root = ROOT) {
     positives: positives.length,
     negatives: negatives.length,
     rank1: pct(r1, positives.length),
+    rank1En: pct(byLang.en.w, byLang.en.n),
+    rank1Es: pct(byLang.es.w, byLang.es.n),
+    langCounts: { en: byLang.en.n, es: byLang.es.n },
     top3: pct(r3, positives.length),
     top5: pct(r5, positives.length),
     ownerAtOne: pct(ownerAtOne, negatives.length),
@@ -327,6 +352,8 @@ function main() {
   const f1 = (n) => n.toFixed(1);
   console.log(`routing-audit: ${r.corpusSize} resources · ${r.positives + r.negatives} prompts`);
   console.log(`positive recall:  rank-1 ${f1(r.rank1)}% · top-3 ${f1(r.top3)}% · top-5 ${f1(r.top5)}%`);
+  console.log(`  rank-1 by prompt language: EN ${f1(r.rank1En)}% (n=${r.langCounts.en}, GATED) · ES ${f1(r.rank1Es)}% (n=${r.langCounts.es}, tracked)`);
+  console.log(`  the corpus is English; a lexical ranker cannot read a Spanish prompt. See isSpanish.`);
   console.log(`near-miss:        owner-at-1 ${f1(r.ownerAtOne)}% · declared route top-3 ${f1(r.routedTop3)}% (n=${r.routable})`);
 
   if (r.deadRoutes.length) {
@@ -348,7 +375,7 @@ function main() {
 
   const worst = r.collisions[0]?.score ?? 0;
   const breaches = [];
-  if (r.rank1 < FLOORS.rank1) breaches.push(`rank-1 ${f1(r.rank1)}% < ${FLOORS.rank1}%`);
+  if (r.rank1En < FLOORS.rank1) breaches.push(`rank-1 (EN) ${f1(r.rank1En)}% < ${FLOORS.rank1}%`);
   if (r.top3 < FLOORS.top3) breaches.push(`top-3 ${f1(r.top3)}% < ${FLOORS.top3}%`);
   if (r.routedTop3 < FLOORS.routedTop3) breaches.push(`declared route top-3 ${f1(r.routedTop3)}% < ${FLOORS.routedTop3}%`);
   if (r.ownerAtOne > FLOORS.maxOwnerAtOne) breaches.push(`owner-at-1 ${f1(r.ownerAtOne)}% > ${FLOORS.maxOwnerAtOne}%`);

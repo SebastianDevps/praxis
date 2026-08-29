@@ -1,6 +1,6 @@
 ---
 name: systematic-debugging
-description: Use when investigating a bug, test failure, or not-working behavior, before proposing fixes — reproduce, isolate, trace to root cause, fix once at the root, verify, and add a regression test. NOT deciding what to test for new work (that is `test-coverage-plan`) — this starts from an observed failure.
+description: Use when investigating a bug, a test failure, flaky or intermittent behavior, or a regression that keeps coming back, before proposing fixes — reproduce, isolate, trace to root cause, fix once at the root, verify, and add a regression test. NOT deciding what to test for new work (that is `test-coverage-plan`) — this starts from an observed failure.
 kind: skill
 od:
   category: engineering

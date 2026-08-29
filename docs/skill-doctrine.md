@@ -40,6 +40,28 @@ what actually reads these, resolves `NOT x (that is \`y\`)` in a way a lexical p
 represent. What was wrong was the instrument. The general form: **when a metric moves in the
 direction opposite to the practice it scores, suspect the metric before the practice.**
 
+**The same trap, found a second time.** Every description is English; the eval prompts are
+deliberately bilingual, because Praxis is used in Spanish. Measured 2026-08-29: rank-1 is **69.2%
+on English prompts and 23.5% on Spanish**, and the Spanish winners are near-random — `ad-creative`
+took five unrelated prompts. A lexical ranker cannot cross languages, so 19% of the corpus was
+being scored by an instrument that cannot read it, and the blended number hid it. The floor now
+sits on the English subset and the Spanish figure is tracked, not gated: gating the blend invites
+someone to stuff Spanish keywords into English descriptions, which would raise the number and make
+the descriptions worse.
+
+**What the split then made visible.** With the noise separated, five descriptions turned out to be
+missing vocabulary users actually say — `copywriting` had no "button label" or "tooltip",
+`systematic-debugging` no "flaky" or "intermittent", `scout` no "already installed". Adding it took
+rank-1 from 62.3% to 69.2% on English with **zero regressions**, and `owner-at-1` fell 11.8 → 11.1,
+so precision improved alongside recall. That is the signature of a real gap being closed rather
+than keywords being stuffed: stuffing raises recall and costs precision.
+
+Two limits worth knowing before chasing the number further. `od.triggers` are read by the audit and
+by **no runtime hook** — vocabulary added there raises the score without helping production, which
+is gaming, not fixing. And some phrasings are invisible by construction: the either/or shape of
+"Redis or an in-memory store?" lives entirely in stopwords, so no edit to `strategy-compare` can
+make a lexical ranker see it.
+
 ---
 
 ## 2. Length is a cost, never a credit

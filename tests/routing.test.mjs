@@ -13,7 +13,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { loadCorpus, loadCases, buildRanker, audit, FLOORS, stripBoundaries } from "../scripts/routing-audit.mjs";
+import { loadCorpus, loadCases, buildRanker, audit, FLOORS, stripBoundaries, isSpanish } from "../scripts/routing-audit.mjs";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 const SKILLS = readdirSync(join(ROOT, "skills"), { withFileTypes: true })
@@ -108,8 +108,16 @@ test("loadCorpus reads descriptions AND triggers, not just names", () => {
 
   const scout = corpus.find((c) => c.id === "scout");
   assert.ok(scout, "scout missing from corpus");
-  // Description text — proves the frontmatter reader works.
-  assert.match(scout.text, /prior art/i, "description not loaded into the corpus");
+  // Description text — proves the frontmatter reader works. Must be a phrase that lives ONLY in
+  // the description: this assertion used to look for "prior art", which scout also carries as a
+  // trigger, so when that phrase moved out of the description the test kept passing on trigger
+  // text alone and stopped proving anything about the frontmatter reader.
+  assert.match(scout.text, /installed dependencies/i, "description not loaded into the corpus");
+  assert.doesNotMatch(
+    scout.text.replace(scout.claim, ""),
+    /installed dependencies/i,
+    "the phrase leaked into the triggers — pick one only the description has",
+  );
 
   // Trigger text — proves the triggers parser works. This is the assertion that would have
   // caught the four-space-indent bug: without it the parser returned [] and nothing complained.
@@ -145,6 +153,31 @@ test("the corpus carries both texts, and `plain` is genuinely shorter where boun
   // them with it and silently shrink the collision number for the wrong reason.
   const fd = corpus.find((c) => c.id === "frontend-design");
   assert.match(fd.plain, /landing page/, "triggers were stripped along with the boundary clauses");
+});
+
+test("isSpanish actually splits the corpus — a stub would re-gate the blend", () => {
+  // The floor moved onto the English subset because a lexical ranker cannot read a Spanish prompt
+  // against an English description (EN 69.2% vs ES 23.5%, measured 2026-08-29). If this predicate
+  // silently returned false for everything, the gate would quietly go back to scoring the blend
+  // and the floor would be measuring a number the instrument computes wrong.
+  for (const es of [
+    "¿Qué casos borde deberíamos cubrir en esta feature?",
+    "Investiga cómo están resolviendo el rate limiting distribuido.",
+    "Dame los lineamientos de marca — tipografía, color y voz.",
+  ]) {
+    assert.ok(isSpanish(es), `not detected as Spanish: ${es}`);
+  }
+  for (const en of [
+    "Build me a dashboard.",
+    "This test fails intermittently in CI but passes locally.",
+    "Which of these belong in unit tests versus e2e?",
+  ]) {
+    assert.ok(!isSpanish(en), `wrongly detected as Spanish: ${en}`);
+  }
+
+  const r = audit(ROOT);
+  assert.ok(r.langCounts.es > 10, "the Spanish subset vanished — the split is not running");
+  assert.ok(r.langCounts.en > r.langCounts.es, "the corpus is mostly English; this looks inverted");
 });
 
 test("the positive claim stays inside its budget, and the budget is not decorative", () => {
@@ -197,14 +230,17 @@ test("the ranker discriminates — it is not returning a flat or constant order"
 
 test("the audit is armed — floors sit below the live measurement, not at zero", () => {
   const r = audit(ROOT);
-  for (const k of ["rank1", "top3", "top5", "ownerAtOne", "routedTop3"]) {
+  for (const k of ["rank1", "rank1En", "rank1Es", "top3", "top5", "ownerAtOne", "routedTop3"]) {
     assert.ok(Number.isFinite(r[k]), `${k} is not a finite number — the metric divided by zero`);
   }
   // A floor of 0 would pass no matter what the corpus did. Each one must actually constrain.
   assert.ok(FLOORS.rank1 > 0 && FLOORS.top3 > 0 && FLOORS.routedTop3 > 0, "a recall floor is vacuous");
   assert.ok(FLOORS.maxCollision < 1, "the collision ceiling is vacuous");
   // And the live numbers must clear them, or the gate is red and someone must look.
-  assert.ok(r.rank1 >= FLOORS.rank1, `rank-1 ${r.rank1.toFixed(1)}% < floor ${FLOORS.rank1}%`);
+  // The floor is on the ENGLISH subset, matching the audit's own gate. Asserting the blend here
+  // would quietly re-introduce the Spanish prompts the ranker cannot read, and the floor would
+  // then be describing a number the instrument computes wrong.
+  assert.ok(r.rank1En >= FLOORS.rank1, `rank-1 (EN) ${r.rank1En.toFixed(1)}% < floor ${FLOORS.rank1}%`);
   assert.ok(r.top3 >= FLOORS.top3, `top-3 ${r.top3.toFixed(1)}% < floor ${FLOORS.top3}%`);
   assert.ok(r.routedTop3 >= FLOORS.routedTop3, `route top-3 ${r.routedTop3.toFixed(1)}% < floor ${FLOORS.routedTop3}%`);
   assert.ok(r.ownerAtOne <= FLOORS.maxOwnerAtOne, `owner-at-1 ${r.ownerAtOne.toFixed(1)}% > ${FLOORS.maxOwnerAtOne}%`);

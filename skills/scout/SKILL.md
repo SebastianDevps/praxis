@@ -1,6 +1,6 @@
 ---
 name: scout
-description: Use before proposing an approach, building something new, or choosing a library — quick recon of existing code and conventions in the repo plus external prior art, producing a short findings note (not a decision). NOT deciding (that produces a findings note only), NOT multi-source external investigation (that is `deep-research`).
+description: Use before proposing an approach, building something new, or choosing a library — quick recon of what already exists in this repo: code, conventions, installed dependencies. Produces a short findings note. NOT deciding (that produces a findings note only), NOT multi-source external investigation (that is `deep-research`).
 kind: skill
 od:
   category: research
