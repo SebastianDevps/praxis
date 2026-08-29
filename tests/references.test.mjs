@@ -148,7 +148,13 @@ test("the README resource table matches what is on disk", () => {
     commands: readdirSync(join(ROOT, "commands")).filter((f) => f.endsWith(".md")).length,
   };
   for (const [kind, n] of Object.entries(actual)) {
-    const m = new RegExp(`\\|\\s*\\*\\*${kind}\\*\\*\\s*\\|\\s*(\\d+)\\s*\\|`).exec(readme);
+    // Both orders, because the README's table layout is a presentation choice and this gate is
+    // about the number being true — `| **skills** | 36 |` and `| **36** skills |` both count.
+    // Pinning one layout made a rewrite look like a stale-count failure, which is how a gate
+    // teaches people to edit the test instead of the fact.
+    const m =
+      new RegExp(`\\|\\s*\\*\\*${kind}\\*\\*\\s*\\|\\s*(\\d+)\\s*\\|`).exec(readme) ??
+      new RegExp(`\\|\\s*\\*\\*(\\d+)\\*\\*\\s+${kind}\\s*\\|`).exec(readme);
     assert.ok(m, `README has no count row for ${kind}`);
     assert.equal(
       Number(m[1]),
