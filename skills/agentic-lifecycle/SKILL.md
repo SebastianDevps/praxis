@@ -1,6 +1,6 @@
 ---
 name: agentic-lifecycle
-description: Use when planning substantial or multi-phase work to run agents almost autonomously — the spec-driven doctrine (decision → verifiable contract → task files with status → auto-loop → review → done) that unifies spec-lifecycle and autonomous-loop and adds eval-driven verification. NOT the phase mechanics (that is `spec-lifecycle`), NOT the loop runner (that is `autonomous-loop`) — this is the doctrine above both.
+description: Use when planning substantial or multi-phase work to run agents almost autonomously — the spec-driven doctrine: decision → verifiable contract → task files with status → auto-loop → review → done, with eval-driven verification at each gate. NOT the phase mechanics (that is `spec-lifecycle`), NOT the loop runner (that is `autonomous-loop`) — this is the doctrine above both.
 kind: skill
 od:
   category: workflow

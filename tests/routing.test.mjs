@@ -147,6 +147,24 @@ test("the corpus carries both texts, and `plain` is genuinely shorter where boun
   assert.match(fd.plain, /landing page/, "triggers were stripped along with the boundary clauses");
 });
 
+test("the positive claim stays inside its budget, and the budget is not decorative", () => {
+  const r = audit(ROOT);
+  assert.deepEqual(
+    r.overBudget,
+    [],
+    `claims over ${FLOORS.maxClaimChars} chars: ${r.overBudget.map((c) => `${c.id} (${c.chars})`).join(", ")}`,
+  );
+
+  // A ceiling far above what anything writes is not a gate, it is decoration — the same failure
+  // the FLOORS comment warns about for floors set too low. If the largest claim is nowhere near
+  // the ceiling, someone raised the ceiling instead of shortening the description.
+  const max = r.claimChars[r.claimChars.length - 1];
+  assert.ok(
+    max >= FLOORS.maxClaimChars * 0.8,
+    `largest claim is ${max} against a ${FLOORS.maxClaimChars} ceiling — the budget stopped binding`,
+  );
+});
+
 test("the collision metric is measured on the boundary-free text, not the shipped one", () => {
   // The bug this replaces: `NOT x (that is \`y\`)` injects y's vocabulary into x, so the pair the
   // doctrine works hardest to separate scores as the MOST similar. Gating that number ratchets

@@ -51,6 +51,21 @@ is ever invoked. Every line of a craft is paid for on every dispatch that requir
 being thorough. There is no minimum length — a skill that does its job in 60 lines beats the same
 skill padded to 200.
 
+**The budgeted number is the positive claim, capped at 250 characters** — the description with its
+boundary clause stripped. `scripts/routing-audit.mjs` fails on any resource over it. The ceiling
+comes from the [gentle-ai skill style guide](https://github.com/Gentleman-Programming/gentle-ai)
+(250 hard, 160 target) and was checked before adoption rather than after: measured 2026-08-29, our
+claims ran to a median of 169 with 96% already under 250, so the ceiling ratifies the practice and
+catches the two outliers. It binds — the longest claim in the corpus sits exactly at 250.
+
+What is deliberately *not* budgeted, and why, because both look like oversights:
+
+- **Whole-description length.** Forty percent of the surface is boundary clauses, and the only
+  instrument that can weigh them is lexical — a proxy that penalises them by construction (§1).
+  Budgeting a number you can only mismeasure optimises the metric against the practice.
+- **Siblings named per description.** Every resource names one or two; none names three. A rule
+  there would sit far below what the corpus already does, which makes it decoration, not a gate.
+
 Two consequences that come up constantly here:
 
 - **An unlinked reference is dead weight.** A file under `references/` that the body never points

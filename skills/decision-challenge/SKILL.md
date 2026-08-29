@@ -1,6 +1,6 @@
 ---
 name: decision-challenge
-description: Use immediately before a consequential commitment — an irreversible migration, a production auth change, a costly architecture bet, or a plan whose confidence outruns its evidence. Isolates the claim from the persuasion, attacks each assumption, settles doubts with evidence, and emits proceed / hold / stop with an unlock condition. NOT picking between options you have not committed to (that is `strategy-compare`), NOT reviewing a finished diff (that is the `refuter-*` agents).
+description: Use immediately before a consequential commitment — an irreversible migration, a production auth change, or a plan whose confidence outruns its evidence. Attacks each assumption and emits proceed / hold / stop with an unlock condition. NOT picking between options you have not committed to (that is `strategy-compare`), NOT reviewing a finished diff (that is the `refuter-*` agents).
 kind: skill
 od:
   category: reasoning

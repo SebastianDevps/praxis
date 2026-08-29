@@ -36,7 +36,22 @@ export const FLOORS = {
   routedTop3: 76,     // a near-miss prompt reaches its declared sibling
   maxOwnerAtOne: 16,  // a near-miss must NOT be won by the skill it was written against
   maxCollision: 0.38, // two descriptions this alike cannot be told apart by a reader either
+  maxClaimChars: 250, // the positive claim, boundary clause excluded — see below
 };
+
+// maxClaimChars budgets the POSITIVE CLAIM only, not the whole description. Every description is
+// paid for on every turn whether or not the resource is ever invoked, so length is a real cost —
+// but the two halves are not the same kind of text and one budget cannot govern both.
+//
+// Adopted from the gentle-ai skill style guide (250 hard ceiling, 160 target), which is written
+// for a format with no boundary clause. Measured against it 2026-08-29: our claims come in at a
+// median of 169 chars and 96% already sat under 250, so the ceiling ratifies the practice and
+// catches the outliers. Whole-description length was NOT budgeted: 40% of the surface is boundary
+// clauses, and the only instrument we have for judging them is lexical — a proxy that penalises
+// them by construction (see stripBoundaries). Do not budget what you can only mismeasure.
+//
+// Not budgeted either: siblings named per description. Every resource names one or two and none
+// names three, so a rule there would sit far below what the corpus does — decorative, not a gate.
 
 // maxCollision was 0.62, set against a number the doctrine inflated by design: a `NOT x (that is
 // \`y\`)` clause puts y's vocabulary inside x's document, so the pair scores as MORE similar the
@@ -137,6 +152,7 @@ export function loadCorpus(root = ROOT) {
   const entry = (id, kind, description, trig = []) => ({
     id,
     kind,
+    claim: stripBoundaries(description), // the positive half alone — what maxClaimChars budgets
     text: [id.replace(/-/g, " "), description, ...trig].join(" "),
     plain: [id.replace(/-/g, " "), stripBoundaries(description), ...trig].join(" "),
   });
@@ -296,6 +312,11 @@ export function audit(root = ROOT) {
     deadRoutes,
     collisions: collisions.slice(0, 10),
     worstInflated,
+    overBudget: corpus
+      .filter((c) => c.claim.length > FLOORS.maxClaimChars)
+      .map((c) => ({ id: c.id, chars: c.claim.length }))
+      .sort((a, b) => b.chars - a.chars),
+    claimChars: corpus.map((c) => c.claim.length).sort((a, b) => a - b),
     gaps: [...gaps.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10),
   };
 }
@@ -319,6 +340,12 @@ function main() {
   console.log(`  makes two descriptions look alike to a bag-of-words ranker. See stripBoundaries.`);
   if (r.gaps.length) console.log(`\nown prompts outside top-5: ${r.gaps.map(([k, v]) => `${k} (${v})`).join(", ")}`);
 
+  const cc = r.claimChars;
+  console.log(`\npositive claim length: median ${cc[Math.floor(cc.length / 2)]} · max ${cc[cc.length - 1]} · ceiling ${FLOORS.maxClaimChars}`);
+  if (r.overBudget.length) {
+    console.log(`  OVER: ${r.overBudget.map((c) => `${c.id} (${c.chars})`).join(", ")}`);
+  }
+
   const worst = r.collisions[0]?.score ?? 0;
   const breaches = [];
   if (r.rank1 < FLOORS.rank1) breaches.push(`rank-1 ${f1(r.rank1)}% < ${FLOORS.rank1}%`);
@@ -326,6 +353,7 @@ function main() {
   if (r.routedTop3 < FLOORS.routedTop3) breaches.push(`declared route top-3 ${f1(r.routedTop3)}% < ${FLOORS.routedTop3}%`);
   if (r.ownerAtOne > FLOORS.maxOwnerAtOne) breaches.push(`owner-at-1 ${f1(r.ownerAtOne)}% > ${FLOORS.maxOwnerAtOne}%`);
   if (worst > FLOORS.maxCollision) breaches.push(`collision ${worst.toFixed(2)} > ${FLOORS.maxCollision}`);
+  if (r.overBudget.length) breaches.push(`${r.overBudget.length} claim(s) over ${FLOORS.maxClaimChars} chars`);
   if (r.deadRoutes.length) breaches.push(`${r.deadRoutes.length} dead route(s)`);
 
   if (breaches.length) {
