@@ -142,3 +142,24 @@ test("the taxonomy is withheld from the refuters themselves", () => {
     assert.doesNotMatch(body, /accepted trade-off/i, `${lens} was told the taxonomy`);
   }
 });
+
+// ── the Tier 3 routing smoke ──────────────────────────────────────────────────────────────────
+import { hits as routeHits, CASES as ROUTE_CASES } from "../evals/route/smoke.mjs";
+
+test("the routing scorer strips the host namespace before comparing", () => {
+  // Skills arrive as `praxis:test-coverage-plan`. The first scorer compared bare names, reported
+  // 0/10 where the truth was 2/10, and printed the correct skill name beside the word "other".
+  assert.ok(routeHits(["praxis:test-coverage-plan"], "test-coverage-plan"), "namespaced skill not matched");
+  assert.ok(routeHits(["test-coverage-plan"], "test-coverage-plan"), "bare skill not matched");
+  assert.ok(!routeHits(["praxis:scout"], "test-coverage-plan"), "a different skill counted as a hit");
+  assert.ok(!routeHits([], "test-coverage-plan"), "an empty invocation list counted as a hit");
+});
+
+test("every routing case names a skill that exists", () => {
+  for (const c of ROUTE_CASES) {
+    assert.ok(
+      existsSync(join(ROOT, "skills", c.owner, "SKILL.md")),
+      `routing case expects ${c.owner}, which is not a skill — the cell can never hit`,
+    );
+  }
+});
