@@ -1,6 +1,6 @@
 ---
 name: spec-lifecycle
-description: Use when managing a change through a spec-driven workflow — moving it across research, design, plan, and implement phases — lean lifecycle with controlled status advancement. NOT the doctrine behind it (that is `agentic-lifecycle`), NOT the task checklist (that is `writing-plans`).
+description: Use when managing a change through a spec-driven workflow — moving it across research, design, plan, and implement stages — lean lifecycle with controlled stage advancement. NOT the doctrine behind it (that is `agentic-lifecycle`), NOT the task checklist (that is `writing-plans`).
 kind: skill
 od:
   category: workflow
@@ -20,7 +20,7 @@ od:
 new → researched → designed → planned → implemented
 ```
 
-| Status | Produces |
+| Stage | Produces |
 |---|---|
 | `new` | Spec file created from `templates/spec.md` skeleton |
 | `researched` | Research section: what exists, constraints, unknowns |
@@ -28,9 +28,13 @@ new → researched → designed → planned → implemented
 | `planned` | Plan section: task checklist |
 | `implemented` | All tasks complete, changes verified |
 
-## Status Rule
+## Stage Rule
 
-Advance the `status:` frontmatter field one phase at a time, in lifecycle order — never skip a phase, and never advance before the current phase's section is actually written. Each transition is earned by producing that phase's artifact (see the table above).
+Advance the `stage:` frontmatter field one step at a time, in lifecycle order — never skip a stage, and never advance before the current stage's section is actually written. Each transition is earned by producing that stage's artifact (see the table above).
+
+**The field is `stage:`, not `status:`.** A change has a stage; a task inside it has a `phase:` and
+a `state:` (`docs/task-model.md`). One word for three concepts is how a ledger written by one skill
+becomes unreadable to the next — this one was renamed rather than documented around.
 
 ## Writing Principles
 

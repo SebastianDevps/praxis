@@ -11,7 +11,8 @@ known-good test suite, repetitive scaffolding) and a fresh context per iteration
 
 ## What the agent does
 
-1. **Confirm or create the ledger.** Ensure `PROGRESS.md` exists with a bite-sized, independently-testable
+1. **Confirm or create the ledger.** Ensure `PROGRESS.md` exists (task line shape, phases and
+   states: `docs/task-model.md`) with a bite-sized, independently-testable
    plan per the `writing-plans` skill. No ledger, no loop — the loop's only memory is that file. If it's
    missing or vague (four hand-wavy bullets), write a real one first.
 2. **Run the loop** via `scripts/loop.sh`. The script re-invokes `claude -p` each iteration, feeding the

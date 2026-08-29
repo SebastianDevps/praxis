@@ -21,15 +21,21 @@ delta a plan must add: each task is ONE reviewable unit with a concrete done-cri
 
 ```diff
 - ❌ - [ ] Build the auth backend
-+ ✅ - [ ] Add POST /login route — files: src/routes/auth.ts, test: `npm test auth` green — after: user model
++ ✅ - [ ] T04 · phase: build · state: pending · Add POST /login route
++         files:  src/routes/auth.ts
++         verify: npm test auth
 ```
 
 ## The plan IS a ledger file
 
-Write it as a `- [ ]` checklist to a durable file (e.g. `PROGRESS.md` or `plan.md`), NOT into chat.
-The build reads it and checks items off (`- [x]`) as it goes. This is what survives compaction and
-what `subagent-driven-development` and `/praxis:loop` consume — the filesystem is the memory, not
-the context window.
+Write it to `PROGRESS.md`, NOT into chat. The line shape above — `phase:`, `state:`, `files:`,
+`verify:` — and the values each field accepts are defined once in **`docs/task-model.md`**. Use
+them; a variant invented here is a variant the executor does not recognise.
+
+`state:` is the source of truth, not the checkbox. A task that fails twice and stops is
+`blocked(technical)`; one waiting on a decision you own is `blocked(user)`. A checkbox can say
+neither, which is why the ledger and not the chat is what `subagent-driven-development` and
+`/praxis:loop` read.
 
 ## Rules
 

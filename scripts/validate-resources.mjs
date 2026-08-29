@@ -27,10 +27,13 @@ function walkMarkdown(dir) {
   }
   for (const entry of entries) {
     const full = join(dir, entry);
-    // `references/` holds supporting docs (e.g. per-host tool maps) and
-    // `assets/` holds templates — neither are resources, so they carry no
+    // `references/` holds supporting docs (e.g. per-host tool maps) while
+    // `assets/` and `templates/` hold skeletons meant to be COPIED into a user's
+    // project — a template's frontmatter belongs to the file it becomes, not to
+    // the plugin, so validating it here demands a `name:` that would be wrong.
+    // None of the three are resources, so they carry no
     // resource frontmatter. Skip both dirs whole.
-    if (entry === "references" || entry === "assets") continue;
+    if (entry === "references" || entry === "assets" || entry === "templates") continue;
     if (statSync(full).isDirectory()) results.push(...walkMarkdown(full));
     else if (entry.endsWith(".md")) results.push(full);
   }

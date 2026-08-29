@@ -1,11 +1,15 @@
 ---
 id: T-NNN
-phase: spec | implement | verify | review
-status: pending      # pending → in_progress → review → done | blocked
+phase: define | plan | build | verify | review | ship
+state: pending      # pending → in_progress → review → done | blocked(technical) | blocked(user)
 depends_on: [T-XXX]
-verifies: [F1]       # which contract items (spec.json) this closes
+verifies: [F1]      # which contract items (spec.json) this closes
 parallel: false
 ---
+
+<!-- The vocabulary above is canonical and defined once: docs/task-model.md.
+     Do not add a phase or a state here — add it there, or you have created a
+     fifth dialect of a field five skills already read. -->
 
 ## Objective
 
@@ -13,7 +17,7 @@ parallel: false
 
 ## Done criterion (verifiable)
 
-<how a machine checks it is ready>
+<how a machine checks it is ready — this is the task's `verify:` line>
 
 ## Execution notes
 

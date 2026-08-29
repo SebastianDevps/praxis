@@ -61,3 +61,74 @@ test("the injected contract keeps every safety carve-out", () => {
     assert.match(contract, new RegExp(phrase), `contract dropped: ${phrase}`);
   }
 });
+
+// ── the task model ────────────────────────────────────────────────────────────────────────────
+// Before docs/task-model.md there were four ledger names (PROGRESS.md, plan.md, progress.md,
+// tasks/*.md), four phase vocabularies, and the word `status` meaning a change's phase in one
+// skill and a task's state in another. Work handed between skills arrived in a shape the receiver
+// did not recognise. These three tests are what stops that from growing back: the failure mode is
+// not a broken build, it is a second definition quietly appearing in a skill that felt like the
+// natural place for it.
+import { readdirSync, existsSync } from "node:fs";
+
+const LEDGER_CONSUMERS = [
+  "skills/writing-plans/SKILL.md",
+  "skills/subagent-driven-development/SKILL.md",
+  "skills/autonomous-loop/SKILL.md",
+  "skills/agentic-lifecycle/SKILL.md",
+  "commands/loop.md",
+];
+
+test("every skill that touches the ledger names PROGRESS.md and nothing else", () => {
+  for (const f of LEDGER_CONSUMERS) {
+    const src = read(f);
+    assert.match(src, /PROGRESS\.md/, `${f} does not name the canonical ledger`);
+    for (const alias of [/\bplan\.md\b/, /\bprogress\.md\b/, /\btasks\/\*\.md\b/]) {
+      assert.doesNotMatch(src, alias, `${f} still names a ledger alias — there is one ledger`);
+    }
+  }
+});
+
+test("the phase and state vocabularies are defined once, in docs/task-model.md", () => {
+  const canon = read("docs/task-model.md");
+  for (const phase of ["define", "plan", "build", "verify", "review", "ship"]) {
+    assert.match(canon, new RegExp(`\`${phase}\``), `canon is missing phase ${phase}`);
+  }
+  for (const state of ["pending", "in_progress", "review", "done", "blocked\\(technical\\)", "blocked\\(user\\)"]) {
+    assert.match(canon, new RegExp(`\`${state}\``), `canon is missing state ${state}`);
+  }
+  // The consumers must POINT at it, not restate it. A skill that redefines the table is how the
+  // four vocabularies happened the first time.
+  for (const f of LEDGER_CONSUMERS) {
+    assert.match(read(f), /docs\/task-model\.md/, `${f} does not point at the canonical task model`);
+  }
+});
+
+test("`status` no longer means two things — spec-lifecycle tracks a stage", () => {
+  const spec = read("skills/spec-lifecycle/SKILL.md");
+  assert.match(spec, /Advance the `stage:` frontmatter field/, "spec-lifecycle must advance `stage:`");
+  // Matches the USE, not the mention: the skill deliberately says "the field is `stage:`, not
+  // `status:`" to catch a reader who learned the old name, and a test that forbade the word
+  // outright would delete the sentence that prevents the mistake.
+  assert.doesNotMatch(spec, /Advance the `status:`/, "the collided field name came back");
+  // …and the task surfaces must not borrow it either.
+  for (const f of ["skills/agentic-lifecycle/assets/task.template.md", "docs/task-model.md"]) {
+    assert.doesNotMatch(read(f), /^.*\bstatus:\s/m, `${f} uses \`status\` for a task — that is \`state\``);
+  }
+});
+
+test("every referenced template exists on disk", () => {
+  // templates/spec.md was cited by three files and did not exist. links.test.mjs missed it: the
+  // citations sit in backticks, and that test deliberately checks prose paths only. A path inside
+  // code fences is "shown, not promised" — except when the sentence around it is a promise.
+  const cited = [
+    "skills/spec-lifecycle/templates/spec.md",
+    "skills/agentic-lifecycle/assets/task.template.md",
+    "skills/agentic-lifecycle/assets/progress.template.md",
+    "skills/agentic-lifecycle/assets/spec.template.json",
+    "docs/task-model.md",
+  ];
+  for (const p of cited) {
+    assert.ok(existsSync(join(ROOT, p)), `${p} is cited by a skill and does not exist`);
+  }
+});

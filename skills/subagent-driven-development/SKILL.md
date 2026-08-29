@@ -36,10 +36,13 @@ durable progress — cheap next to a tangled inline build you have to unwind.
 
 ## The ledger is the progress, not the chat
 
-Progress lives in a ledger file (`PROGRESS.md` / `plan.md`, per `writing-plans`), checked off `- [x]`
-as each task passes review. This is what survives compaction: if your context is wiped mid-build, you
-reconstruct state by reading the ledger, NOT by trusting memory. The controller's context is
-disposable; the ledger is not.
+Progress lives in `PROGRESS.md` (written by `writing-plans`, shape in `docs/task-model.md`). Move a
+task `in_progress → review → done` as it goes; the checkbox is for a human skimming, `state:` is
+what you read. A task that stalls is `blocked(technical)`, one needing a decision you cannot make
+is `blocked(user)` — stop and surface it rather than choosing on the user's behalf.
+
+This is what survives compaction: if your context is wiped mid-build you reconstruct state by
+reading the ledger, NOT by trusting memory. The controller's context is disposable; the ledger is not.
 
 ## Rules
 

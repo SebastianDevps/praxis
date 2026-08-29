@@ -25,30 +25,31 @@ An agent can run alone exactly as far as the contract is verifiable. Autonomy do
 better prompt — it comes from having planned so well that "done" is checkable by a machine. Where
 "done" is not verifiable, a human gate goes in. No exception.
 
-## Relationship to other Praxis skills (do not duplicate)
+## The cycle, and who runs each part
 
-- Stages 1–4 (decision → plan → spec → tasks): see `spec-lifecycle`.
-- Stage 5 (auto-loop, fresh context, `PROGRESS.md` + git): see `autonomous-loop` and `/praxis:loop`.
-- Decomposing into testable tasks: see `writing-plans` and `subagent-driven-development`.
-- This skill adds: the unifying THESIS, the EVAL-DRIVEN pillar, the review gate, and the evidence base.
+The phases a task passes through, the states it can be in, and the one ledger they are written to
+are defined once in **`docs/task-model.md`**. This skill does not restate them — it used to, in a
+seven-stage table that disagreed with three other skills about both the vocabulary and the
+filename.
 
-`spec-lifecycle` owns the markdown spec skeleton (`templates/spec.md`) — the human-readable phase
-spec. This skill's `assets/spec.template.json` is the complementary **machine-verifiable contract**
-(the failing feature-list). Same intent, two surfaces: prose for humans, JSON for the loop.
+One ledger — `PROGRESS.md` — read and written by every stage below.
 
-## The lifecycle — 7 stages
+| you need | go to |
+|---|---|
+| break work into tasks, write the ledger | `writing-plans` |
+| execute it, one subagent per task, review between | `subagent-driven-development` |
+| execute it unattended, one task per iteration | `autonomous-loop`, `/praxis:loop` |
+| track a change across stages | `spec-lifecycle` |
+| the shape of a task | `docs/task-model.md` |
 
-| # | Stage | Produces | Owner | Key rule |
-|---|-------|----------|-------|----------|
-| 1 | Decision Record | `decisions/NNN-title.md` | Human | Problem, options, chosen + why, and what is explicitly OUT of scope |
-| 2 | Plan | `plan.md` | Human | The what + dependency graph. No tech stack yet |
-| 3 | Spec ★ | `spec.json` | Human (strong gate) | Verifiable contract: feature-list, each item with a verification, all failing |
-| 4 | Tasks | `tasks/*.md` + `progress.md` | Generated | Files with status + phase, ordered by dependency, `[P]` parallelizable |
-| 5 | Auto-loop | commits + progress | Agent | One task per iteration, clean context, state in files + git |
-| 6 | Review | verdict | Human | Review the trajectory, not just the output. Mandatory |
-| 7 | Done | archive + spec synced | Human | Auditable cycle end to end |
+This skill adds what none of those carry: the thesis, the eval-driven pillar, and the evidence.
 
-The ★ Spec gate is the most important: if the spec is wrong, autonomous execution amplifies the error.
+**The one gate that is not delegable.** A verifiable contract — the feature list where every item
+names its own check and every check starts failing — is what makes "done" decidable by a machine.
+`assets/spec.template.json` is that contract; `spec-lifecycle`'s `templates/spec.md` is the
+human-readable companion. Same intent, two surfaces: prose for people, JSON for the loop. **If the
+contract is wrong, autonomous execution amplifies the error** rather than catching it, which is why
+this gate is human-owned and the rest can be handed over.
 
 ## Critical Patterns
 
@@ -58,7 +59,8 @@ The ★ Spec gate is the most important: if the spec is wrong, autonomous execut
 - External state (files + git), never the agent's memory. Agents are stateless.
 - One thing per iteration, clean context. Signal, not volume.
 - Autonomy bounded from OUTSIDE the model: iteration cap, no editing tests, no skipping dependencies,
-  and if a task fails N times → `blocked` and stop.
+  and if a task fails N times → `blocked(technical)` and stop. A decision that is not the agent's to
+  make is `blocked(user)` — a different state because it has a different recipient.
 - Trajectory review + human-in-the-loop. "The agent said done" is NOT evidence: autonomous
   verification agents have up to 85% false positives.
 - Workflows vs agents. Determinism (workflow) where you need it; autonomous agent where the contract is verifiable.

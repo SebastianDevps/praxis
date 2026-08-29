@@ -62,12 +62,27 @@ case "$status" in *\"*|*/*) status="unreported" ;; esac
 head="$(git -C "$project" rev-parse --short HEAD 2>/dev/null || printf 'nogit')"
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
+# The ledger's shape at the moment this subagent stopped. Agent-level capture records
+# "the engineer finished" and throws away the one signal worth learning from: WHICH tasks
+# fought back. A task that sat in blocked(technical) for three attempts before passing is
+# what `lessons.md` should end up knowing; a done count alone never says that.
+#
+# Counted, never quoted: the ledger is user-authored text and this row is appended to a
+# JSON file. Three integers cannot carry a quote, a newline, or a traversal into the line.
+tasks="none"
+ledger="${project}/PROGRESS.md"
+if [ -f "$ledger" ]; then
+  count() { grep -c -- "$1" "$ledger" 2>/dev/null | head -1 | tr -dc '0-9'; }
+  d="$(count 'state: done')"; b="$(count 'state: blocked')"; p="$(count 'state: pending')"
+  tasks="done=${d:-0} blocked=${b:-0} pending=${p:-0}"
+fi
+
 # One append, well under PIPE_BUF (4096 bytes), so a parallel wave of subagents
 # cannot interleave two rows into one malformed line. The fields are bounded
 # above precisely so this stays true — that is the reason for the length limits,
 # not tidiness.
-printf '{"ts":"%s","agent":"%s","status":"%s","head":"%s","state":"pending"}\n' \
-  "$ts" "${agent:0:64}" "${status:0:32}" "$head" \
+printf '{"ts":"%s","agent":"%s","status":"%s","head":"%s","tasks":"%s","state":"pending"}\n' \
+  "$ts" "${agent:0:64}" "${status:0:32}" "$head" "${tasks:0:48}" \
   >> "${mem}/sessions.jsonl" 2>/dev/null || true
 
 praxis_trace "SubagentStop" "$agent"
