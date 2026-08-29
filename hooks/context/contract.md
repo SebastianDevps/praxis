@@ -54,6 +54,9 @@ before proposing anything. Where two or more plausible approaches exist, compare
 before choosing — do not let the first workable idea win by default. Before declaring done,
 dispatch the refuter panel (`refuter-correctness`, `refuter-security`, `refuter-tests`) in one
 wave: fresh context, mandate to refute, and a finding blocks only with a repro behind it.
+Classify what returns before routing it — contract gap, actionable, accepted trade-off, noise;
+first match wins. A finding is not noise until you can name the context the lens was denied, and a
+wave you classified entirely as noise means you validated your own build.
 <!-- /only -->
 
 **Verify, never assume.** Define the observable acceptance gate before starting; run it after.

@@ -98,3 +98,47 @@ test("the clean fixture SATISFIES its contract, clause by clause", () => {
   // and the boundary defect, which belongs to its own task
   assert.doesNotMatch(f["src/paginate.js"], /limit\s*-\s*1/, "the off-by-one leaked into the clean fixture");
 });
+
+// ── the reconciliation taxonomy ───────────────────────────────────────────────────────────────
+// Findings arrive classified or they arrive unexamined. Before this, the orchestrator routed them
+// by severity — blocking with a repro, a question without — which answers how urgent a finding is
+// and never answers whether it is right. Blind-first manufactures false positives on purpose, so
+// "is this finding right?" is not an optional question here; it is the one the design creates.
+import { readFileSync as rf } from "node:fs";
+const orchestrator = rf(join(ROOT, "agents/orchestrator.md"), "utf8");
+
+test("the orchestrator classifies findings before routing them", () => {
+  for (const cls of ["contract gap", "actionable", "accepted trade-off", "noise"]) {
+    assert.match(orchestrator, new RegExp(`\\*\\*${cls.replace(/[-]/g, "[-]")}\\*\\*`, "i"), `missing class: ${cls}`);
+  }
+  assert.match(orchestrator, /first match wins/i, "the precedence rule is what makes the order mean anything");
+  // `contract gap` must come first: every lens reads the same contract, so an unclear one corrupts
+  // the wave rather than a finding. Classifying such a finding as noise loses the whole signal.
+  const at = (s) => orchestrator.toLowerCase().indexOf(s);
+  assert.ok(at("contract gap") < at("actionable"), "contract gap must be classified first");
+  assert.ok(at("noise") > at("actionable"), "noise must be the last resort, not the first reach");
+});
+
+test("noise cannot be a dismissal button, and an all-noise wave is caught", () => {
+  assert.match(
+    orchestrator,
+    /name the context/i,
+    "noise must require naming what the lens lacked — otherwise it disposes of findings for free",
+  );
+  assert.match(
+    orchestrator,
+    /classified every one as noise/i,
+    "the all-noise wave check is the anti-rubber-stamp signal; without it the taxonomy is decorative",
+  );
+});
+
+test("the taxonomy is withheld from the refuters themselves", () => {
+  // Same mechanism as withholding the builder's verdict: a lens that knows how its findings will be
+  // graded grades them itself. If this leaks into a refuter body, blind-first is compromised.
+  assert.match(orchestrator, /do \*\*not\*\* hand this taxonomy to the refuters/i, "the withholding rule is missing");
+  for (const lens of ARMS.refuters) {
+    const body = agentBody(lens);
+    assert.doesNotMatch(body, /contract gap/i, `${lens} was told the taxonomy — it will pre-classify its own findings`);
+    assert.doesNotMatch(body, /accepted trade-off/i, `${lens} was told the taxonomy`);
+  }
+});

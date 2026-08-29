@@ -64,6 +64,48 @@ checked.
 
 ---
 
+---
+
+## The disposition gap, and where the taxonomy came from
+
+The design above says how to *produce* findings and never says how to *dispose* of them. Praxis
+routed them by severity and evidence — blocking if it carries a repro, a question if not — which
+answers "how urgent is this?" and never answers "**is this finding right?**"
+
+That gap is created by our own mechanism. Blind-first withholds the builder's reasoning on purpose;
+a lens denied that context will sometimes flag something correct under context it was never given.
+We manufacture false positives deliberately and then had no named way to dispose of one. Our own
+seeded-defect eval hit it: two independent attempts to write an "obviously correct" fixture both
+drew defensible findings, and the metric scored them as errors because nothing distinguished *this
+reviewer is wrong* from *this reviewer lacks context*.
+
+The four classes are adapted from
+[`doubt-driven-development`](https://github.com/addyosmani/agent-skills), whose framing is the load-
+bearing part: **"The reviewer's output is data, not verdict. You remain the orchestrator."** And its
+counterweight, which matters more for us: *"A fresh reviewer can be wrong — lack of context causes
+false positives. Don't defer just because it's 'fresh.'"*
+
+Two things we changed rather than copied:
+
+- **`contract gap` is first, and it re-dispatches.** Every lens receives the same four inputs, so an
+  unclear contract corrupts the whole wave, not one finding. Addy's version fixes the contract and
+  re-classifies next cycle; ours throws the wave away, because our lenses run in parallel off one
+  contract rather than sequentially.
+- **`noise` must name the context the lens lacked.** It is the only class that disposes of a finding
+  while changing nothing, so it is the one that rots. Unqualified, it becomes a dismissal button —
+  and the eval already showed us reaching for it wrongly.
+
+Also adopted: the anti-rubber-stamp check. Addy's phrasing is a checkable signal — across two or
+more cycles with substantive findings, zero classified actionable means you are validating, not
+doubting. Ours is the single-wave form: a wave classified entirely as noise is a signature, not an
+outcome.
+
+**Not adopted: telling the refuters about it.** A lens that knows how its findings will be
+classified pre-classifies them — the same bias as passing it the builder's verdict, which the whole
+four-input contract exists to prevent.
+
+---
+
 ## What it changed in the design
 
 Nothing in the agents. It changed the eval:

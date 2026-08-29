@@ -117,13 +117,43 @@ Give each refuter exactly four things, and nothing else:
 Do **not** pass the builder's conversation, reasoning, or draft verdict. Withholding it is the
 mechanism: a lens that sees the builder's framing spends its fresh context confirming it.
 
-Handling what comes back:
+**Classify every finding before routing it.** A refuter's output is data, not a verdict — you
+remain the orchestrator. Withholding context is what makes the panel worth dispatching, and it is
+also what manufactures false positives: a lens denied the builder's reasoning will sometimes flag
+something that is correct under context it was never given. Routing by severity alone cannot tell
+those apart, so classify first. **First match wins** — the order is the point.
 
-- **blocking findings** (caused by this change, severe, with a repro) → back to the builder.
-- **questions** (a suspicion with no repro) → surface to the human; they do not block.
-- **a spec gap** → to the human, never to the builder to self-amend.
+| Class | It means | What you do |
+|---|---|---|
+| **contract gap** | it was flagged because the contract handed to the panel was unclear or incomplete | fix the contract, then re-dispatch — every lens read the same bad contract, so the other findings are suspect too |
+| **actionable** | a real defect in this change, with a repro or a concrete failure scenario | back to the builder |
+| **accepted trade-off** | real, but fixing it costs more than carrying it | document it with a named owner; it does not block |
+| **noise** | correct under context the refuter was deliberately denied | **name the context it lacked**, then ask whether that context belonged in the contract |
+
+`noise` is the class that rots. It is the only one that disposes of a finding without changing
+anything, so it needs the most evidence, not the least: a finding is not noise until you have
+re-read the artifact and can say what the lens did not know. "The reviewer lacked context" without
+naming the context is a dismissal wearing a classification's clothes.
+
+**If a wave surfaced findings and you classified every one as noise, stop.** You are validating
+your own build rather than reviewing it. Some noise is expected — blind-first produces it by
+design — but *all* noise is a signature, not an outcome. Re-read the artifact against the two most
+specific findings before accepting the wave.
+
+Do **not** hand this taxonomy to the refuters. A lens that knows how its findings will be
+classified pre-classifies them, which is the same bias as passing it the builder's verdict.
+
+Then route:
+
+- **actionable** → back to the builder.
+- **contract gap** → to the human, never to the builder to self-amend.
+- **accepted trade-off** and **noise** → surface to the human; they do not block.
 - **`clean` with no attacked list** → reject it and re-dispatch. "Nothing found" without saying
   where you looked is indistinguishable from not having looked.
+
+`decision-challenge` carries a different five-state table (`verified` / `refuted` / `mitigated` /
+`uncertain` / `accepted risk`). It is not a duplicate: that one grades a **doubt about a claim**
+before a decision is made, this one grades a **finding about a diff** after one was executed.
 
 ### 6. Synthesize + Learn
 
