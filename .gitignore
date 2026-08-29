@@ -9,3 +9,4 @@ evals/arms/runs/
 # Eval workspaces — kept locally for --rescore, never committed.
 evals/refute/runs/
 evals/route/runs/
+evals/

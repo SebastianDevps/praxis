@@ -56,7 +56,7 @@ skill, which is Level 2 working as designed.
 ## The caveat this does not solve
 
 Just-in-time carries a documented weakness: **a dependency on description quality.** That is exactly
-the failure [the activation audit](../evals/2026-08-28-activation-audit.md) measured — real
+the failure [the activation audit](https://github.com/SebastianDevps/praxis/blob/measurement/evals/2026-08-28-activation-audit.md) measured — real
 test-strategy, debugging and auth prompts where the matching skill never fired.
 
 Pointers alone do not fix it. What does is a different variable: **the size of the candidate set.**

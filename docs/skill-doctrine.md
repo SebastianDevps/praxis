@@ -4,6 +4,12 @@ Adapted from the rubric in [`rsc-harness`](https://github.com/ericrisco/rsc-harn
 its test before any skill existed. Three rules do most of the work. They are here because each one
 contradicts an instinct that feels like diligence.
 
+> **Where the instruments are.** This file cites `scripts/routing-audit.mjs`,
+> `tests/routing.test.mjs` and the `evals/` write-ups. They are not on `main`: `main` ships what
+> serves the agent, and a measurement harness serves the author. They live on the
+> [`measurement`](https://github.com/SebastianDevps/praxis/tree/measurement) branch, along with the
+> numbers quoted below. The rules stand without them; the evidence is one branch away.
+
 ---
 
 ## 1. Discriminative power, not coverage
@@ -40,7 +46,7 @@ what actually reads these, resolves `NOT x (that is \`y\`)` in a way a lexical p
 represent. What was wrong was the instrument. The general form: **when a metric moves in the
 direction opposite to the practice it scores, suspect the metric before the practice.**
 
-This trap has its own file now — [instrument discipline](instrument-discipline.md) — because it
+This trap has its own file now — [instrument discipline](https://github.com/SebastianDevps/praxis/blob/measurement/docs/instrument-discipline.md) — because it
 recurred five times in two days and the lessons were being filed as facts about individual
 artifacts instead of as rules.
 
