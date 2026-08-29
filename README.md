@@ -53,6 +53,7 @@ The differentiation is measured, not claimed — see [`evals/`](evals/) (6 fixtu
 - **Scope the subagent injection** with `PRAXIS_SUBAGENT_MATCHER`, an extended regex tested against the subagent's `agent_type` (unanchored, case-insensitive: `design|engineer` matches either, `^engineer$` is exact). Unset injects into every subagent. An invalid regex, a missing `agent_type`, or a stalled payload all fail open — scoping never silently drops the method.
 - **Crafts are inherited taste.** `frontend-design` pulls `anti-slop` + `a11y-baseline` + `motion-discipline` and runs the Ship Gate before delivering.
 - **Execution is explicit.** For multi-file builds, ask for a plan + a subagent per task (or `/praxis:loop`) — that's how it stays out of inline-everything context rot.
+- **The instruments are audited too.** Praxis measures itself, and five times in two days the defect turned out to be in the measurement rather than in what it measured — a collision metric inflated by the very clauses meant to reduce it, a rank-1 blending two languages one of the instruments cannot read, two scorers wrong in one direction only. [Instrument discipline](docs/instrument-discipline.md) is the standing rule set: **before you fix what the number says, prove the number can be wrong.**
 
 ## Per-project memory (learning)
 

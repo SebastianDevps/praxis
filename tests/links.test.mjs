@@ -131,3 +131,26 @@ test("a directory link resolves to a directory", () => {
   }
   assert.deepEqual(dirLinks, [], `link points at a directory without a trailing slash:\n  ${dirLinks.join("\n  ")}`);
 });
+
+// ── instrument-discipline ─────────────────────────────────────────────────────────────────────
+// A rules file whose evidence has rotted is worse than no rules file: the rules stay plausible
+// while the cases that justify them stop being checkable. Every artifact it cites must exist, and
+// it must stay reachable from somewhere a reader actually starts.
+test("instrument-discipline cites artifacts that exist, and is reachable", () => {
+  const doc = readFileSync(join(ROOT, "docs/instrument-discipline.md"), "utf8");
+  for (const p of [
+    "evals/2026-08-28-refuter-panel.md",
+    "tests/refute.test.mjs",
+    "scripts/routing-audit.mjs",
+    "evals/arms",
+  ]) {
+    assert.ok(existsSync(join(ROOT, p)), `instrument-discipline cites ${p}, which does not exist`);
+    assert.ok(doc.includes(p), `${p} was expected as evidence and is not cited`);
+  }
+
+  // Reachability: a doc nobody links is a doc nobody reads, which is how the fixture lesson was
+  // lost the first time — it lived in one eval write-up and never generalised.
+  const linkers = ["README.md", "docs/skill-doctrine.md", "evals/2026-08-29-tier3-smoke.md"];
+  const found = linkers.filter((f) => readFileSync(join(ROOT, f), "utf8").includes("instrument-discipline.md"));
+  assert.ok(found.length >= 2, `only ${found.length} file links instrument-discipline — it will be missed`);
+});

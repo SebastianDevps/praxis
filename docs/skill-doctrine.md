@@ -40,6 +40,10 @@ what actually reads these, resolves `NOT x (that is \`y\`)` in a way a lexical p
 represent. What was wrong was the instrument. The general form: **when a metric moves in the
 direction opposite to the practice it scores, suspect the metric before the practice.**
 
+This trap has its own file now — [instrument discipline](instrument-discipline.md) — because it
+recurred five times in two days and the lessons were being filed as facts about individual
+artifacts instead of as rules.
+
 **The same trap, found a second time.** Every description is English; the eval prompts are
 deliberately bilingual, because Praxis is used in Spanish. Measured 2026-08-29: rank-1 is **69.2%
 on English prompts and 23.5% on Spanish**, and the Spanish winners are near-random — `ad-creative`
