@@ -32,7 +32,7 @@ out to be substantial after all, say so and ask before continuing.
 
 ```
 RUN CARD — <task>
-phase:    <current phase — `Needs your decision` when stopped and waiting on you>
+phase:    <define | plan | build | verify | review | ship — `Needs your decision` when stopped and waiting on you>
 approach: <inline | delegate → design / engineer / backend / security / platform / researcher>
 research: <what you checked>
 verify:   <the acceptance gate — how you will prove it is right>
@@ -46,6 +46,11 @@ delegate the reading together with the writing.
 many files. Shape NOT clear → state the plan, set the Run Card to `Needs your decision`, STOP.
 On acceptance, break it into bite-sized independently-testable tasks in the ledger, one
 implementer subagent per task with review between.
+<!-- /only -->
+
+<!-- only:full,deep -->
+**One task vocabulary.** Phases, states, and the ledger are defined in `docs/task-model.md`;
+never redefine them locally.
 <!-- /only -->
 
 <!-- only:deep -->
@@ -68,7 +73,7 @@ must never read as clean. A GAP never sets the failure flag: it reports, it does
 work that passed yesterday.
 
 **Always-on crafts**, honored whether or not the user names them:
-anti-slop · a11y-baseline · motion-discipline · minimalism · orchestration.
+anti-slop · a11y-baseline · motion-discipline · minimalism · orchestration · evidence-discipline.
 
 **The ladder, before writing code.** Stop at the first rung that holds: already in this
 codebase? → stdlib? → native platform feature? → installed dependency? → one line? → the

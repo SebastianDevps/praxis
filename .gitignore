@@ -10,3 +10,13 @@ evals/arms/runs/
 evals/refute/runs/
 evals/route/runs/
 evals/
+
+# The run ledger. docs/task-model.md tells end users to create this in THEIR project root;
+# marketplace.json packages with "source": "./" and no allowlist, so a committed copy here
+# would ship maintainer scratch state into every install under the exact filename users own.
+PROGRESS.md
+
+# The quality bar. Same reason: `quality-bar` tells users to create this in THEIR project root
+# (and to commit it there — it is the team's standard). A copy here would ship this repo's numbers
+# into every install under a filename the user owns.
+CONSTRAINTS.md

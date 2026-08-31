@@ -20,6 +20,12 @@ visibly, in phases, with research and verification — not one silent inline blo
 not a license to skip the method; it is exactly when the method matters most, because the model has
 the least to go on.
 
+**Kernel and router.** The operating contract (`hooks/context/contract.md`) is injected on every
+turn and into every dispatched subagent; this file loads only when the skill activates, which a
+dispatched subagent may never do. So the kernel carries what must hold at turn 40 and inside every
+subagent, this file carries what needs explaining once, and where both need a rule the kernel owns
+it and this file points at it.
+
 ## Classify first
 
 - **Answer** — a question, with no request to change files → answer it. Research only what you do
@@ -31,7 +37,9 @@ the least to go on.
 
 ## The visible loop (run it OUT LOUD for substantial work)
 
-Each step is shown to the user, never implicit. This visibility IS the product.
+Each step is shown to the user, never implicit. This visibility IS the product. The `/praxis:mode`
+dial governs how much of it appears: in `fast` mode the Run Card and the ledger are dropped — the
+ceremony, never the crafts, the research, or the verification.
 
 1. **Determine** — restate the task and the plan in one or two lines.
 2. **Research first** — look before building: read the reference/screenshot closely, `scout` the
@@ -43,11 +51,13 @@ Each step is shown to the user, never implicit. This visibility IS the product.
 4. **Run Card** — BEFORE building, emit this block; update it at each phase:
    ```
    RUN CARD — <task>
-   phase:    <current phase — `Needs your decision` when stopped and waiting on you>
+   phase:    <define | plan | build | verify | review | ship — `Needs your decision` when stopped and waiting on you>
    approach: <inline | delegate → design / engineer / backend / security / platform / researcher>
    research: <what you checked>
    verify:   <the acceptance gate — how you will prove it is right>
    ```
+   Phases, task states, and the ledger's shape are defined once in `docs/task-model.md` — read it
+   there rather than inventing a vocabulary here.
 5. **Delegate; add a ledger only for a plan you accepted** — **do NOT write all the files inline in
    the main thread**, and two+ disjoint tasks fan out in one parallel wave. Work whose shape is
    already clear goes straight to delegation, however many files. Work whose shape is NOT clear
@@ -60,7 +70,11 @@ Each step is shown to the user, never implicit. This visibility IS the product.
    (`autonomous-loop` discipline, guardrails outside the model).
 6. **Verify** — run the acceptance gate. For web output that is the `frontend-design` Ship Gate
    (font ≠ Inter, mandatory Baseline table, a11y, motion). Red → fix → re-verify. Never "should work."
+   A check that ran and had nothing to fail on is a GAP, not a PASS — the kernel carries the four
+   result states and the words to report them in.
 7. **Synthesize** — state what changed and why; if a reusable pattern emerged, suggest `/learn`.
+   This step is the orchestrator's alone: a subagent reports its result and never proposes `/learn`,
+   which is why the kernel does not carry it.
 
 ## Route by task
 
@@ -75,10 +89,12 @@ Each step is shown to the user, never implicit. This visibility IS the product.
 | A consequential decision needs attacking before commitment | — | `decision-challenge` |
 | Substantial change is green and about to be called done | `refuter-correctness` + `refuter-security` + `refuter-tests` (one wave) | — |
 | CI, containers, test infrastructure | `platform` | `web-testing` |
+| No written quality bar; "define our standards" | `platform` | `quality-bar` |
 
 ## How activation works
 
 Skills activate by their `description` — invoke the matching one rather than working from training
 memory; it carries the non-obvious delta, which is the whole point of Praxis. **Crafts**
-(`anti-slop`, `a11y-baseline`, `motion-discipline`, `minimalism`, `orchestration`) are always-on
+(`anti-slop`, `a11y-baseline`, `motion-discipline`, `minimalism`, `orchestration`,
+`evidence-discipline`) are always-on
 taste disciplines every output honors, whether or not the user names them.

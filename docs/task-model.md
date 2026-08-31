@@ -113,7 +113,20 @@ cheapest moment to fix it is before anything depends on the ambiguity.
 | executing it, one subagent per task, review between | `subagent-driven-development` |
 | executing it unattended, one task per iteration | `autonomous-loop` |
 | tracking a change across stages | `spec-lifecycle` |
+| the project's standing quality bar, written once with numbers | `quality-bar` |
 | why any of this makes autonomy possible | `agentic-lifecycle` |
+
+And by phase — the skill that implements each. A phase with no owner here is a phase nothing in the
+repo knows how to run, which is how `define` and `ship` stayed unclaimed after this file named them.
+
+| phase | owner |
+|---|---|
+| `define` | `brainstorming`, and `spec-lifecycle` for a tracked change |
+| `plan` | `writing-plans`, `strategy-compare`, `decision-challenge` |
+| `build` | `subagent-driven-development`, `autonomous-loop` |
+| `verify` | `test-coverage-plan`, `web-testing`, `systematic-debugging` |
+| `review` | `design-review`, and the `reviewer` / `refuter-*` agents |
+| `ship` | `release-readiness` |
 
 Each of those describes its own job and links here for the shape. If you find yourself writing a
 second definition of a phase, a state, or a ledger filename, that is the drift this file exists to

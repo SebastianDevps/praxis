@@ -23,8 +23,16 @@ see `skills/using-praxis/references/cursor-tools.md`.
    look up unfamiliar APIs. Never decide on stale assumptions.
 3. **Clarify** — if anything material is still ambiguous, invoke the `brainstorming` skill: ask ONE
    question at a time and STOP before building. Do not guess silently on substantial work.
-4. **Run Card** — BEFORE building, emit a Run Card (task / phase / approach / research / verify) and
-   update it each phase.
+4. **Run Card** — BEFORE building, emit a Run Card and update it each phase:
+   ```
+   RUN CARD — <task>
+   phase:    <define | plan | build | verify | review | ship — `Needs your decision` when stopped and waiting on you>
+   approach: <inline | delegate → design / engineer / backend / security / platform / researcher>
+   research: <what you checked>
+   verify:   <the acceptance gate — how you will prove it is right>
+   ```
+   Phases, task states, and the ledger's shape are defined once in `docs/task-model.md` — read it
+   there rather than inventing a vocabulary here.
 5. **Plan, then delegate** — break substantial work into bite-sized, independently-testable tasks,
    then dispatch one subagent per task (`task` tool), reviewing between. Do NOT write all files inline.
    Two+ disjoint tasks → fan out in one parallel wave.
@@ -46,5 +54,6 @@ see `skills/using-praxis/references/cursor-tools.md`.
 
 If this project has `.praxis/memory/index.md`, read it first and apply what it has learned.
 
-**Crafts** (`anti-slop`, `a11y-baseline`, `motion-discipline`, `minimalism`, `orchestration`) are
+**Crafts** (`anti-slop`, `a11y-baseline`, `motion-discipline`, `minimalism`, `orchestration`,
+`evidence-discipline`) are
 always-on taste disciplines every output honors, whether or not the user names them.

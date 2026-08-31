@@ -47,9 +47,13 @@ function approachTargets(body) {
     .filter((s) => /^[a-z][a-z0-9-]*$/.test(s) && s !== "inline" && s !== "delegate");
 }
 
+// agents/design.md routes by INPUT TYPE, not by specialist, so its table header differs and the
+// sweep above never reached it — a row there could name a skill that does not exist and nothing
+// would say so. Found by a refuter, not by the suite.
 for (const [file, header] of [
   ["agents/orchestrator.md", "Specialist"],
   ["skills/using-praxis/SKILL.md", "Specialist"],
+  ["agents/design.md", "Route to"],
 ]) {
   test(`${file}: every routed specialist exists`, () => {
     const unresolved = routedAgents(read(file), header).filter((n) => !AGENTS.has(n) && !SKILLS.has(n));
@@ -66,28 +70,85 @@ for (const file of ["hooks/context/contract.md", "skills/using-praxis/SKILL.md"]
   });
 }
 
+// Two bugs lived in the old inline version of this parser, both found by a refuter with repros.
+// It split the WHOLE frontmatter on /^\s*requires:\s*$/m and took [1] — so any unrelated
+// `requires:` key added earlier (`env:\n  requires:\n    - node18`) shadowed the real block, and
+// the `\s*$` anchor meant the inline YAML form `requires: [a, b]` parsed as empty, reporting a
+// correctly-configured agent as violating the rule it satisfies. A gate that fires on correct work
+// is the failure this repo keeps re-learning. Scope to `craft:` first, then accept both shapes.
+function declaredCrafts(agent) {
+  const fm = read(`agents/${agent}.md`).split("---")[1] ?? "";
+  const scoped = fm.split(/^\s*craft:\s*$/m)[1] ?? fm;
+  const inline = scoped.match(/^\s*requires:\s*\[([^\]]*)\]/m);
+  if (inline) return inline[1].split(",").map((s) => s.trim()).filter(Boolean);
+  const block = scoped.split(/^\s*requires:\s*$/m)[1];
+  if (block === undefined) return null;
+  const out = [];
+  let started = false;
+  for (const line of block.split("\n")) {
+    const m = line.match(/^\s*-\s+(\S+)/);
+    if (m) { out.push(m[1]); started = true; continue; }
+    if (started || line.trim() !== "") break;
+  }
+  return out;
+}
+
 test("every craft an agent requires exists on disk", () => {
   const missing = [];
   for (const agent of AGENTS) {
-    const block = (read(`agents/${agent}.md`).split("---")[1] ?? "").split(/^\s*requires:\s*$/m)[1];
-    if (!block) continue;
-    let started = false;
-    let seen = 0;
-    for (const line of block.split("\n")) {
-      const m = line.match(/^\s*-\s+(\S+)/);
-      if (m) {
-        started = true; seen++;
-        if (!CRAFTS.includes(m[1])) missing.push(`${agent} → ${m[1]}`);
-        continue;
-      }
-      // The split leaves a leading empty string before the first item; only a
-      // non-blank line that is not a list item ends the block. Breaking on the
-      // empty one made this gate read zero requirements and pass vacuously.
-      if (started || line.trim() !== "") break;
-    }
-    assert.ok(seen > 0, `${agent} declares requires: but no craft was parsed`);
+    const declared = declaredCrafts(agent);
+    if (declared === null) continue;
+    assert.ok(declared.length > 0, `${agent} declares requires: but no craft was parsed`);
+    for (const c of declared) if (!CRAFTS.includes(c)) missing.push(`${agent} → ${c}`);
   }
   assert.deepEqual(missing, [], `agents require nonexistent crafts: ${missing}`);
+});
+
+// The craft layer had grown asymmetric without anyone noticing: three design crafts required by
+// `design`, and every engineering agent requiring exactly one (`minimalism`). Nothing said so,
+// because nothing was watching the ratio. This does not police the ratio — it pins the one craft
+// that must reach every agent allowed to write or judge code, so removing it is a decision someone
+// has to make in the open rather than an omission that compounds.
+// The three refuter-* agents were missing from this list while the test's own title claimed to
+// cover "judges code" — and judging whether a gate can actually fail is the entire content of the
+// craft. `researcher` and `design` stay out on purpose: one never judges, the other runs the
+// design crafts. Excluding an agent has to be a decision, which is why they are named here.
+const CODE_AGENTS = [
+  "engineer", "backend", "platform", "reviewer", "security",
+  "refuter-correctness", "refuter-security", "refuter-tests",
+];
+
+test("every agent that writes or judges code requires evidence-discipline", () => {
+  const missing = CODE_AGENTS.filter((a) => !(declaredCrafts(a) ?? []).includes("evidence-discipline"));
+  assert.deepEqual(missing, [], `these agents may write code with no evidence discipline: ${missing}`);
+});
+
+// Four surfaces recite the always-on craft list as prose. Adding a sixth craft left all four
+// reciting five — a list that is wrong is worse than no list, because a reader trusts it. The
+// AGENTS.md gate below did not catch it: "documented somewhere in the file" is satisfied by the
+// crafts table while the always-on sentence three sections away still lies.
+const CRAFT_RECITERS = [
+  "hooks/context/contract.md",
+  "skills/using-praxis/SKILL.md",
+  "skills/using-praxis/references/claude-code-tools.md",
+  ".cursor/rules/praxis.mdc",
+];
+
+test("every surface that recites the craft list recites all of them", () => {
+  for (const f of CRAFT_RECITERS) {
+    // `src.includes(c)` over the whole file was the first version, and a refuter broke it: drop a
+    // craft from the recited sentence, leave the word in a comment elsewhere, gate stays green.
+    // The same whole-file-substring mistake as the phase gate, made twice in one day. Find the
+    // recital — the densest run of craft names — and assert inside THAT.
+    const src = read(f);
+    const window = src
+      .split(/(?<=\.)\s/)
+      .map((s) => ({ s, n: CRAFTS.filter((c) => s.includes(c)).length }))
+      .sort((a, b) => b.n - a.n)[0];
+    assert.ok(window && window.n >= 3, `${f} no longer recites a craft list — remove it from CRAFT_RECITERS`);
+    const missing = CRAFTS.filter((c) => !window.s.includes(c));
+    assert.deepEqual(missing, [], `${f} recites the always-on crafts but omits ${missing}`);
+  }
 });
 
 test("every craft on disk is documented in AGENTS.md", () => {

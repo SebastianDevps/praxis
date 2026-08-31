@@ -45,6 +45,7 @@ const CRAFT_INVARIANTS = [
   ["crafts/motion-discipline/motion-discipline.md", "the reduced-motion fallback", /prefers-reduced-motion/],
   ["crafts/minimalism/minimalism.md", "the ladder", /Stop at the first rung/],
   ["crafts/orchestration/orchestration.md", "thin orchestrator context", /context thin/],
+  ["crafts/evidence-discipline/evidence-discipline.md", "the both-directions mutation", /watch it fail\. Then restore and watch it pass/],
 ];
 
 for (const [file, label, re] of CRAFT_INVARIANTS) {
@@ -101,6 +102,80 @@ test("the phase and state vocabularies are defined once, in docs/task-model.md",
   // four vocabularies happened the first time.
   for (const f of LEDGER_CONSUMERS) {
     assert.match(read(f), /docs\/task-model\.md/, `${f} does not point at the canonical task model`);
+  }
+});
+
+// v0.4.0 shipped docs/task-model.md and the behaviour did not change: the three surfaces injected
+// into every turn named neither `define` nor `ship` and linked no canon, so the Run Card's
+// `phase:` field was free text and the model wrote whatever it invented. The gate above missed it
+// because LEDGER_CONSUMERS means "skill that touches the ledger" — a scope that excludes the
+// highest-traffic files in the repo. The instrument was real; its scope was wrong.
+//
+// The gate must assert the vocabulary WHERE IT IS FILLED IN, not anywhere in the file. An earlier
+// version checked that `define` and `ship` appeared somewhere — on the argument that the other
+// four are ordinary English and would pass vacuously. A refuter broke it in two lines: shrink the
+// field to `<define | ship — ...>` and four of six phases vanish with the test still green, and a
+// sentence like "define the acceptance gate — never ship what you cannot verify" satisfies it with
+// the field gone entirely. Rare tokens were substituted for co-occurrence; only co-occurrence is
+// the thing worth protecting. Matching inside `<...>` also survives a punctuation change, which a
+// literal `define | plan | ...` match would not — a gate that fires on correct work gets muted.
+const PHASES = ["define", "plan", "build", "verify", "review", "ship"];
+
+test("every priming surface enumerates the phase vocabulary where the Run Card fills it in", () => {
+  for (const f of PRIMING_SURFACES) {
+    const src = read(f);
+    // The delimiter is a style choice, not the contract. Pinning `<` failed this gate on a
+    // bracket swap that removed nothing — the same fire-on-correct-work class the comment
+    // above claims to have fixed, moved from field names to a glyph. Accept any placeholder.
+    const fields = [...src.matchAll(/phase:\s*[<[{(]([^>\]})]*)[>\]})]/g)].map((m) => m[1]);
+    assert.ok(fields.length > 0, `${f} has no Run Card \`phase:\` field to enumerate`);
+    const missing = PHASES.filter((ph) => !fields.some((v) => new RegExp(`\\b${ph}\\b`).test(v)));
+    assert.deepEqual(
+      missing,
+      [],
+      `${f} names no phase: field carrying the full vocabulary — missing ${missing}`,
+    );
+    assert.match(src, /docs\/task-model\.md/, `${f} does not link the canonical task model`);
+  }
+});
+
+// Five surfaces render a Run Card and two had drifted apart unnoticed: the kernel and the README
+// showed four fields while `agents/orchestrator.md` and `AGENTS.md` — the file that calls itself
+// the host-agnostic source of truth every host reads — still documented six, sharing exactly one
+// field name with the card the product shows.
+//
+// The first version of this gate asserted the four field NAMES appeared anywhere in the file. Half
+// of it was vacuous: deleting the `approach` row from orchestrator.md left the test green, because
+// "approach" is an ordinary word that appears in that file's prose. Presence in a file is not
+// presence in a Run Card. This version parses the two real shapes — `field:` inside the fenced
+// block, and `| \`field\` |` as a table row — and asserts against what it actually parsed.
+const RUN_CARD_SURFACES = [...PRIMING_SURFACES, "agents/orchestrator.md", "AGENTS.md"];
+const RUN_CARD_FIELDS = ["phase", "approach", "research", "verify"];
+
+// read() collapses whitespace, which destroys the line structure this parser needs.
+const rawRead = (p) => readFileSync(join(ROOT, p), "utf8");
+
+function runCardFields(src) {
+  const found = new Set();
+  for (const line of src.split("\n")) {
+    const fenced = line.match(/^\s*([a-z_]+):\s+[<[{(]/);
+    if (fenced) found.add(fenced[1]);
+    const row = line.match(/^\|\s*`([a-z_]+)`\s*\|/);
+    if (row) found.add(row[1]);
+  }
+  return found;
+}
+
+test("every surface that renders a Run Card renders the same four fields", () => {
+  for (const f of RUN_CARD_SURFACES) {
+    const src = rawRead(f);
+    const found = runCardFields(src);
+    // Without this the parser could match nothing and every assertion below would pass on an
+    // empty set — the exact failure this gate was rewritten to remove.
+    assert.ok(found.size >= 4, `${f}: parsed ${found.size} Run Card fields — the format changed`);
+    const missing = RUN_CARD_FIELDS.filter((x) => !found.has(x));
+    assert.deepEqual(missing, [], `${f} renders a Run Card missing ${missing}`);
+    assert.doesNotMatch(src, /review_gate/, `${f} still documents the retired six-field Run Card`);
   }
 });
 

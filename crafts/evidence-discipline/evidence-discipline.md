@@ -1,0 +1,37 @@
+---
+name: evidence-discipline
+description: The tells of a bar lowered to reach green, and the mutation that proves a gate real.
+kind: craft
+---
+
+## Prove the gate
+
+**Before trusting a new gate, mutate what it guards and watch it fail. Then restore and watch it pass.**
+
+Both directions. The second is the one people skip and it is not the safe one to skip — a gate that
+fires on correct work gets muted or worked around, and it arrives dressed as diligence.
+
+## Tells
+
+Each one is a specific thing you can point at in the diff.
+
+- **A test that stopped running** — `skip`, `only`, `xfail`, a rename, a file moved out of the glob.
+- **An assertion removed from a test that still passes.** The test name still promises the check.
+- **A suppression added in the diff** — `@ts-ignore`, `eslint-disable`, `# type: ignore`, `# noqa`, `#[allow(...)]`.
+- **A threshold edited downward** — coverage minimum, performance budget, `max-warnings`, a timeout raised until the flake stopped.
+- **A snapshot regenerated** without reading what changed inside it.
+- **An exception caught so a failure stops surfacing**, rather than because the error is handled.
+- **The thing under test mocked** — the test now proves the mock works.
+
+None of these is forbidden. Each is a claim that must be argued in the change itself: why this test
+no longer needs to run, why this rule does not apply here. An unargued one is the bar moving.
+
+The argument is made **to the person reviewing**, never to yourself. An agent that suppresses a check
+and writes its own justification in the same commit has not argued anything — it has narrated. Say it
+where a human will read it before the change lands.
+
+## The general form
+
+When a metric moves in the direction opposite to the practice it scores, suspect the instrument
+before the practice. Coverage climbing while tests are deleted, warnings falling while suppressions
+land — the number is measuring its own erosion. Read what changed in the measurement first.
