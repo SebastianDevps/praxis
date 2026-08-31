@@ -21,6 +21,15 @@ od:
 5. **Verify.** Re-run the original repro. If it still fails, you fixed a symptom, not the cause.
 6. **Add a regression test.** The repro becomes the test. If the bug was reachable before, it must be tested after.
 
+## When it will not reproduce
+
+"No repro → no fix" halts step 1; it does not end the method. Pick the branch that fits and go make a repro.
+
+- **Timing** — timestamp the suspect region, insert artificial delays to *widen* the race window rather than close it, and run the path under load.
+- **Environment** — diff runtime versions and data shape (empty store vs. populated). Reproduce in CI, where the environment is clean and nobody's local state is in it.
+- **State** — hunt state leaked between tests or requests: globals, singletons, shared caches. Run the scenario in isolation *and* again after other operations; a pass in only one of the two names the cause.
+- **Truly random** — defensive logging at the suspect site plus an alert on that specific error signature. Document the conditions observed and revisit with real data, rather than guessing at a fix you cannot verify.
+
 ## Anti-patterns
 
 - Patching the one caller you observed without checking whether other callers share the same bug.

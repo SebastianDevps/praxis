@@ -9,12 +9,15 @@ kind: craft
 - Use semantic elements first: `<nav>`, `<main>`, `<article>`, `<section>`, `<header>`, `<footer>`, `<button>`, `<a>`.
 - ARIA roles only where native semantics fall short — don't add `role="button"` to a `<button>`.
 - One `<main>` per page. Landmark regions must be labeled when multiple of the same kind exist (`aria-label` or `aria-labelledby`).
+- One `<h1>` per page and no skipped heading levels. Set `<html lang>` and a `<title>` that describes the page.
+- Text resizes to 200% without clipping or horizontal scroll. Interactive targets ≥ 44×44 CSS px on mobile web. WCAG 2.2 SC 2.5.8 (AA) sets the floor at 24×24; 44 is the AAA figure and matches Apple's 44 pt — aim for 44, never fall below 24.
 
 ## Keyboard Navigation
 
 - Every interactive element reachable and operable via keyboard alone.
 - Tab order follows visual/logical reading order.
 - Focus never trapped unless inside a modal (and escape closes it).
+- A modal that traps focus must return it to the trigger on close — otherwise dismissing it strands the keyboard user at document start.
 - Skip-to-main link on every page (visible on focus).
 
 ## Focus Styles
@@ -33,6 +36,10 @@ kind: craft
 - Decorative images: `alt=""`.
 - Icons used as buttons: `aria-label` on the button, not the icon.
 - Videos: captions for speech content; transcripts for audio-only.
+
+## Live Regions
+
+- Every async change announces: `aria-live="polite"` / `role="status"` for confirmations and non-urgent updates, `aria-live="assertive"` / `role="alert"` for errors. `role="alert"` also implies `aria-atomic="true"`; bare `aria-live="assertive"` does not. The region must already be in the DOM before the message lands in it — injecting region and message together announces nothing.
 
 ## Forms
 

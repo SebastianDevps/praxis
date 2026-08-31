@@ -36,4 +36,4 @@ Claude Code primes each session via the `SessionStart` hook (`hooks/hooks.json` 
 
 - Claude Code reads BOTH `additional_context` and `hookSpecificOutput.additionalContext`; the Praxis hook emits only the nested field for this host to avoid duplicate injection.
 - Crafts (`anti-slop`, `a11y-baseline`, `motion-discipline`, `minimalism`, `orchestration`,
-  `evidence-discipline`) are always-on taste disciplines — they are not invoked, they are honored by every output.
+  `evidence-discipline`) are always-on disciplines — never invoked, and each honored by the work it governs: the design crafts reach design dispatches, `minimalism` and `evidence-discipline` reach every agent that writes or judges code.

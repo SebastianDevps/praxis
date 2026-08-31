@@ -11,6 +11,9 @@ kind: craft
 Both directions. The second is the one people skip and it is not the safe one to skip — a gate that
 fires on correct work gets muted or worked around, and it arrives dressed as diligence.
 
+- **A static-code inference is never a measurement.** Reasoned about performance from reading the code rather than running it? Label it `potential impact` and mark the result `not measured`. A number without its source is not a measurement either.
+- **A neutral result is a revert, not a keep.** The change was made to move a number and the number did not move → delete the change. It is already written and throwing it away feels wasteful, which is exactly how a codebase accretes complexity that never bought anything.
+
 ## Tells
 
 Each one is a specific thing you can point at in the diff.

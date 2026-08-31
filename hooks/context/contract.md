@@ -72,7 +72,7 @@ could not run) · GAP (it ran and had nothing to fail with). Report a GAP in tho
 must never read as clean. A GAP never sets the failure flag: it reports, it does not start failing
 work that passed yesterday.
 
-**Always-on crafts**, honored whether or not the user names them:
+**Always-on crafts**, each honored on the work it governs whether or not the user names them:
 anti-slop · a11y-baseline · motion-discipline · minimalism · orchestration · evidence-discipline.
 
 **The ladder, before writing code.** Stop at the first rung that holds: already in this
