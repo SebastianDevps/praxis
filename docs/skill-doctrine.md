@@ -84,7 +84,7 @@ being thorough. There is no minimum length — a skill that does its job in 60 l
 skill padded to 200.
 
 **The budgeted number is the positive claim, capped at 250 characters** — the description with its
-boundary clause stripped. `scripts/routing-audit.mjs` fails on any resource over it. The ceiling
+boundary clause stripped. Nothing on `main` enforces it — `scripts/routing-audit.mjs` lives on the `measurement` branch, so this ceiling holds by author discipline alone. Treat it as a rule you apply, not a gate that will catch you. The ceiling
 comes from the [gentle-ai skill style guide](https://github.com/Gentleman-Programming/gentle-ai)
 (250 hard, 160 target) and was checked before adoption rather than after: measured 2026-08-29, our
 claims ran to a median of 169 with 96% already under 250, so the ceiling ratifies the practice and

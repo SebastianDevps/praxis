@@ -23,6 +23,7 @@ Unfamiliar library, fast-moving API (anything released or updated in the last 12
 3. **Fetch topic-scoped docs (Context7-style).** Don't dump the full reference. Resolve the specific API surface you need (e.g. `useQuery` not all of React Query), then fetch that section. Smaller context = higher signal.
 4. **Prefer official sources.** Docs from the library's own site or repo outrank blog posts, Stack Overflow answers, or third-party tutorials. Secondary sources are acceptable only when official docs are absent or incomplete.
 5. **Note what changed.** If the docs differ from your training knowledge, call it out explicitly before writing any code.
+6. **Mark UNVERIFIED when the search came back empty.** If no official documentation could be found, say so in the output and state that what follows comes from training data and may be outdated. A fetch that returned nothing must never read as verified.
 
 ## Anti-patterns
 

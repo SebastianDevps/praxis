@@ -40,9 +40,23 @@ tells you it worked, the signal that tells you it broke, and where each is visib
 passed" is pre-release evidence; it cannot tell you anything at 3am. If nothing emits a signal on
 the new path, the release is unobservable and you are relying on a user to report the outage.
 
+Naming the signal is half of it. Instrumentation is code and can be wrong, so prove it: induce a
+failure in staging and locate it from telemetry alone, without reading the source. A signal nobody
+has watched fire is a plan, not evidence.
+
 **Incremental.** The smallest change that delivers the value, released on its own. Three unrelated
 changes in one deploy means a rollback takes out two things that were fine, and a regression takes
 an afternoon to bisect. Split by what can be reverted independently.
+
+## Alert on symptoms, not causes
+
+Page-worthy is what a user feels: an error rate above its threshold sustained over minutes, p99
+latency past its budget, queue age growing. Dashboard-only is what a machine feels: CPU at 85%, a
+pod restarted, disk at 70%. Cause-based alerts fire when nothing is wrong and miss the failures
+nobody predicted. Two severities only — page and ticket; a third tier trains people to ignore all
+three. Take the shape from here and the numbers from the service's own SLO — an error budget and a
+latency objective are operational commitments, not code-quality gates, so they do not live in
+`CONSTRAINTS.md` and `quality-bar` will not hand them to you.
 
 ## Ship is not "the tests pass"
 
@@ -70,3 +84,4 @@ Each of these is a rationalization that sounds like a plan.
 | "It's a small change" | Size predicts blast radius poorly. A one-line config change takes down more systems than most features. |
 | "We'll document it after" | The handoff is the release. If the person receiving it cannot operate it, it was not handed over. |
 | "Staging was green" | Staging shares neither the data nor the traffic. It rules some failures out; it confirms nothing about production. |
+| "Nothing else calls it yet" | A public interface has callers you did not write. Any change to a signature, a field, or a default answers "does the existing caller still compile?" before it ships — and when the answer is no, that migration *is* the release, not a footnote to it. |

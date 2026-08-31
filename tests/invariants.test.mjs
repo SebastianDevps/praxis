@@ -48,6 +48,21 @@ const CRAFT_INVARIANTS = [
   ["crafts/evidence-discipline/evidence-discipline.md", "the both-directions mutation", /watch it fail\. Then restore and watch it pass/],
 ];
 
+// One pin outside the crafts, and only one. A revert here does not lose nuance — it reintroduces a
+// vulnerability. This line has been wrong twice: first as a denylist (`localhost` / `10.*`, which
+// misses decimal-encoded IPs and every IPv6 form), then as "reject if not unicast", which reads as
+// stricter and is not — Go's net.IP.IsGlobalUnicast() returns true for RFC 1918 and says so in its
+// own doc comment, so that predicate passes 10.0.0.5. Both wrong forms look like protection.
+//
+// Deliberately NOT pinned: the aria-live section and the reviewer's review axes. Both are additive
+// — removing them degrades gracefully rather than resurrecting a known-bad pattern — and a pin per
+// line of doctrine would fire on every legitimate rewording, which is how a gate gets muted.
+test("skills/security keeps the SSRF rule that replaced two broken ones", () => {
+  const src = read("skills/security/SKILL.md");
+  assert.match(src, /publicly routable/i, "the SSRF check lost its allowlist form");
+  assert.match(src, /IsGlobalUnicast/, "the SSRF rule dropped the named trap that makes it correct");
+});
+
 for (const [file, label, re] of CRAFT_INVARIANTS) {
   test(`${file} keeps ${label}`, () => {
     assert.match(read(file), re);

@@ -6,9 +6,11 @@ kind: craft
 
 ## Rules
 
+**Splitting is what needs justifying, not delegating.** These two rules answer different questions and the order matters. First: does this work split? One perspective on one artifact does not — that is a single call, however substantial, and a fan-out of lenses that all return the same kind of finding is theatre. Only once it splits does the next rule decide who does each part.
+
 **Delegate substantial work.** Multi-file, new behavior, domain-specific, or any task that inflates orchestrator context → dispatch a specialist. Inline only trivial single-file edits with no new public surface.
 
-**Parallel fan-out for disjoint work.** Two or more tasks on genuinely independent files/domains → dispatch in a single wave. Shared files → sequential. Isolate concurrent writers.
+**Parallel fan-out for disjoint work.** Two or more tasks on genuinely independent files/domains → dispatch as multiple Agent calls in one assistant turn. That is what makes it a wave; across sequential turns they serialize and buy nothing. Shared files → sequential. Isolate concurrent writers.
 
 **Keep orchestrator context thin.** Each delegated unit returns a result the orchestrator synthesizes. The orchestrator does not read all the files — it delegates reading and writing together to the specialist.
 

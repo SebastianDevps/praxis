@@ -19,6 +19,11 @@ od:
 4. **Flag gaps.** Cases that have no test level assigned, or where the right level would be expensive, are gaps. Call them out — don't silently drop them.
 5. **Check pyramid balance.** Count unit : integration : e2e. If e2e > 20% of total, revisit — you are over-weighting the slow and brittle tier.
 
+## Two rules while assigning
+
+- **Mock at system boundaries, not between internal functions.** A mock placed between two internal functions tests the mock.
+- **Name the concurrency cases.** "Concurrency" as one row hides the two that actually break: rapid repeated calls, and responses arriving out of order.
+
 ## Output Format
 
 | Behavior | Edge Case? | Level | Gap? |
