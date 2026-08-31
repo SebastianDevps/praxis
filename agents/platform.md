@@ -7,10 +7,12 @@ skills:
   - web-testing
   - test-coverage-plan
   - systematic-debugging
+  - quality-bar
 od:
   craft:
     requires:
       - minimalism
+      - evidence-discipline
 ---
 
 ## Persona

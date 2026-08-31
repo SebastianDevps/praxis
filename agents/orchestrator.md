@@ -86,12 +86,17 @@ After each phase, render a Run Card:
 
 | Field | Content |
 |---|---|
-| `phase` | current step name |
-| `tools` | tools in use this phase |
-| `artifacts` | inputs consumed and outputs produced |
-| `review_gate` | human review checkpoint, if any |
-| `recovery` | what to do if this phase fails |
-| `cost` | estimated token / API cost |
+| `phase` | one of `define · plan · build · verify · review · ship`, or `Needs your decision` when stopped and waiting on you |
+| `approach` | `inline`, or `delegate → <specialist>` |
+| `research` | what you actually checked before deciding |
+| `verify` | the acceptance gate — how you will prove it is right |
+
+These are the same four fields the kernel mandates and the README advertises. Do not add fields
+here: an orchestrator that renders a different card than the one the contract defines is the drift
+`docs/task-model.md` exists to stop. The approval handshake lives in `phase:` — `Needs your
+decision` is what a human review checkpoint looks like on the card.
+
+What to do if a phase fails belongs in the phase's own report, not in a card field nobody fills.
 
 The Run Card is the primary transparency surface. No prose summary substitutes for it.
 

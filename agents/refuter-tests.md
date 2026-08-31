@@ -9,6 +9,7 @@ od:
   craft:
     requires:
       - minimalism
+      - evidence-discipline
 ---
 
 ## Persona

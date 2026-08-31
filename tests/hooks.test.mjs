@@ -56,8 +56,12 @@ test("subagent-start resolves the dispatched agent's declared crafts", () => {
   const design = context(claude("subagent-start", { input: '{"agent_type":"praxis:design"}' }));
   assert.deepEqual(craftsIn(design).sort(), ["a11y-baseline", "anti-slop", "motion-discipline"]);
 
+  // Sorted, like the assertion above it. The unsorted version pinned declaration order, so adding
+  // a craft to the frontmatter failed this test for the wrong reason — a gate firing on correct
+  // work, which is the failure mode `evidence-discipline` names. Verified before updating: the
+  // hook really does emit both crafts (`echo '{"agent_type":"engineer"}' | ./hooks/subagent-start`).
   const engineer = context(claude("subagent-start", { input: '{"agent_type":"engineer"}' }));
-  assert.deepEqual(craftsIn(engineer), ["minimalism"]);
+  assert.deepEqual(craftsIn(engineer).sort(), ["evidence-discipline", "minimalism"]);
 });
 
 test("an unknown or stock agent still receives the contract", () => {

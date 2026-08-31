@@ -93,9 +93,9 @@ being unsure what to build does. [The full shape](docs/task-model.md).
 
 | | | |
 |---|---|---|
-| **36** skills | taste, process, adversarial review, per-project memory |
+| **38** skills | taste, process, adversarial review, per-project memory |
 | **11** agents | design · engineer · backend · platform · security · reviewer · researcher · orchestrator · a three-lens refuter panel |
-| **5** crafts | always-on disciplines injected into every dispatch |
+| **6** crafts | always-on disciplines injected into every dispatch |
 | **4** pipelines | named phase sequences, rendered as Run Cards |
 | **7** commands | `/praxis:design` `:feature` `:bug` `:refactor` `:loop` `:learn` `:mode` |
 

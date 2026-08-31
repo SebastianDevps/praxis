@@ -39,12 +39,13 @@ A pipeline is a sequence of phases. At runtime each pipeline renders as an inspe
 
 | Field | What it holds |
 |---|---|
-| `phase` | current step name |
-| `tools` | tools available in this phase |
-| `artifacts` | inputs and outputs |
-| `review_gate` | human-review checkpoint (if any) |
-| `recovery` | what to do if the phase fails |
-| `cost` | estimated token / API cost |
+| `phase` | one of `define · plan · build · verify · review · ship`, or `Needs your decision` when stopped and waiting on you |
+| `approach` | `inline`, or `delegate → <specialist>` |
+| `research` | what you actually checked before deciding |
+| `verify` | the acceptance gate — how you will prove it is right |
+
+The phase vocabulary is defined once in `docs/task-model.md`. A surface that renders a Run Card
+with different fields than this is drift, and `tests/invariants.test.mjs` fails on it.
 
 Run Cards are the primary transparency mechanism — not logs, not dashboards.
 
@@ -64,6 +65,7 @@ the craft arrives as context, nothing gates the agent's actions. See `crafts/` f
 | Craft | Contract |
 |---|---|
 | `minimalism` | Laziest solution that works. YAGNI. No speculative abstractions. |
+| `evidence-discipline` | The tells of a bar lowered to reach green. Mutate a new gate until it fails, then until it passes. |
 | `anti-slop` | Avoid generic AI design fingerprints: boilerplate structure, hollow summaries, filler phrases. |
 | `a11y-baseline` | Semantic HTML, keyboard nav, ARIA roles, contrast ≥ 4.5:1 where applicable. |
 | `motion-discipline` | Motion serves meaning. Respect `prefers-reduced-motion`. No decorative animation. |

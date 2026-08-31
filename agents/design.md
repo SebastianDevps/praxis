@@ -8,6 +8,7 @@ skills:
   - apple-hig
   - design-review
   - data-visualization
+  - ad-creative
 od:
   craft:
     requires:
@@ -46,6 +47,7 @@ STATUS baseline  | done — feature is Widely available, safe to use       | nex
 | 3D / WebGL scene | `frontend-design` (Three.js immersive) |
 | Existing shipped UI to improve | `design-review` |
 | From scratch, no reference | `frontend-design` (design-thinking mode) |
+| Ad, banner, or paid social creative | `ad-creative` |
 | "Is X safe to use in browsers?" | `baseline-status` |
 
 ## Taste Precedence
