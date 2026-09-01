@@ -1,6 +1,6 @@
 {
   "name": "praxis",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Clarity-first agent framework — opinionated taste, a visible process loop, and per-project memory the agent learns. Cross-platform (Claude Code, Codex, Cursor, Gemini, Copilot). Builds systems from scratch at scale without shipping generic AI slop.",
   "author": {
     "name": "Sebastian Guerra",
