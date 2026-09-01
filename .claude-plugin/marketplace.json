@@ -12,7 +12,7 @@
     {
       "name": "praxis",
       "source": "./",
-      "description": "Clarity-first agent framework. 38 skills, 11 agents, 6 crafts, 4 pipelines, 7 commands. Primes a visible loop (research → clarify → plan → subagent-driven execution), an enforced design Ship Gate so output never ships generic AI slop, and per-project memory the agent learns (.praxis/memory/) with a retrieval guarantee. Cross-platform: Claude Code, Codex, Cursor, Gemini, Copilot — one definition, thin per-host adapters. No enforcement — primes, never blocks.",
+      "description": "Makes the agent work out loud instead of guessing: it researches first, stops for your decision before building, and proves the result with a command you can read. Every quality gate is mutation-tested — the check is made to fail on purpose, then restored — and the evals that did NOT work are published beside the ones that did, including one that found a headline feature costing 3.65x for identical detection. Adds team memory your project commits to git (conventions, decisions, learned procedures on probation until pressure-tested), complementing the host's per-user memory rather than duplicating it. Zero dependencies, no daemon, no network calls, no database. Runs on Claude Code, Codex, Cursor, Gemini CLI and Copilot from one definition. Primes, never blocks.",
       "version": "0.5.0",
       "strict": true
     }

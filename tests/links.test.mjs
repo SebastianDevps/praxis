@@ -22,6 +22,16 @@ import { join, dirname, resolve, relative } from "node:path";
 const ROOT = new URL("..", import.meta.url).pathname.replace(/\/$/, "");
 const DIRS = ["agents", "skills", "crafts", "pipelines", "commands", "docs"];
 
+// The root documents were outside this gate entirely — README.md most of all, which is the
+// one file a stranger evaluating this project actually opens. Listed explicitly rather than
+// walked: the repo root also holds node_modules, evals and .git, and none of that is prose.
+const ROOT_DOCS = ["README.md", "CHANGELOG.md", "AGENTS.md", "GEMINI.md"];
+
+function docs() {
+  const files = DIRS.flatMap((d) => walk(join(ROOT, d)));
+  return files.concat(ROOT_DOCS.map((f) => join(ROOT, f)).filter((p) => existsSync(p)));
+}
+
 function walk(dir) {
   const out = [];
   let entries;
@@ -74,10 +84,41 @@ export function proseLinks(text) {
   return out.filter(Boolean);
 }
 
+// Same-document anchors were skipped above as "not filesystem claims" — true, and it left
+// them checked by nothing. A heading reworded a year from now silently breaks the link, and
+// the reader who notices is the one deciding whether to trust the project.
+// GitHub's slug rule: lowercase, drop punctuation that is not word/space/hyphen, spaces to
+// hyphens. Duplicate headings get a -1 suffix, which nothing here relies on.
+export function headingSlugs(text) {
+  const prose = stripFences(text);
+  return new Set(
+    [...prose.matchAll(/^#{1,6}[ \t]+(.+?)[ \t]*$/gm)].map(([, h]) =>
+      h.trim().toLowerCase().replace(/[^\w\s-]/g, "").replace(/\s+/g, "-"),
+    ),
+  );
+}
+
+export function localAnchors(text) {
+  const prose = stripInlineCode(stripFences(text));
+  return [...prose.matchAll(/\[[^\]\n]*\]\(#([^)\s]+)\)/g)].map((m) => m[1]);
+}
+
+test("every same-document anchor points at a heading that exists", () => {
+  const broken = [];
+  for (const file of docs()) {
+    const text = readFileSync(file, "utf8");
+    const slugs = headingSlugs(text);
+    for (const anchor of localAnchors(text)) {
+      if (!slugs.has(anchor)) broken.push(`${relative(ROOT, file)} → #${anchor}`);
+    }
+  }
+  assert.deepEqual(broken, [], `broken anchors:\n${broken.join("\n")}`);
+});
+
 test("every path linked from prose resolves", () => {
   const broken = [];
-  for (const dir of DIRS) {
-    for (const file of walk(join(ROOT, dir))) {
+  {
+    for (const file of docs()) {
       for (const target of proseLinks(readFileSync(file, "utf8"))) {
         // Resolved relative to the document, exactly as a markdown reader would.
         const abs = resolve(dirname(file), target);
