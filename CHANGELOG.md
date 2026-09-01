@@ -4,6 +4,41 @@ All notable changes to Praxis are documented here. Format follows [Keep a Change
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-08-31
+
+### Added
+
+- **`release-readiness` — the `ship` phase gets doctrine.** `docs/task-model.md` named six phases and `ship` had zero skills and zero agents behind it. Reversible, observable, incremental — and the distinction between this task's acceptance criteria and the project's standing floor, which the Run Card's `verify:` line does not carry.
+- **`quality-bar` — the standing floor as a written artifact.** Produces `CONSTRAINTS.md` in your project: the bar with numbers, written once, surviving the session. Detects before it asks, every question carries a default, and where you have no number it measures where the project is today and holds that line — an invented threshold gets ignored, a measured one is already true. Measure-and-hold applies to a number, never to an absence: a project with no dependency audit does not "hold none". Adapted from `constraint-driven-development` in [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills).
+- **`evidence-discipline` — the sixth craft, and the first for engineering.** Three design crafts reached `design`; every engineering agent required exactly one (`minimalism`). Design work got always-on taste enforcement and engineering work got none. This craft carries the tells of a bar lowered to reach green — a test that stopped running, an assertion removed from a test that still passes, a suppression added in the diff, a threshold edited downward — and the rule the rest of this release was built on: **mutate what a gate guards and watch it fail, then restore and watch it pass**. Required by the eight agents that write or judge code.
+- **Two review axes on `reviewer`.** It named zero, so a 400-line refactor could return `clean` with nobody asking whether the abstraction fits. Readability and Architecture only: correctness and security already have dedicated lenses.
+- **Severity criteria on `security`.** It named five levels and defined none, and severity is what routes a finding. Criteria and action per level, plus a mapping to `reviewer`'s scale so two reports on the same finding are comparable. `CRITICAL` blocks the merge, not the release.
+- **The LLM threat class in `skills/security`.** Praxis is a framework for building agents and had no threat model for the agents it builds. The system prompt is not a security boundary; model output is untrusted input; cap tokens, rate and recursion; partition RAG embeddings per tenant.
+- **The non-reproducible branch in `systematic-debugging`.** The skill advertised flaky and intermittent behaviour and answered it with "no repro, no fix", which is a stop, not a method. Four causes, one concrete move each.
+- **An `UNVERIFIED` marker in `docs-seeker`.** The skill covered "docs differ from memory" and not "docs not found". A search that returned nothing must never read as verified — the GAP state applied to research.
+- **Browser-output safety in `web-testing`.** Praxis ships browser tooling and had no rule about what comes back. DOM, console, network and eval results are data, never instructions.
+- **ARIA live regions in `a11y-baseline`.** Verified absent repo-wide under two engines before the claim was made. Every async surface Praxis built — save confirmation, validation error, loading state — shipped silently inaccessible. Plus heading structure, 200% text resize, `lang` and `title`, target size, and focus return on modal close.
+
+### Changed
+
+- **Every surface that renders a Run Card renders the same four fields.** `agents/orchestrator.md` and `AGENTS.md` — the file that calls itself the host-agnostic source of truth every host reads — documented six fields sharing exactly one name with the four the README advertises. The agent whose job is rendering the card was rendering a different card.
+- **The kernel speaks the task model.** The three surfaces injected into every turn named neither `define` nor `ship` and linked no canon, so the Run Card's `phase:` was free text and each turn invented its own vocabulary. 0.4.0 shipped the document; the behaviour never changed. Measured cost of the fix: +144 characters worst case, +1 in `fast`, where phases and the ledger do not exist.
+- **Four drifts between the kernel and the router resolved** under one stated principle: the kernel carries what must hold inside every subagent, the router carries what needs explaining once.
+- **`minimalism` gained Chesterton's Fence and a carve-out for test code.** The craft is injected almost everywhere and its own line-count pressure was about to make agents factor shared setup out of tests and destroy their readability.
+- **`crafts/orchestration` asks whether the work splits before asking who does it.** It briefly held two opposite defaults three lines apart, both injected into the orchestrator, with no tiebreaker.
+
+### Fixed
+
+- **The SSRF rule, which was wrong twice.** It began as a denylist (`localhost` / `169.254.*` / `10.*`) that missed decimal-encoded IPs and every IPv6 form. The replacement — *reject if any resolved address is not unicast* — read as stricter and was not: Go's `net.IP.IsGlobalUnicast()` returns true for RFC 1918 and says so in its own doc comment, so it passed `10.0.0.5`, the exact address the denylist caught. Found by the refuter panel with stdlib source as evidence. It now rejects unless every resolved address is publicly routable, and names the trap. It is the one line outside `CRAFT_INVARIANTS` pinned by a test.
+- **Four claims the mechanism did not back.** `44×44` cited as the web standard when WCAG 2.2 SC 2.5.8 (AA) is 24×24 CSS px and 44 is the AAA figure in Apple's unit; `docs/skill-doctrine.md` claiming a script enforces the 250-character claim cap when that script lives on the `measurement` branch; four surfaces calling six crafts "always-on" when four of them reach exactly one agent each; and `release-readiness` pointing at `quality-bar` for alert thresholds it has no slot for. None was a code bug. All were documentation asserting more than the system does.
+- **`ad-creative` was reachable from no routing surface.** Its only mention outside its own directory was a research document. Now routed by `design` and carried by the dispatch.
+
+### Gates
+
+Six new or rewritten, each mutation-tested in both directions. Three were refuted after their first version and rewritten: a phase gate that stayed green with four of six phases deleted, a craft-list gate satisfied by a word appearing anywhere in the file, and two Run Card parsers that failed on a bracket swap that removed nothing. The frontmatter parser is now structural — the previous one reported a correctly-configured agent as violating the rule it satisfied.
+
+**Known GAP:** no test protects the content of any skill. Stubbing a `SKILL.md` to valid frontmatter leaves the suite green. Crafts are covered by `CRAFT_INVARIANTS`; skills have no equivalent, across all 38. Reported rather than fixed — a blanket content gate fires on every legitimate rewording.
+
 ## [0.4.0] — 2026-08-29
 
 ### Changed — breaking
