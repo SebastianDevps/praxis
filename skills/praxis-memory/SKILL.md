@@ -17,16 +17,41 @@ Layer 1 of Praxis learning: the agent LEARNS per project, accumulating knowledge
 team shares via git. Memory lives in the USER's project at `.praxis/memory/` — never in the plugin.
 It is created at runtime by `/praxis:learn`; do not scaffold it ahead of need.
 
+## This is the TEAM store. It is not the only one.
+
+Claude Code ships its own per-user memory (`~/.claude/projects/<project>/memory/`, an index loaded
+at session start plus detail files on demand). That store is **personal**: it lives on one machine,
+under one account, and no teammate ever sees it. Praxis does not compete with it and must never
+duplicate it.
+
+| | Where | What belongs there |
+|---|---|---|
+| **Personal** | the host's native memory | how *this person* works, corrections to their own style, machine-local setup |
+| **Team** | `.praxis/memory/`, committed | conventions, decisions, and procedures a NEW TEAMMATE would need |
+
+**The admission rule, one line: if a new teammate would not need it, it does not go in the team
+store.** A lesson about the project belongs here. A lesson about you belongs in the personal one.
+Writing personal preferences into a committed store is how a shared memory becomes noise everyone
+else has to read and nobody else can act on.
+
+On hosts with no native memory (Codex, Cursor, Gemini CLI, Copilot) the personal layer simply does
+not exist. That is not a gap to fill here — the team store stays the team store.
+
 ## The five artifacts
 
 ```
 .praxis/memory/
+  .gitignore            # written on first capture: excludes sessions.jsonl
   index.md              # tiny, always-loaded retrieval index — the read path
   lessons.md            # detail for facts / corrections / conventions
-  gaps.md               # append-only: what this memory does NOT know
-  sessions.jsonl        # raw capture, written by the SubagentStop hook
+  gaps.md               # append-only: sightings awaiting a second occurrence, and known holes
+  sessions.jsonl        # raw capture, written by the SubagentStop hook — LOCAL, never committed
   skills/<name>/SKILL.md # a learned procedure (candidate → active)
 ```
+
+Everything here is committed **except `sessions.jsonl`**: it is per-machine capture, it carries no
+distilled value, and committing it would put one developer's dispatch log into everyone's diff. The
+hook writes the `.gitignore` that excludes it, so nobody has to remember.
 
 ## Capture and consolidation are separate
 
@@ -71,10 +96,22 @@ One entry per lesson:
 ### <one-line lesson>
 - What: <the fact / correction / convention>
 - Why: <why it holds — the non-obvious reason>
+- Source: <what taught it — the session, the correction, the commit or PR>
 - Recurrence: seen <N>x
 - conf: <0.x>
 - last_verified: <YYYY-MM-DD>
+- last_used: <YYYY-MM-DD>
 ```
+
+`Source` is not bookkeeping. Consolidation is lossy: it turns "the user corrected me twice in one
+review" into a flat imperative, and once the origin is gone the claim reads with an authority its
+evidence never earned. A lesson whose source cannot be named is a lesson nobody can re-check when
+the codebase moves under it.
+
+`last_used` is refreshed **when the lesson is actually applied**, not when it is written — that is
+the difference between a lesson that is earning its line and one that has merely been sitting in
+the index. It is the only signal `learn-prune` has for decay, so a lesson that is never refreshed
+is exactly what pruning is looking for.
 
 ### `gaps.md` — what the memory does not know
 
@@ -82,17 +119,26 @@ Append-only. Each line is a hole someone noticed, and it is what gives `/praxis:
 queue instead of waiting for a lesson to arrive by accident.
 
 ```
-- <YYYY-MM-DD> <the gap> · seen in <where it came up>
+- <YYYY-MM-DD> <the gap or the single sighting> · seen in <where it came up>
 ```
 
-Three things belong here:
+Four things belong here:
 
+- **a first sighting** — something that looks reusable but has been seen exactly once;
 - a question this memory could not answer when it was asked;
 - a convention referenced repeatedly with no entry behind it;
 - a lesson that was contradicted and left unresolved.
 
+**The first sighting is what makes recurrence work across sessions.** A single occurrence is not a
+lesson, so it cannot go in `lessons.md` — but if it is dropped entirely, the same insight seen once
+next week is a first sighting again, forever. Recorded here, the second occurrence in ANY later
+session finds it, and the pair promotes to a lesson. `gaps.md` is the recurrence buffer; without
+it, the `≥2×` rule silently means "twice in one conversation".
+
+Promotion is a move, not a copy: when a gap becomes a lesson, its line leaves this file.
+
 A gap is not a lesson. It is the absence of one, recorded so it can be closed on purpose. Remove a
-line only when the gap is actually closed — never to tidy the file.
+line only when the gap is closed or promoted — never to tidy the file.
 
 ### `skills/<name>/SKILL.md` — a learned procedure
 

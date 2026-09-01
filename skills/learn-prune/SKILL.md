@@ -24,14 +24,25 @@ project's `.praxis/memory/`. Follows the `praxis-memory` contract.
    suspect — the codebase may have moved. Lower its `conf`; if it has not resurfaced and is no longer
    true, archive it out of `index.md` (keep detail in `lessons.md` for audit, drop the index line).
 
-2. **Archive the unused.** A learned skill never reached for across N sessions is dead weight. Demote
-   `active → candidate` if it is merely cold, or remove it if it is obsolete.
+2. **Archive the unused — read `last_used`, not `last_verified`.** The two answer different questions:
+   `last_verified` says when someone last confirmed the lesson is TRUE, `last_used` says when it last
+   CHANGED anything. A lesson can be perfectly true and still be dead weight, and that is the case
+   pruning exists for. Rank by `last_used` ascending and start at the top: never used since it was
+   written is the strongest possible signal to cut. Demote a learned skill `active → candidate` if it
+   is merely cold; remove it if it is obsolete.
 
-3. **Resolve contradictions.** When two lessons disagree, they cannot both stay — investigate which
+   A missing `last_used` means the lesson predates the field — treat it as cold, not as fresh.
+
+3. **Sweep `gaps.md` too.** A first sighting that never found its second occurrence is a line that will
+   never promote. Old sightings decay like anything else: cut the ones that stopped being plausible,
+   keep the ones still worth watching. An unbounded gaps file stops being a work queue and becomes an
+   attic — and unlike the index it is never read at session start, so nothing else will catch it.
+
+4. **Resolve contradictions.** When two lessons disagree, they cannot both stay — investigate which
    holds now, keep the verified one (refresh its `last_verified`), retire the other. Never leave the
    agent two conflicting instructions to pick from.
 
-4. **Shrink the index.** The whole point is a TINY `index.md` — it is loaded in full every session.
+5. **Shrink the index.** The whole point is a TINY `index.md` — it is loaded in full every session.
    Merge near-duplicates, cut lines that no longer earn their context, keep one line per live lesson
    and skill. If the index has grown long, you have not pruned enough.
 
