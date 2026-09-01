@@ -41,8 +41,10 @@ const ACTUAL = {
   commands: mdFiles("commands").length,
 };
 
-// Both surfaces sell the same inventory: the marketplace entry a directory
-// renders, and the README table a human reads. Either one drifting is the bug.
+// The rule is "a stated number must be true", NOT "every surface must state a number".
+// The first version of this gate demanded counts in the marketplace description too,
+// which quietly forced the one line a directory renders to spend itself on an inventory
+// instead of on what makes the plugin worth installing. A test should not dictate copy.
 const SURFACES = [
   ["marketplace description", marketplace.plugins[0].description],
   ["README inventory table", readFileSync(join(ROOT, "README.md"), "utf8")],
@@ -50,12 +52,22 @@ const SURFACES = [
 
 for (const [label, text] of SURFACES) {
   for (const [resource, count] of Object.entries(ACTUAL)) {
-    test(`${label} states the real ${resource} count`, () => {
+    test(`${label} does not misstate the ${resource} count`, () => {
       // Matches "38 skills" and the README's "**38** skills" alike.
-      const claim = new RegExp(`\\*{0,2}(\\d+)\\*{0,2}\\s+${resource}\\b`);
-      const found = text.match(claim);
-      assert.ok(found, `no ${resource} count found in ${label}`);
+      const found = text.match(new RegExp(`\\*{0,2}(\\d+)\\*{0,2}\\s+${resource}\\b`));
+      if (!found) return; // states no count — nothing to be wrong about
       assert.equal(Number(found[1]), count, `${label} claims ${found[1]} ${resource}`);
     });
   }
 }
+
+// ...but the inventory must be stated SOMEWHERE, or every assertion above passes by
+// saying nothing. A gate with nothing left to check is a GAP, not a PASS.
+test("the README states the full inventory, so the checks above have something to check", () => {
+  const readme = readFileSync(join(ROOT, "README.md"), "utf8");
+  for (const [resource, count] of Object.entries(ACTUAL)) {
+    const found = readme.match(new RegExp(`\\*{0,2}(\\d+)\\*{0,2}\\s+${resource}\\b`));
+    assert.ok(found, `README states no ${resource} count`);
+    assert.equal(Number(found[1]), count);
+  }
+});

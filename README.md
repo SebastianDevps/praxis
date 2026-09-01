@@ -4,6 +4,10 @@
 
 Your agent stops guessing, works out loud, and remembers what your project already decided.
 
+Every gate here is mutation-tested — made to fail on purpose, then restored — and
+[the evals that came out against Praxis are published](#what-the-measurements-say-including-the-ones-that-went-against-us)
+next to the ones that went for it.
+
 ```
 /plugin marketplace add SebastianDevps/praxis
 /plugin install praxis@praxis
@@ -99,15 +103,23 @@ being unsure what to build does. [The full shape](docs/task-model.md).
 | **4** pipelines | named phase sequences, rendered as Run Cards |
 | **7** commands | `/praxis:design` `:feature` `:bug` `:refactor` `:loop` `:learn` `:mode` |
 
-## Per-project memory
+## Team memory, in your repo
 
-`/praxis:learn` captures one recurring, reusable lesson per session into `.praxis/memory/` —
-plain Markdown, no backend, committable so the whole team shares it.
+Claude Code already remembers things *for you* — per user, per machine, invisible to everyone else.
+Praxis adds the layer that is missing: memory the **team** owns. `/praxis:learn` writes conventions,
+decisions and learned procedures into `.praxis/memory/` as plain Markdown you commit, review in a
+diff, and share through git. One admission rule keeps it useful: **if a new teammate would not need
+it, it does not go in.**
 
 The hook injects the memory index **every session**, which defeats the usual failure: writing
-lessons the agent never reads back. Three safeguards keep it honest — capture only on recurrence
-(seen twice, never one-offs), a probation gate before a learned skill is trusted, and a prune pass
-so it does not rot.
+lessons the agent never reads back. Four safeguards keep it honest — capture only on recurrence
+(seen twice, never one-offs, with the first sighting parked in `gaps.md` so the second one *in any
+later session* can find it), every lesson carrying the source that taught it, a probation gate
+before a learned skill is trusted, and a prune pass driven by what a lesson last *changed* rather
+than by when it was last written.
+
+No database, no daemon, no port. The market's answer to this runs a resident worker service; this
+one is files you can read.
 
 Measured: **~12× fewer tokens** on facts the project already decided
 ([the A/B](https://github.com/SebastianDevps/praxis/blob/measurement/evals/2026-06-26-learning-ab.md)).
@@ -120,13 +132,26 @@ guard that halts if a test file is touched.
 
 ---
 
-## Measured, not claimed
+## What the measurements say, including the ones that went against us
 
-The harnesses and their write-ups live on the
+Ten write-ups and their harnesses live on the
 [`measurement`](https://github.com/SebastianDevps/praxis/tree/measurement) branch — `main` ships
-what serves the agent. The negative results are published beside the positive ones: a seeded-defect
-eval found the refuter panel costs **3.65× for identical detection**, and a $3 smoke stopped an $18
-run from producing an invalid answer.
+what serves the agent.
+
+The one worth reading first is the one that lost. A seeded-defect eval put the refuter panel
+against a control arm of three identical reviewers — so the result could not be confused with
+simply spending 3× the compute — and every arm found every defect, every time:
+
+> Every arm found every seeded defect, every time. **The tasks were too easy.** […] a metric every
+> arm clears measures nothing. **It was predictable and it was not predicted.**
+> — [`evals/2026-08-28-refuter-panel.md`](https://github.com/SebastianDevps/praxis/blob/measurement/evals/2026-08-28-refuter-panel.md)
+
+$29.83 spent to find that a headline feature cost **3.65× for identical detection**, published
+rather than deleted. A $3 smoke also stopped an $18 run from producing an invalid answer, and the
+learning A/B measured **~12× fewer tokens** on facts the project had already decided.
+
+Claiming rigor is free. Publishing the run that contradicts you is the only version of it anyone
+can check.
 
 ## Development
 
