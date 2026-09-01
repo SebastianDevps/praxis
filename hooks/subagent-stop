@@ -35,6 +35,15 @@ mem="${project}/.praxis/memory"
 [ -d "${project}/.praxis" ] || exit 0
 mkdir -p "$mem" 2>/dev/null || exit 0
 
+# The rest of the store is the TEAM's — committed, shared, reviewed in a diff. This file
+# is not: it is per-machine capture with nothing distilled in it, and committing it puts
+# one developer's dispatch log into everyone else's pull request. The exclusion is written
+# here rather than documented, because a rule that depends on each user remembering to add
+# a .gitignore line is the failure class this plugin exists to remove.
+#
+# Written only when absent: a project that has deliberately edited this file keeps its edit.
+[ -f "${mem}/.gitignore" ] || printf 'sessions.jsonl\n' > "${mem}/.gitignore" 2>/dev/null || true
+
 # stdin is bounded exactly as in subagent-start: a host that never delivers the
 # payload costs one second and we still record the dispatch.
 payload=""
