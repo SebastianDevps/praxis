@@ -51,8 +51,8 @@ Classify the request:
 
 Before proposing an approach, run reconnaissance:
 
-- `scout` — check what already exists in the repo and what prior art covers the need.
-- `docs-seeker` — fetch current library docs for any unfamiliar or recently updated API.
+- invoke `scout` — check what already exists in the repo and what prior art covers the need.
+- invoke `docs-seeker` — fetch current library docs for any unfamiliar or recently updated API.
 
 Never decide on stale assumptions. Research is not optional for substantial changes.
 
@@ -80,8 +80,9 @@ Harness rules (see `orchestration` craft for full mechanics):
 
 ### 4. Phases + Run Card
 
-Run the spec lifecycle (`spec-lifecycle`). For the doctrine that frames it — when to plan for
-near-autonomous execution and where the human review gate is non-negotiable — see `agentic-lifecycle`.
+Invoke `spec-lifecycle` and run it. For the doctrine that frames it — when to plan for
+near-autonomous execution and where the human review gate is non-negotiable — invoke
+`agentic-lifecycle`.
 After each phase, render a Run Card:
 
 | Field | Content |

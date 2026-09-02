@@ -42,10 +42,12 @@ dial governs how much of it appears: in `fast` mode the Run Card and the ledger 
 ceremony, never the crafts, the research, or the verification.
 
 1. **Determine** — restate the task and the plan in one or two lines.
-2. **Research first** — look before building: read the reference/screenshot closely, `scout` the
-   repo for prior art, `docs-seeker` for unfamiliar APIs. Never decide on stale assumptions.
+2. **Research first** — look before building: read the reference/screenshot closely, invoke
+   `scout` for prior art in this repo, invoke `docs-seeker` for unfamiliar APIs. Never decide on
+   stale assumptions.
 3. **Clarify** — if anything material is still ambiguous after looking (scope, framework, data,
-   key behavior), run `brainstorming`: ask the user ONE question at a time and STOP before building.
+   key behavior), invoke `brainstorming`: ask the user ONE question at a time and STOP before
+   building.
    Do not guess silently on substantial work — you would build what you imagined, not what they
    want. A faithful replica answers most of itself; ask only what the reference cannot tell you.
 4. **Run Card** — BEFORE building, emit this block; update it at each phase:
@@ -62,14 +64,14 @@ ceremony, never the crafts, the research, or the verification.
    the main thread**, and two+ disjoint tasks fan out in one parallel wave. Work whose shape is
    already clear goes straight to delegation, however many files. Work whose shape is NOT clear
    gets the plan first: state it, set the Run Card phase to `Needs your decision`, and STOP. Once
-   the user accepts, break it into bite-sized independently-testable tasks in a ledger
-   (`writing-plans`) — never a vague 4-bullet plan — and execute task-by-task via
-   `subagent-driven-development`: one implementer subagent per task, review between, progress in
-   the ledger. A file count is not an acceptance; a ledger nobody agreed to is ceremony charged to
-   the wrong person. For an unattended iterate-until-done run, use `/praxis:loop`
-   (`autonomous-loop` discipline, guardrails outside the model).
-6. **Verify** — run the acceptance gate. For web output that is the `frontend-design` Ship Gate
-   (font ≠ Inter, mandatory Baseline table, a11y, motion). Red → fix → re-verify. Never "should work."
+   the user accepts, invoke `writing-plans` to break it into bite-sized independently-testable
+   tasks in a ledger — never a vague 4-bullet plan — then invoke `subagent-driven-development` and
+   execute task-by-task: one implementer subagent per task, review between, progress in the
+   ledger. A file count is not an acceptance; a ledger nobody agreed to is ceremony charged to
+   the wrong person. For an unattended iterate-until-done run, use `/praxis:loop`, which invokes
+   `autonomous-loop` — guardrails outside the model.
+6. **Verify** — run the acceptance gate. For web output, invoke `frontend-design` and run its
+   Ship Gate (font ≠ Inter, mandatory Baseline table, a11y, motion). Red → fix → re-verify. Never "should work."
    A check that ran and had nothing to fail on is a GAP, not a PASS — the kernel carries the four
    result states and the words to report them in.
 7. **Synthesize** — state what changed and why; if a reusable pattern emerged, suggest `/learn`.
