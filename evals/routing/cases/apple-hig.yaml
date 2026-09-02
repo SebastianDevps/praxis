@@ -1,0 +1,35 @@
+skill: apple-hig
+
+should_trigger:
+  - prompt: "Build this screen so it feels native on iOS."
+    why: "Native-feeling Apple platform UI — the core job."
+  - prompt: "Our tap targets feel wrong on iPhone and things sit under the notch."
+    why: "Touch targets and safe areas are HIG concerns."
+  - prompt: "Diseña esta vista siguiendo las guías de Apple para iPadOS."
+    why: "Explicit HIG request, in Spanish."
+  - prompt: "Should this be a sheet, a popover or a full-screen modal on macOS?"
+    why: "Native component selection per Apple's conventions."
+  - prompt: "Make the watchOS complication layout follow platform conventions."
+    why: "An Apple platform with its own HIG rules."
+
+should_not_trigger:
+  - prompt: "Build the marketing landing page for the app."
+    route_to: "frontend-design"
+    why: "A web page, not an Apple platform surface."
+  - prompt: "Pick the visual language — clean, brutalist or swiss?"
+    route_to: "design-system-clean"
+    why: "Visual system choice, not platform conventions."
+  - prompt: "Can I use :has() in this web view?"
+    route_to: "baseline-status"
+    why: "Web platform feature support."
+  - prompt: "Review this iOS screen and list what's off."
+    route_to: "design-review"
+    why: "Critique of something built."
+
+capability:
+  - scenario: "A mobile screen must be built to feel native on iOS."
+    must_include:
+      - "Respects safe areas and the dynamic island / notch rather than assuming a rectangular viewport."
+      - "Meets the platform minimum touch target size rather than web-sized hit areas."
+      - "Chooses native-equivalent components for the platform instead of reimplementing them."
+      - "Honours system settings such as Dynamic Type and reduced motion."

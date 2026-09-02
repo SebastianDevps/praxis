@@ -9,7 +9,11 @@ evals/arms/runs/
 # Eval workspaces — kept locally for --rescore, never committed.
 evals/refute/runs/
 evals/route/runs/
-evals/
+# evals/* rather than evals/: git cannot re-include a path whose parent directory is
+# excluded, and the routing corpus below has to be versioned — it is CI input, not a
+# run artifact. Everything else under evals/ stays out of main.
+evals/*
+!evals/routing/
 
 # The run ledger. docs/task-model.md tells end users to create this in THEIR project root;
 # marketplace.json packages with "source": "./" and no allowlist, so a committed copy here

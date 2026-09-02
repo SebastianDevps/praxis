@@ -1,0 +1,35 @@
+skill: copywriting
+
+should_trigger:
+  - prompt: "Write the CTA and empty-state text for this screen."
+    why: "UI microcopy — the core job."
+  - prompt: "Our error messages all say 'Something went wrong'. Rewrite them."
+    why: "Error copy that must say what happened and what to do."
+  - prompt: "Escribe el headline y el subtítulo de la página de precios."
+    why: "Marketing copy for a named surface, in Spanish."
+  - prompt: "This button says 'Submit'. Give me something better."
+    why: "Verb-first CTA selection is squarely this skill."
+  - prompt: "Write the onboarding tooltips for the three main features."
+    why: "UI text on a product surface."
+
+should_not_trigger:
+  - prompt: "Here's our README. Does it read like AI wrote it?"
+    route_to: "prose-tells"
+    why: "Auditing a finished text against named tells, not writing UI copy."
+  - prompt: "Define how our product should sound across every surface, permanently."
+    route_to: "brand"
+    why: "A reusable voice definition, not copy for one surface."
+  - prompt: "Design the paid social asset."
+    route_to: "ad-creative"
+    why: "The campaign asset around the words."
+  - prompt: "Build the pricing page."
+    route_to: "frontend-design"
+    why: "The web surface, not its text."
+
+capability:
+  - scenario: "A set of error and empty states must be rewritten."
+    must_include:
+      - "Every error says WHAT went wrong and WHAT to do, and assigns no blame to the user."
+      - "Every empty state explains why it is empty plus ONE action to fill it."
+      - "CTAs lead with a verb and avoid 'Submit'."
+      - "Strips the AI clichés — no Elevate, Seamless, Unleash, Empower."

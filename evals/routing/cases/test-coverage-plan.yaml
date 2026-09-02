@@ -1,0 +1,35 @@
+skill: test-coverage-plan
+
+should_trigger:
+  - prompt: "What should we test for this new checkout flow?"
+    why: "Deciding coverage for new work — the core job."
+  - prompt: "Give me a test plan for the permissions change."
+    why: "Names the artifact this skill produces."
+  - prompt: "¿Qué casos borde deberíamos cubrir en esta feature?"
+    why: "Edge-case enumeration for planned work, in Spanish."
+  - prompt: "Which of these belong in unit tests versus e2e?"
+    why: "Mapping behaviors to test levels is central to the skill."
+  - prompt: "We have 80% coverage but I don't trust it. What's actually untested?"
+    why: "Gap identification against real behaviors, not line counts."
+
+should_not_trigger:
+  - prompt: "Wire up Playwright with visual regression for this app."
+    route_to: "web-testing"
+    why: "Setting up the runner, not deciding what to cover."
+  - prompt: "This test is failing. Why?"
+    route_to: "systematic-debugging"
+    why: "An observed failure needs diagnosis."
+  - prompt: "Try to make our suite pass wrongly and find the assertions that cannot fail."
+    route_to: "refuter-tests"
+    why: "Adversarially attacking an existing suite is the refuter lens."
+  - prompt: "Break this feature into implementation tasks."
+    route_to: "writing-plans"
+    why: "Task authoring, not test planning."
+
+capability:
+  - scenario: "A new checkout flow needs a test plan before implementation."
+    must_include:
+      - "Lists BEHAVIORS and edge cases rather than files or functions to cover."
+      - "Maps each behavior to a level — unit, integration or e2e — with a reason for the level."
+      - "Flags what will remain untested and says so, instead of implying full coverage."
+      - "Keeps the pyramid balanced rather than pushing everything to e2e."

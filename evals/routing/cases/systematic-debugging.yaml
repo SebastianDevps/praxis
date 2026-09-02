@@ -1,0 +1,35 @@
+skill: systematic-debugging
+
+should_trigger:
+  - prompt: "This test fails intermittently in CI but passes locally."
+    why: "An observed failure needing reproduction and root-cause isolation."
+  - prompt: "The login redirect broke after yesterday's deploy. Find out why."
+    why: "A regression with an observed symptom — reproduce, isolate, trace."
+  - prompt: "El endpoint devuelve 500 solo con ciertos usuarios. Investiga."
+    why: "Conditional failure needing isolation, in Spanish."
+  - prompt: "It's not working. Here's the stack trace."
+    why: "A concrete failure is on the table; fixing before reproducing is the anti-pattern."
+  - prompt: "We patched this three times and it keeps coming back."
+    why: "Repeated symptom patching is the signal to trace to the actual root."
+
+should_not_trigger:
+  - prompt: "What should we test for this new feature?"
+    route_to: "test-coverage-plan"
+    why: "Planning coverage for new work, with no failure observed."
+  - prompt: "Set up Playwright for this app."
+    route_to: "web-testing"
+    why: "Wiring the runner, not diagnosing a failure."
+  - prompt: "Is this code well written?"
+    route_to: "reviewer"
+    why: "Quality judgement, not an observed defect."
+  - prompt: "Which caching approach should we use?"
+    route_to: "strategy-compare"
+    why: "A decision, not a bug."
+
+capability:
+  - scenario: "A test fails intermittently in CI and passes locally."
+    must_include:
+      - "REPRODUCES the failure before proposing any fix, and says so explicitly."
+      - "Isolates the variable that changes the outcome rather than guessing from the stack trace."
+      - "Fixes once at the root where all callers pass through, not at each call site."
+      - "Adds a regression test that FAILS before the fix and passes after."
