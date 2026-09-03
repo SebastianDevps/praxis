@@ -14,6 +14,7 @@ evals/route/runs/
 # run artifact. Everything else under evals/ stays out of main.
 evals/*
 !evals/routing/
+!evals/value/
 
 # The run ledger. docs/task-model.md tells end users to create this in THEIR project root;
 # marketplace.json packages with "source": "./" and no allowlist, so a committed copy here
