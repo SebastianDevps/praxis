@@ -21,22 +21,34 @@ import { tmpdir } from "node:os";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-const cell = (pluginDir, cwd, prompt) => {
+// `mode` defaults to plan: a unit scored on what the model SAYS needs no write access, and plan
+// mode keeps the fixture pristine between arms. A unit scored on what the model BUILDS has to be
+// able to write, and passes acceptEdits.
+const cell = (pluginDir, cwd, prompt, mode = "plan") => {
   const out = execFileSync("claude", [
     "-p", prompt, "--plugin-dir", pluginDir, "--setting-sources", "project,local",
-    "--permission-mode", "plan", "--output-format", "stream-json", "--verbose",
+    "--permission-mode", mode, "--output-format", "stream-json", "--verbose",
   ], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024 });
-  let text = [], skills = [], cost = 0;
+  // An ATTEMPT is not an invocation. The control arm, seeing design-system-swiss/clean/bento in
+  // its list, inferred design-system-brutalist existed and called it; the call failed, and the
+  // first version of this parser recorded it as a successful invocation and made the control look
+  // contaminated. Attempts are correlated with their tool_result and only successes are reported.
+  let text = [], attempted = new Map(), failed = new Set(), cost = 0;
   for (const line of out.split("\n")) {
     if (!line.startsWith("{")) continue;
     const r = JSON.parse(line);
     if (r.type === "assistant") for (const b of r.message?.content ?? []) {
       if (b.type === "text") text.push(b.text);
-      if (b.type === "tool_use" && b.name === "Skill") skills.push(b.input?.skill);
+      if (b.type === "tool_use" && b.name === "Skill") attempted.set(b.id, b.input?.skill);
+    }
+    if (r.type === "user" && Array.isArray(r.message?.content)) for (const b of r.message.content) {
+      if (b.type === "tool_result" && b.is_error) failed.add(b.tool_use_id);
     }
     if (r.type === "result") cost = r.total_cost_usd ?? 0;
   }
-  return { text: text.join("\n"), skills, cost };
+  const skills = [...new Set([...attempted].filter(([id]) => !failed.has(id)).map(([, s]) => s))];
+  const rejected = [...new Set([...attempted].filter(([id]) => failed.has(id)).map(([, s]) => s))];
+  return { text: text.join("\n"), skills, rejected, cost, raw: out };
 };
 
 // A plugin copy with one skill removed. .git is skipped: it is 90% of the tree and no hook reads it.
@@ -47,19 +59,32 @@ const withoutSkill = (skill) => {
   return dir;
 };
 
-export async function runUnit(unit) {
+const seed = (unit) => {
   const work = mkdtempSync(join(tmpdir(), `fixture-${unit.id}-`));
   for (const [rel, body] of Object.entries(unit.files ?? {})) {
     mkdirSync(dirname(join(work, rel)), { recursive: true });
     writeFileSync(join(work, rel), body);
   }
+  return work;
+};
+
+export async function runUnit(unit) {
+  // Each arm gets its OWN fixture copy. Sharing one directory lets the first arm's files brief the
+  // second, which would read as the skill's contribution and is not.
   const controlPlugin = withoutSkill(unit.skill);
-  const treatment = cell(ROOT, work, `Invoke praxis:${unit.skill} first, then: ${unit.task}`);
-  const control = cell(controlPlugin, work, unit.task);
+  const tDir = seed(unit), cDir = seed(unit);
+  const treatment = cell(ROOT, tDir, `Invoke praxis:${unit.skill} first, then: ${unit.task}`, unit.mode);
+  const control = cell(controlPlugin, cDir, unit.task, unit.mode);
   rmSync(controlPlugin, { recursive: true, force: true });
+  // Raw streams are kept so a scorer defect costs a re-score, not a re-run. Two of this harness's
+  // scorers were wrong on first contact; re-running to find that out would have cost $6 a time.
+  const runs = join(ROOT, "evals", "value", "runs");
+  mkdirSync(runs, { recursive: true });
+  writeFileSync(join(runs, `${unit.id}-treatment.jsonl`), treatment.raw);
+  writeFileSync(join(runs, `${unit.id}-control.jsonl`), control.raw);
   return {
-    id: unit.id, skill: unit.skill,
-    treatment: { ...unit.score(treatment.text), invoked: treatment.skills, cost: treatment.cost, text: treatment.text },
-    control: { ...unit.score(control.text), invoked: control.skills, cost: control.cost, text: control.text },
+    id: unit.id, skill: unit.skill, dirs: { treatment: tDir, control: cDir },
+    treatment: { ...unit.score(treatment.text, tDir), invoked: treatment.skills, rejected: treatment.rejected, cost: treatment.cost },
+    control: { ...unit.score(control.text, cDir), invoked: control.skills, rejected: control.rejected, cost: control.cost },
   };
 }
