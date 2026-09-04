@@ -1,0 +1,35 @@
+skill: design-system-bento
+
+should_trigger:
+  - prompt: "Build the features section as a bento grid."
+    why: "Names the pattern directly."
+  - prompt: "I want varied tile sizes for the product highlights, like the Apple site."
+    why: "Modular tiles of differing sizes is the bento signature."
+  - prompt: "Haz una cuadrícula modular de tarjetas para el dashboard, con tamaños distintos."
+    why: "Varied-size modular tile layout, in Spanish."
+  - prompt: "Turn this flat card list into something with more visual rhythm and different tile weights."
+    why: "The problem bento solves — uniform cards flattened into a grid."
+  - prompt: "Feature showcase with a big hero tile and smaller supporting ones."
+    why: "Asymmetric tile hierarchy is the pattern."
+
+should_not_trigger:
+  - prompt: "Restrained SaaS dashboard, lots of whitespace, one accent color."
+    route_to: "design-system-clean"
+    why: "Soft, minimal and restrained is the clean system, not tiled bento."
+  - prompt: "Strict typographic grid, editorial, minimal color."
+    route_to: "design-system-swiss"
+    why: "Type-driven grid discipline is Swiss, not modular tiles."
+  - prompt: "Chart the revenue trend inside the tile."
+    route_to: "data-visualization"
+    why: "The chart inside the tile is a different discipline from the tile layout."
+  - prompt: "Review this bento grid and tell me what's wrong with it."
+    route_to: "design-review"
+    why: "Critique of something that already exists, not building it."
+
+capability:
+  - scenario: "A landing page features section must be built as a bento grid."
+    must_include:
+      - "Varies tile size to encode importance rather than making every tile equal."
+      - "Uses CSS Grid with explicit spans rather than flexbox plus calc() hacks."
+      - "Keeps the grid readable at small widths — it reflows rather than shrinking every tile."
+      - "Honours anti-slop — no Inter default, no AI purple gradient, no uniform border radius."

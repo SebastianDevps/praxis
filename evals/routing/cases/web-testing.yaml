@@ -1,0 +1,35 @@
+skill: web-testing
+
+should_trigger:
+  - prompt: "Set up Playwright end-to-end tests for this app."
+    why: "Wiring web test infrastructure — the core job."
+  - prompt: "Add visual regression coverage to the component library."
+    why: "Visual-regression setup is explicitly in scope."
+  - prompt: "Nuestros tests E2E son inestables, fallan uno de cada cinco."
+    why: "Flakiness control in a web suite, in Spanish."
+  - prompt: "We have unit tests only. Add a component testing layer."
+    why: "Expanding the web test pyramid."
+  - prompt: "Wire accessibility checks into the browser tests."
+    why: "a11y checks inside web tests are part of this skill."
+
+should_not_trigger:
+  - prompt: "What behaviors should the new feature cover?"
+    route_to: "test-coverage-plan"
+    why: "Deciding coverage precedes wiring the runner."
+  - prompt: "One test fails only in CI. Find the cause."
+    route_to: "systematic-debugging"
+    why: "Root-cause work on an observed failure."
+  - prompt: "Set up the CI pipeline and the container image."
+    route_to: "platform"
+    why: "Pipeline and container ownership is the platform agent."
+  - prompt: "Are these assertions actually able to fail?"
+    route_to: "refuter-tests"
+    why: "Adversarial audit of an existing suite."
+
+capability:
+  - scenario: "A web app has unit tests only and needs browser coverage."
+    must_include:
+      - "Balances the pyramid rather than adding e2e for everything."
+      - "Addresses flakiness explicitly — waiting on state, not on time."
+      - "Wires accessibility assertions into the browser layer rather than leaving a11y untested."
+      - "Never makes a gate pass by weakening it — a quarantined flake is named, not silently skipped."

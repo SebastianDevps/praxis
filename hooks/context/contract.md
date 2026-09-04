@@ -14,8 +14,8 @@ skip the loop. Anything else — build, replicate, redesign, feature, debug, mul
 unclear scope — is substantial. Unresolved ambiguity escalates to the question below, never to
 more process: guessing bigger is not the same as knowing more.
 
-**Research before deciding.** Read the reference or screenshot closely, scout the repo for
-prior art, fetch current docs for an unfamiliar API. Never decide on stale assumptions.
+**Research before deciding.** Read the reference or screenshot closely, invoke `scout` for prior
+art in the repo, invoke `docs-seeker` for an unfamiliar API. Never decide on stale assumptions.
 
 **Clarify, don't guess.** Material ambiguity still open after looking → ask ONE question and
 STOP. A vague prompt is not a license to skip the method; it is when the method matters most.
@@ -54,9 +54,9 @@ never redefine them locally.
 <!-- /only -->
 
 <!-- only:deep -->
-**Deep mode.** Research is mandatory, not discretionary: scout the repo and fetch current docs
-before proposing anything. Where two or more plausible approaches exist, compare them explicitly
-before choosing — do not let the first workable idea win by default. Before declaring done,
+**Deep mode.** Research is mandatory, not discretionary: invoke `scout` and `docs-seeker` before
+proposing anything. Where two or more plausible approaches exist, invoke `strategy-compare` and
+compare them explicitly — do not let the first workable idea win by default. Before declaring done,
 dispatch the refuter panel (`refuter-correctness`, `refuter-security`, `refuter-tests`) in one
 wave: fresh context, mandate to refute, and a finding blocks only with a repro behind it.
 Classify what returns before routing it — contract gap, actionable, accepted trade-off, noise;

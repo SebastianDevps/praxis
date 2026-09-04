@@ -1,0 +1,393 @@
+// routing-audit.mjs — does a description actually route the prompt it claims?
+//
+// Praxis measured its own activation from 961 transcripts once: 154 agent dispatches against 3
+// skill invocations. That instrument is honest but expensive and retrospective — it can only tell
+// you what already went wrong, weeks later. This one runs on the corpus itself, costs nothing,
+// and fails CI.
+//
+// WHAT IT IS: a deterministic proxy, not the model's attention. It ranks each eval prompt against
+// every resource description with TF-IDF cosine similarity. A real router is an LLM reading those
+// same descriptions; this approximates the signal available to it. Treat the absolute numbers as a
+// baseline to hold, and the DELTA as the thing that means something.
+//
+// WHAT IT CATCHES that nothing else does:
+//   - a description that no longer wins its own prompts (drift)
+//   - two descriptions so alike neither can be picked over the other (collision)
+//   - a near-miss prompt whose declared sibling is unreachable (a routing dead end)
+//   - a `route_to` naming a resource that does not exist (the class that shipped twice here)
+//
+// Floors are RATCHETS: set from the first real measurement with a small margin, never
+// aspirationally. A floor above what the corpus can do trains people to ignore the gate; a floor
+// far below it is decorative. Raise one only after a change actually raises the number.
+import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { join, dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+// Set from the first honest measurement (2026-08-28: rank-1 54.4 · top-3 73.3 · route 81.4 ·
+// owner-at-1 11.8 · collision 0.57), each with a few points of margin so ordinary edits do not
+// flap the gate. The first floors written here were aspirational — 60/80/80 — and failed on the
+// corpus they were meant to describe. That is the wrong direction: a floor is a description of
+// what holds today, and a ratchet upward when a change earns it.
+export const FLOORS = {
+  rank1: 65,          // an ENGLISH positive prompt puts its own skill first (see isSpanish)
+  top3: 68,           // …or at least in the top three
+  routedTop3: 76,     // a near-miss prompt reaches its declared sibling
+  maxOwnerAtOne: 16,  // a near-miss must NOT be won by the skill it was written against
+  maxCollision: 0.38, // two descriptions this alike cannot be told apart by a reader either
+  maxClaimChars: 250, // the positive claim, boundary clause excluded — see below
+};
+
+// maxClaimChars budgets the POSITIVE CLAIM only, not the whole description. Every description is
+// paid for on every turn whether or not the resource is ever invoked, so length is a real cost —
+// but the two halves are not the same kind of text and one budget cannot govern both.
+//
+// Adopted from the gentle-ai skill style guide (250 hard ceiling, 160 target), which is written
+// for a format with no boundary clause. Measured against it 2026-08-29: our claims come in at a
+// median of 169 chars and 96% already sat under 250, so the ceiling ratifies the practice and
+// catches the outliers. Whole-description length was NOT budgeted: 40% of the surface is boundary
+// clauses, and the only instrument we have for judging them is lexical — a proxy that penalises
+// them by construction (see stripBoundaries). Do not budget what you can only mismeasure.
+//
+// Not budgeted either: siblings named per description. Every resource names one or two and none
+// names three, so a rule there would sit far below what the corpus does — decorative, not a gate.
+
+// maxCollision was 0.62, set against a number the doctrine inflated by design: a `NOT x (that is
+// \`y\`)` clause puts y's vocabulary inside x's document, so the pair scores as MORE similar the
+// harder we work to distinguish them. Measured 2026-08-29 and re-based onto the boundary-free
+// text (worst pair 0.57 → 0.32, floor 0.38). This is a ratchet DOWN because the instrument was
+// wrong, not because the corpus improved — the descriptions on disk did not change.
+
+// WHY rank-1 SITS NEAR 54 AND NOT 90 — read before "fixing" it.
+//
+// Part of it is real: an abstract description ("2–4 plausible approaches") shares no vocabulary
+// with the concrete prompt that should reach it ("Redis or in-memory for sessions?"). That is a
+// genuine discriminative weakness and raising it is legitimate work.
+//
+// Part of it is structural and will never move. Several positives deliberately test POLICY rather
+// than topic — "Build me a dashboard" must reach `brainstorming` because it is vague, not because
+// it shares words with it. A lexical ranker cannot resolve vagueness by construction, and those
+// cases still belong in the file because an LLM router can. Chasing them by stuffing keywords into
+// descriptions would raise this number while making the descriptions worse.
+//
+// So: treat the DELTA as the signal. A drop means something changed. The absolute value is a
+// property of the proxy as much as of the corpus.
+//
+// Known tension worth keeping in view: adding `od.triggers` raised recall (top-3 69.4 → 73.3) and
+// simultaneously worsened precision on near-misses (owner-at-1 7.6 → 11.8). Triggers make a skill
+// match its own topic vocabulary harder, including on prompts that belong to a sibling.
+
+// Words that carry no routing signal. Kept short on purpose: an aggressive stoplist hides real
+// vocabulary overlap, which is the thing this audit exists to find.
+const STOP = new Set(`a an the and or of to in on for with is are be by that this it its use used
+using when whether not never only just from as at into over under after before your you we our
+they i me my do does did can could should would will shall than then them their there here what
+which who whom how why if else so such other another each every any some all more most less least
+own same too very s t don now`.split(/\s+/));
+
+const tokenize = (text) =>
+  String(text)
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((w) => w.length > 1 && !STOP.has(w));
+
+// ── corpus ────────────────────────────────────────────────────────────────────────────────────
+// Agents are in the corpus alongside skills because a near-miss may legitimately route to an
+// agent (`refuter-security`, `reviewer`). Leaving them out would report a live route as a dead one.
+function frontmatter(text) {
+  const m = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
+  return m ? m[1] : "";
+}
+function field(fm, key) {
+  const m = new RegExp(`^${key}:[ \\t]*(.*)$`, "m").exec(fm);
+  return m ? m[1].trim().replace(/^["']|["']$/g, "") : "";
+}
+// `od.triggers` are part of the routing surface, so they belong in the ranked text.
+//
+// Written first as a single regex anchored at four-space indentation. The real format indents
+// `triggers:` by two, so it matched nothing and every skill ranked without its triggers — and the
+// numbers looked plausible enough that nothing said so. Hence loadCorpus is asserted in
+// tests/routing.test.mjs against a skill whose triggers are known: a parser that silently returns
+// empty is the failure mode this whole audit exists to catch elsewhere.
+function triggers(fm) {
+  const lines = fm.split(/\r?\n/);
+  const start = lines.findIndex((l) => /^\s+triggers:\s*$/.test(l));
+  if (start === -1) return [];
+  const indent = lines[start].match(/^\s*/)[0].length;
+  const out = [];
+  for (let i = start + 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line.trim()) continue;
+    if (line.match(/^\s*/)[0].length <= indent) break; // dedented — the block ended
+    const m = /^\s*-\s*(.+)$/.exec(line);
+    if (m) out.push(m[1].trim().replace(/^["']|["']$/g, ""));
+  }
+  return out;
+}
+
+// A description's boundary clauses — `NOT critiquing … (that is \`design-review\`)` — are the
+// discriminative half of the doctrine, and they are ALSO the reason the collision number was wrong.
+//
+// The clause names the sibling. Under a bag-of-words ranker that injects the sibling's vocabulary
+// into this document, so the two vectors point at each other and similarity RISES. Measured
+// 2026-08-29: learn-prune ↔ praxis-memory 0.565 → 0.324 with the clauses removed;
+// autonomous-loop ↔ subagent-driven-development 0.440 → 0.130. The construct meant to reduce
+// collision was inflating the metric that watches for it.
+//
+// So the two numbers are computed on two texts. Ranking uses the FULL description, because that is
+// what a real router reads. Collision uses the boundary-free one, because the question it asks —
+// "are these two skills describing the same territory?" — is about the positive claim, not about
+// which siblings each one disclaims. Gating the raw number would ratchet against our own doctrine.
+//
+// The clauses are always trailing, so the rule is "from the first standalone NOT to the end".
+// Asserted in tests/routing.test.mjs against a known pair: a stripper that silently returns its
+// input unchanged would restore the exact bug this exists to remove.
+export function stripBoundaries(description) {
+  return description.replace(/\s*\bNOT\b.*$/s, "").trim();
+}
+
+export function loadCorpus(root = ROOT) {
+  const out = [];
+  const entry = (id, kind, description, trig = []) => ({
+    id,
+    kind,
+    claim: stripBoundaries(description), // the positive half alone — what maxClaimChars budgets
+    text: [id.replace(/-/g, " "), description, ...trig].join(" "),
+    plain: [id.replace(/-/g, " "), stripBoundaries(description), ...trig].join(" "),
+  });
+  const skillsDir = join(root, "skills");
+  for (const id of readdirSync(skillsDir).sort()) {
+    const file = join(skillsDir, id, "SKILL.md");
+    if (!existsSync(file)) continue;
+    const fm = frontmatter(readFileSync(file, "utf8"));
+    out.push(entry(id, "skill", field(fm, "description"), triggers(fm)));
+  }
+  const agentsDir = join(root, "agents");
+  for (const f of readdirSync(agentsDir).sort()) {
+    if (!f.endsWith(".md")) continue;
+    const id = f.slice(0, -3);
+    const fm = frontmatter(readFileSync(join(agentsDir, f), "utf8"));
+    out.push(entry(id, "agent", field(fm, "description")));
+  }
+  return out;
+}
+
+// ── cases ─────────────────────────────────────────────────────────────────────────────────────
+// Line-scanned rather than YAML-parsed: no dependency, and the shape is enforced by
+// tests/routing.test.mjs, so a malformed file fails there with a better message than a parser gives.
+export function loadCases(root = ROOT) {
+  const cases = [];
+  const skillsDir = join(root, "skills");
+  for (const id of readdirSync(skillsDir).sort()) {
+    const file = join(root, "evals", "routing", "cases", `${id}.yaml`);
+    if (!existsSync(file)) continue;
+    const lines = readFileSync(file, "utf8").split(/\r?\n/);
+    let section = "";
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (/^should_trigger:/.test(line)) { section = "positive"; continue; }
+      if (/^should_not_trigger:/.test(line)) { section = "negative"; continue; }
+      if (/^capability:/.test(line)) { section = ""; continue; }
+      const p = /^ {2}- prompt:\s*"(.*)"\s*$/.exec(line);
+      if (!p || !section) continue;
+      let routeTo = null;
+      if (section === "negative") {
+        // Scan forward to the next entry only — a route_to belongs to the prompt above it.
+        for (let j = i + 1; j < lines.length; j++) {
+          if (/^ {2}- prompt:|^\S/.test(lines[j])) break;
+          const r = /^\s+route_to:\s*(.+?)\s*$/.exec(lines[j]);
+          if (r) { routeTo = r[1].replace(/^["']|["']$/g, ""); break; }
+        }
+      }
+      cases.push({ owner: id, kind: section, prompt: p[1], routeTo });
+    }
+  }
+  return cases;
+}
+
+// ── ranking ───────────────────────────────────────────────────────────────────────────────────
+// `field` selects which text is ranked: "text" (the full description, what a router reads) or
+// "plain" (boundary clauses stripped, used only for the collision metric — see stripBoundaries).
+export function buildRanker(corpus, field = "text") {
+  const docs = corpus.map((c) => tokenize(c[field] ?? c.text));
+  const df = new Map();
+  for (const doc of docs) for (const w of new Set(doc)) df.set(w, (df.get(w) ?? 0) + 1);
+  const N = docs.length;
+  const idf = (w) => Math.log((N + 1) / ((df.get(w) ?? 0) + 1)) + 1;
+
+  const vectorize = (tokens) => {
+    const tf = new Map();
+    for (const w of tokens) tf.set(w, (tf.get(w) ?? 0) + 1);
+    const v = new Map();
+    let norm = 0;
+    for (const [w, n] of tf) {
+      const x = (1 + Math.log(n)) * idf(w);
+      v.set(w, x);
+      norm += x * x;
+    }
+    norm = Math.sqrt(norm) || 1;
+    for (const [w, x] of v) v.set(w, x / norm);
+    return v;
+  };
+
+  const vectors = docs.map(vectorize);
+  const cosine = (a, b) => {
+    // Iterate the smaller vector: the cost is the overlap, not the vocabulary.
+    const [s, l] = a.size < b.size ? [a, b] : [b, a];
+    let sum = 0;
+    for (const [w, x] of s) { const y = l.get(w); if (y) sum += x * y; }
+    return sum;
+  };
+
+  return {
+    vectors,
+    rank(prompt) {
+      const q = vectorize(tokenize(prompt));
+      return corpus
+        .map((c, i) => ({ id: c.id, score: cosine(q, vectors[i]) }))
+        .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+    },
+    similarity: (i, j) => cosine(vectors[i], vectors[j]),
+  };
+}
+
+// ── audit ─────────────────────────────────────────────────────────────────────────────────────
+// Every description in the corpus is English; the eval prompts are deliberately bilingual, because
+// Praxis is used in Spanish. A lexical ranker cannot cross that gap — a Spanish prompt shares almost
+// no tokens with an English description, so whichever document happens to hold an incidental match
+// wins. Measured 2026-08-29: rank-1 is 62.3% on English prompts and 23.5% on Spanish, and the
+// Spanish winners are near-random (`ad-creative` took five unrelated prompts, `editorial-layout`
+// took a debugging one).
+//
+// This is a property of the PROXY, not of the descriptions. The real router is an LLM and crosses
+// languages without difficulty. So the two are reported apart and only the English figure is gated:
+// gating the blend would push someone to stuff Spanish keywords into English descriptions, which
+// would raise this number and make the descriptions worse. Same reasoning as stripBoundaries — do
+// not ratchet against a number the instrument computes wrong.
+//
+// Detection is deliberately crude: accented characters, inverted punctuation, and a short list of
+// high-frequency Spanish function words that are not English words. It only has to split a corpus
+// we wrote ourselves, and it is asserted in tests/routing.test.mjs against known prompts.
+const SPANISH = /[¿¡áéíóúñ]|\b(qué|cómo|cuál|para|esta|este|nuestro|debería|deberíamos|hazla|dame|quiero|antes|mira|solo|con|los|las|una|del)\b/i;
+export const isSpanish = (prompt) => SPANISH.test(prompt);
+
+export function audit(root = ROOT) {
+  const corpus = loadCorpus(root);
+  const known = new Set(corpus.map((c) => c.id));
+  const cases = loadCases(root);
+  const ranker = buildRanker(corpus);
+
+  const positives = cases.filter((c) => c.kind === "positive");
+  const negatives = cases.filter((c) => c.kind === "negative");
+
+  let r1 = 0, r3 = 0, r5 = 0;
+  const byLang = { en: { n: 0, w: 0 }, es: { n: 0, w: 0 } };
+  const gaps = new Map(); // owner -> count of its own prompts outside top-5
+  for (const c of positives) {
+    const top = ranker.rank(c.prompt).slice(0, 5).map((x) => x.id);
+    const lang = isSpanish(c.prompt) ? "es" : "en";
+    byLang[lang].n++;
+    if (top[0] === c.owner) { r1++; byLang[lang].w++; }
+    if (top.slice(0, 3).includes(c.owner)) r3++;
+    if (top.includes(c.owner)) r5++;
+    else gaps.set(c.owner, (gaps.get(c.owner) ?? 0) + 1);
+  }
+
+  let ownerAtOne = 0, routedTop3 = 0, routable = 0;
+  const deadRoutes = [];
+  for (const c of negatives) {
+    const top = ranker.rank(c.prompt).slice(0, 5).map((x) => x.id);
+    if (top[0] === c.owner) ownerAtOne++;
+    if (!c.routeTo) continue;
+    if (c.routeTo === "none" || c.routeTo.startsWith("external:")) continue;
+    if (!known.has(c.routeTo)) { deadRoutes.push(`${c.owner} → ${c.routeTo}`); continue; }
+    routable++;
+    if (top.slice(0, 3).includes(c.routeTo)) routedTop3++;
+  }
+
+  // Two collision readings over the same pairs. `collisions` (boundary-free) is the gated one;
+  // `inflated` is reported beside it so the gap stays visible rather than becoming folklore.
+  const plainRanker = buildRanker(corpus, "plain");
+  const collisions = [];
+  for (let i = 0; i < corpus.length; i++)
+    for (let j = i + 1; j < corpus.length; j++)
+      collisions.push({
+        pair: [corpus[i].id, corpus[j].id],
+        score: plainRanker.similarity(i, j),
+        inflated: ranker.similarity(i, j),
+      });
+  collisions.sort((a, b) => b.score - a.score);
+  const worstInflated = Math.max(0, ...collisions.map((c) => c.inflated));
+
+  const pct = (n, d) => (d === 0 ? 0 : (n / d) * 100);
+  return {
+    corpusSize: corpus.length,
+    positives: positives.length,
+    negatives: negatives.length,
+    rank1: pct(r1, positives.length),
+    rank1En: pct(byLang.en.w, byLang.en.n),
+    rank1Es: pct(byLang.es.w, byLang.es.n),
+    langCounts: { en: byLang.en.n, es: byLang.es.n },
+    top3: pct(r3, positives.length),
+    top5: pct(r5, positives.length),
+    ownerAtOne: pct(ownerAtOne, negatives.length),
+    routedTop3: pct(routedTop3, routable),
+    routable,
+    deadRoutes,
+    collisions: collisions.slice(0, 10),
+    worstInflated,
+    overBudget: corpus
+      .filter((c) => c.claim.length > FLOORS.maxClaimChars)
+      .map((c) => ({ id: c.id, chars: c.claim.length }))
+      .sort((a, b) => b.chars - a.chars),
+    claimChars: corpus.map((c) => c.claim.length).sort((a, b) => a - b),
+    gaps: [...gaps.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10),
+  };
+}
+
+// ── report ────────────────────────────────────────────────────────────────────────────────────
+function main() {
+  const r = audit();
+  const f1 = (n) => n.toFixed(1);
+  console.log(`routing-audit: ${r.corpusSize} resources · ${r.positives + r.negatives} prompts`);
+  console.log(`positive recall:  rank-1 ${f1(r.rank1)}% · top-3 ${f1(r.top3)}% · top-5 ${f1(r.top5)}%`);
+  console.log(`  rank-1 by prompt language: EN ${f1(r.rank1En)}% (n=${r.langCounts.en}, GATED) · ES ${f1(r.rank1Es)}% (n=${r.langCounts.es}, tracked)`);
+  console.log(`  the corpus is English; a lexical ranker cannot read a Spanish prompt. See isSpanish.`);
+  console.log(`near-miss:        owner-at-1 ${f1(r.ownerAtOne)}% · declared route top-3 ${f1(r.routedTop3)}% (n=${r.routable})`);
+
+  if (r.deadRoutes.length) {
+    console.log(`\nDEAD ROUTES — route_to names a resource that does not exist:`);
+    for (const d of r.deadRoutes) console.log(`  ${d}`);
+  }
+  console.log(`\nhighest description overlaps (boundary clauses excluded — the gated number):`);
+  for (const c of r.collisions.slice(0, 6))
+    console.log(`  ${c.score.toFixed(2)}  ${c.pair[0]} ↔ ${c.pair[1]}   (${c.inflated.toFixed(2)} with NOT clauses)`);
+  console.log(`  worst with NOT clauses included: ${r.worstInflated.toFixed(2)} — not gated; naming a sibling`);
+  console.log(`  makes two descriptions look alike to a bag-of-words ranker. See stripBoundaries.`);
+  if (r.gaps.length) console.log(`\nown prompts outside top-5: ${r.gaps.map(([k, v]) => `${k} (${v})`).join(", ")}`);
+
+  const cc = r.claimChars;
+  console.log(`\npositive claim length: median ${cc[Math.floor(cc.length / 2)]} · max ${cc[cc.length - 1]} · ceiling ${FLOORS.maxClaimChars}`);
+  if (r.overBudget.length) {
+    console.log(`  OVER: ${r.overBudget.map((c) => `${c.id} (${c.chars})`).join(", ")}`);
+  }
+
+  const worst = r.collisions[0]?.score ?? 0;
+  const breaches = [];
+  if (r.rank1En < FLOORS.rank1) breaches.push(`rank-1 (EN) ${f1(r.rank1En)}% < ${FLOORS.rank1}%`);
+  if (r.top3 < FLOORS.top3) breaches.push(`top-3 ${f1(r.top3)}% < ${FLOORS.top3}%`);
+  if (r.routedTop3 < FLOORS.routedTop3) breaches.push(`declared route top-3 ${f1(r.routedTop3)}% < ${FLOORS.routedTop3}%`);
+  if (r.ownerAtOne > FLOORS.maxOwnerAtOne) breaches.push(`owner-at-1 ${f1(r.ownerAtOne)}% > ${FLOORS.maxOwnerAtOne}%`);
+  if (worst > FLOORS.maxCollision) breaches.push(`collision ${worst.toFixed(2)} > ${FLOORS.maxCollision}`);
+  if (r.overBudget.length) breaches.push(`${r.overBudget.length} claim(s) over ${FLOORS.maxClaimChars} chars`);
+  if (r.deadRoutes.length) breaches.push(`${r.deadRoutes.length} dead route(s)`);
+
+  if (breaches.length) {
+    console.log(`\nFAIL — ${breaches.join(" · ")}`);
+    process.exit(1);
+  }
+  console.log(`\nPASS`);
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) main();

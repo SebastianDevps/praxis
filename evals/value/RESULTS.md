@@ -1,0 +1,80 @@
+# Value A/B — screening pass, 2026-09-02
+
+Question: does a skill produce something the model does not produce without it? Same fixture, same
+task, twice — once with the plugin intact and the skill invoked, once against a plugin copy with
+that skill's directory removed. Scored by a criterion computed from the fixture.
+
+claude 2.1.259 · `--plugin-dir` · plan mode · n=1 per arm · $1.83 for the four units.
+
+| Unit | Treatment | Control | Delta |
+|---|---|---|---|
+| `prose-tells` | 11/12 planted tells | 11/12 | none |
+| `color-expert` | 4/4 hexes pass AA, worst 5.22:1 | 4/4, worst 5.68:1 | none (control marginally better) |
+| `baseline-status` | 5/5 support facts | 5/5 | none |
+| `apple-hig` | 3/4 HIG constraints | 3/4 | none |
+
+Cost per pair: treatment $0.34–$0.57, control $0.28–$0.66. The control was cheaper in three of four.
+
+## The selection bias, named rather than discovered later
+
+These four were chosen because their criterion is objective — WCAG arithmetic, published Baseline
+status, HIG numbers, a countable list of planted tells. That property is not independent of the
+result: **a criterion is objective when the answer is well documented, and a well-documented answer
+is exactly the kind a frontier model already carries.** Picking measurable units selected for the
+cases where a skill has the least room to contribute.
+
+So this pass says something narrow and real: on well-documented ground, these four skills add
+nothing measurable. It does NOT say skills add nothing. The units where a skill plausibly earns its
+place — visual system choice, editorial layout, deck structure, brand derivation — are the ones
+whose criterion is judgment, and they are unmeasured here for the same reason they might matter.
+
+## Scorer defect, recorded
+
+`prose-tells` counts a detection by the presence of the tell's surface string in the output. One
+planted tell is the em dash, and almost any output contains one, so both arms score a free point.
+Net of it the pass is 10/11 against 10/11 — still a tie, but the marker should be replaced with a
+quoted-line check before this unit is re-run.
+
+## Unit 5 — `design-system-brutalist`, the first non-tie
+
+Chosen because its rules are the OPPOSITE of the default aesthetic: a model building a dashboard
+unprompted produces rounded cards and soft shadows, which the skill forbids. BOTH arms were asked
+for a brutalist dashboard — asking only the treatment would test whether naming a style changes the
+output, which is trivially yes. Scored on the skill's own declarations (SKILL.md:24-28), against
+real emitted CSS rather than a plan.
+
+| Criterion | Treatment | Control |
+|---|---|---|
+| `border-radius` <= 2px | 0px | 0px |
+| Blurred shadows (forbidden) | 0 | 0 |
+| Border declarations | 10 | 14 |
+| **System sans stacks** | **2 of 2** | **0 of 5** |
+
+One clean difference out of four, and it is the rule the skill states literally. The model already
+knows brutalism's obvious traits; what it does not do on its own is honour `system-ui` as an
+intentional choice rather than reaching for a Helvetica stack.
+
+Cost: $6.47 for the pair — five times the estimate from the plan-mode units. A unit that builds
+costs far more than a unit that answers.
+
+## Three scorer defects, and why the raw streams are kept
+
+This unit's scorer was wrong three times, each caught by reading the artifacts rather than by
+review:
+
+1. An attempted invocation counted as a successful one. The control, seeing design-system-swiss /
+   clean / bento in its list, inferred `brutalist` existed and called it; the call failed, and the
+   parser reported the control as contaminated. Attempts are now correlated with their tool_result.
+2. Font stacks were declared as `var(--sans)`, so a literal scan reported "no system font" for the
+   arm that had set --sans to system-ui. Custom properties are now resolved before matching.
+3. "Soft shadow" keyed on offset magnitude, so `4px 4px 0` was flagged as soft — a zero-blur hard
+   offset is the canonical brutalist shadow, and the scorer was penalising the arm that obeyed the
+   rule. Softness is blur, the third length.
+
+Each of those would have cost $6.47 to discover by re-running. They cost nothing because the raw
+streams and the fixture directories are kept. That is the reason runs/ exists.
+
+## Not measured
+
+n=1 per arm. Plan mode, one model. A tie at n=1 is weak evidence of no difference; it is strong
+enough to stop spending on a unit and move to one with more room, which is what it was for.

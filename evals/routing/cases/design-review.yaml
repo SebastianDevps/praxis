@@ -1,0 +1,35 @@
+skill: design-review
+
+should_trigger:
+  - prompt: "Review this page and tell me what's wrong with it."
+    why: "Critique of an existing interface — the core job."
+  - prompt: "Audita esta interfaz contra accesibilidad y consistencia visual."
+    why: "Audit of a built surface, in Spanish."
+  - prompt: "Polish this component — it works but it feels off."
+    why: "Polish pass on something that already exists."
+  - prompt: "Here's the URL of our staging site. What would you fix first?"
+    why: "Prioritized critique of a live interface."
+  - prompt: "Does this dashboard have any accessibility problems?"
+    why: "An a11y audit of an existing surface."
+
+should_not_trigger:
+  - prompt: "Build the dashboard."
+    route_to: "frontend-design"
+    why: "Building it in the first place, not critiquing it."
+  - prompt: "Is this code correct and are there bugs?"
+    route_to: "reviewer"
+    why: "Code correctness is the reviewer agent, not the visual surface."
+  - prompt: "Attack this finished change before merge with fresh context."
+    route_to: "refuter-correctness"
+    why: "The adversarial evidence gate, not a design critique."
+  - prompt: "Pick a new accent color."
+    route_to: "color-expert"
+    why: "Palette construction, not a review."
+
+capability:
+  - scenario: "An existing dashboard is submitted for review."
+    must_include:
+      - "Checks against anti-slop, a11y-baseline and motion-discipline rather than personal taste."
+      - "Reports findings with severity so the reader knows what to fix first."
+      - "Proposes ATOMIC changes rather than a wholesale redesign."
+      - "Names what is already good, so the report is a judgement and not a list of complaints."
