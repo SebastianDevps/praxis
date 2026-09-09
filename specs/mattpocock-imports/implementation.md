@@ -1,6 +1,6 @@
 ---
 title: Matt Pocock Imports
-stage: implemented  # new → designed → planned → implemented → shipped
+stage: shipped  # new → designed → planned → implemented → shipped
 owner: Sebastian
 ---
 
@@ -85,3 +85,12 @@ Waves: {T01, T02, T03, T04, T05, T07} parallel (disjoint files; invariants.test.
 - Ship: committed on feat/mattpocock-imports, PR #13 opened. `hooks/stop` blocked this turn on the pre-existing
   untracked docs: the 0.6.1 hook needs `.praxis/session-started`, written at session start, and this session
   began before the reinstall — no marker, old behaviour. Expected until the next session.
+- Release 0.7.0 committed locally (b9c7de5): README "How it engineers" + measurements paragraph, manifests bumped,
+  CHANGELOG cut. Push pending: GitHub unreachable from this machine (port 443 timeouts, two attempts); a background
+  poll retries. `hooks/stop` blocked again on the untracked docs (no session marker in this session) — same note as above.
+- Shipped 0.7.0 once GitHub came back (outage lasted ~4 h; `google 200` throughout, so it was GitHub-side, not local).
+  Evidence: `git push origin feat/mattpocock-imports` → `5df815a..b9c7de5`; CI run 34394373459 → all 10 steps ✓
+  (validate-resources, Cursor-rules staleness, tests); `gh pr view 13` → `state: MERGED`, `mergedAt 2026-09-09T19:19:59Z`,
+  `mergeCommit 4489fd8`; `git push origin v0.7.0` → `[new tag]`; local `main` fast-forwarded to `4489fd8`.
+  Note for the record: `git checkout main` refused (pre-existing untracked docs), so the fast-forward ran from the
+  feature branch — the branch and `main` are the same commit, but the checkout never happened.
