@@ -315,15 +315,28 @@ praxis_is_spec_side() {
 praxis_approved_marker() { printf '%s/.praxis/approved/%s' "$1" "$2"; }
 praxis_approved() { [ -n "${2:-}" ] && [ -f "$(praxis_approved_marker "$1" "$2")" ]; }
 
-# Create `.praxis/` on first use and, only then, its .gitignore. `active-change` and
-# `approved/` are per-machine session state, not the team's record — same rule as
-# `sessions.jsonl` in the memory store. Written only when absent: a project that has
-# edited this file keeps its edit.
+# Create `.praxis/` on first use and, only then, its .gitignore. `active-change`,
+# `approved/` and `session-started` are per-machine session state, not the team's
+# record — same rule as `sessions.jsonl` in the memory store. Written only when absent:
+# a project that has edited this file keeps its edit.
 praxis_ensure_praxis_dir() {
   local dir="$1/.praxis"
   [ -d "$dir" ] || mkdir -p "$dir" 2>/dev/null || return 1
-  [ -f "${dir}/.gitignore" ] || printf 'active-change\napproved/\n' > "${dir}/.gitignore" 2>/dev/null || true
+  [ -f "${dir}/.gitignore" ] || printf 'active-change\napproved/\nsession-started\n' > "${dir}/.gitignore" 2>/dev/null || true
 }
+
+# Append one entry to `.praxis/.gitignore` when it is not already listed. For a
+# project whose .gitignore predates an entry: the file's own lines are kept, one is added.
+praxis_ensure_ignored() {
+  local file="$1/.praxis/.gitignore"
+  [ -f "$file" ] || return 0
+  grep -qx -- "$2" "$file" 2>/dev/null || printf '%s\n' "$2" >> "$file" 2>/dev/null || true
+}
+
+# The session marker: `.praxis/session-started`, an empty file whose mtime is when this
+# session began (specs/stop-session-scope). `session-start` writes it on `startup` and
+# `clear`; `stop` counts a changed file only when it is newer than this.
+praxis_session_marker() { printf '%s/.praxis/session-started' "$1"; }
 
 # The file paths an edit tool call targets, one per line, from the host payload.
 # Claude Code: tool_input.file_path (MultiEdit carries the same key). Codex apply_patch:

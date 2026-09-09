@@ -6,12 +6,35 @@
 #
 # The per-turn anti-drift restatement lives in hooks/user-prompt-submit; this
 # hook only handles the one-time orientation plus per-project memory recall.
+#
+# One write, and only into `.praxis/`: on `startup` and `clear` it touches
+# `.praxis/session-started`, the marker `hooks/stop` scopes "changed this session" to.
+# Without it, files dirty or untracked before the session counted as this turn's work and
+# a no-op turn was blocked (specs/stop-session-scope). `resume` and `compact` continue a
+# session, so the marker is left where it is. Never on the context-injection path: a
+# marker that cannot be written costs one stderr line, not the router.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 . "${SCRIPT_DIR}/lib.sh"
 PRAXIS_ROOT="$(praxis_root "$SCRIPT_DIR")"
+
+# stdin is bounded exactly as in the other hooks: a host that never delivers the payload
+# costs one second and the session is still primed. `read -d ''` returns non-zero at EOF,
+# so under `set -e` it needs the `|| true`.
+payload=""
+IFS= read -r -d '' -t 1 payload || true
+case "$(praxis_json_string "$payload" source)" in
+  startup|clear)
+    project_root="$(praxis_project_root)"
+    if praxis_ensure_praxis_dir "$project_root" \
+       && praxis_ensure_ignored "$project_root" session-started \
+       && : > "$(praxis_session_marker "$project_root")" 2>/dev/null; then :
+    else printf 'praxis session-start: could not write %s/.praxis/session-started\n' "$project_root" >&2
+    fi
+    ;;
+esac
 
 router_content=$(cat "${PRAXIS_ROOT}/skills/using-praxis/SKILL.md" 2>&1 || echo "Error reading using-praxis skill")
 router_escaped=$(escape_for_json "$router_content")

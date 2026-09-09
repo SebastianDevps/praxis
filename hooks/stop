@@ -11,10 +11,17 @@
 # "Block once" is the host's own mechanism: after a block the next Stop carries
 # `stop_hook_active: true` and this hook allows unconditionally, so it can never loop.
 #
-# LOOSENESS, stated: the hook reads the git working tree, and the working tree approximates
-# "this session". Changes left uncommitted by an earlier session count as this one's, and a
-# session that committed as it went shows nothing. Both errors cost one extra ledger line or
-# one missed reminder — acceptable for a floor whose alternative was measured at zero.
+# SCOPE: "this session" is the git working tree, narrowed to files newer than
+# `.praxis/session-started` — the marker `session-start` writes on startup and clear
+# (specs/stop-session-scope). The first live block was a no-op turn caught by five untracked
+# docs older than the change; a floor that blocks on someone else's leftovers gets switched
+# off. No marker (a host without session-start) → the whole working tree, as before.
+#
+# LOOSENESS, stated: mtimes, not content — a file touched but unchanged this session still
+# counts if git reports it; a file deleted this session has no mtime and is skipped when the
+# marker exists; a session that committed as it went shows nothing; a second session in the
+# same repo rewrites the marker. Each costs one extra ledger line or one missed reminder —
+# acceptable for a floor whose alternative was measured at zero.
 #
 # Non-git project: allow (no cheap way to know what changed). PRAXIS_FLOOR=off: allow — the
 # only override; there is none from inside a session. Any unexpected condition: allow, with
@@ -45,12 +52,17 @@ git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
 # `specs/<change>/implementation.md` is seen as the ledger it is.
 status="$(git -C "$root" status --porcelain -uall 2>/dev/null)" || allow "git status failed"
 
+marker="$(praxis_session_marker "$root")"
+[ -f "$marker" ] || marker=""
+
 source_touched=0; ledger_touched=0
 while IFS= read -r line; do
   [ -n "$line" ] || continue
   path="${line:3}"                       # porcelain v1: XY<space>path
   path="${path##* -> }"                  # a rename reports old -> new; the new path is the edit
   case "$path" in \"*\") path="${path#\"}"; path="${path%\"}" ;; esac
+  # Older than the session marker → not this session's work.
+  if [ -n "$marker" ] && [ ! "${root}/${path}" -nt "$marker" ]; then continue; fi
   case "$path" in
     specs/_templates/*) continue ;;
     specs/*/implementation.md) ledger_touched=1 ;;

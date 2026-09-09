@@ -410,7 +410,7 @@ test("subagent-stop survives a host that sends no payload at all", () => {
 // this section fails; restore it and this section passes. The commands and their output are
 // recorded in specs/spec-driven-workflow/implementation.md under T06.
 
-import { writeFileSync, appendFileSync } from "node:fs";
+import { writeFileSync, appendFileSync, statSync } from "node:fs";
 import { dirname } from "node:path";
 
 function floorRepo({ mode = "full", git = true } = {}) {
@@ -713,6 +713,61 @@ test("stop never loops: stop_hook_active short-circuits to allow", () => {
   write("src/a.js", "2\n");
   assert.equal(stopDecision(hook("stop", { stop_hook_active: true })), "allow");
   assert.equal(stopDecision(hook("stop", { stop_hook_active: false })), "block");
+});
+
+// ── The session marker: "changed this session", not "dirty in this tree" ──────────────────────
+//
+// specs/stop-session-scope. The first live block on this repo was a no-op turn: five untracked
+// docs older than the change sat in docs/ and `stop` counted them. session-start now writes
+// `.praxis/session-started`; stop counts only files newer than it. Timestamps are set with
+// `touch -t` because bash 3.2's `-nt` compares whole seconds — a test that relied on "written
+// a moment later" would pass or fail by the clock.
+
+const backdate = (path, stamp) => execFileSync("touch", ["-t", stamp, path]);
+const OLD = "201901010000";
+const MARK = "202001010000";
+
+test("session-start writes the session marker on startup and clear, and leaves it on resume", () => {
+  const { repo, hook } = floorRepo();
+  const marker = join(repo, ".praxis/session-started");
+  assert.match(context(hook("session-start", { source: "resume" })), /using-praxis/, "resume still primes");
+  assert.ok(!fsExists(marker), "resume must not start a new session scope");
+
+  assert.match(context(hook("session-start", { source: "startup" })), /using-praxis/);
+  assert.ok(fsExists(marker));
+  assert.match(fsRead(join(repo, ".praxis/.gitignore"), "utf8"), /^session-started$/m, "the marker is per-machine state");
+
+  backdate(marker, MARK);
+  hook("session-start", { source: "compact" });
+  assert.ok(statSync(marker).mtime < new Date("2020-06-01"), "compact must not touch the marker");
+  hook("session-start", { source: "clear" });
+  assert.ok(statSync(marker).mtime > new Date("2020-06-01"), "clear starts a new session scope");
+});
+
+test("stop ignores a changed file older than the session marker, and blocks on a newer one", () => {
+  const { repo, hook, write } = floorRepo();
+  write("docs/leftover.md", "someone else's\n");
+  backdate(join(repo, "docs/leftover.md"), OLD);
+  write(".praxis/session-started", "");
+  backdate(join(repo, ".praxis/session-started"), MARK);
+  assert.equal(stopDecision(hook("stop", {})), "allow", "a leftover from before the session is not this turn's work");
+
+  write("src/a.js", "now\n");
+  assert.equal(stopDecision(hook("stop", {})), "block", "a file newer than the marker is");
+});
+
+test("stop counts a ledger newer than the marker, and without a marker counts everything", () => {
+  const { repo, hook, write } = floorRepo();
+  write("src/a.js", "now\n");
+  write(".praxis/session-started", "");
+  backdate(join(repo, ".praxis/session-started"), MARK);
+  write("specs/x/implementation.md", ledger("planned") + "- done\n");
+  assert.equal(stopDecision(hook("stop", {})), "allow", "the ledger written this session records the work");
+
+  const bare = floorRepo();
+  bare.write("docs/leftover.md", "old\n");
+  backdate(join(bare.repo, "docs/leftover.md"), OLD);
+  assert.equal(stopDecision(bare.hook("stop", {})), "block", "no marker → the working tree, as before");
 });
 
 test("stop allows outside git, and with PRAXIS_FLOOR=off", () => {
