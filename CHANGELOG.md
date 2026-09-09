@@ -4,6 +4,8 @@ All notable changes to Praxis are documented here. Format follows [Keep a Change
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-09-09
+
 ### Added
 
 - **`specs/<change>/` — every change leaves a folder, and the dial decides how much of it.** The convention is [cal.diy's](https://github.com/calcom/cal.diy/tree/main/specs): `design.md` (source of truth, reviewed before source is edited), `decisions.md` (ADRs written when the decision is made), `implementation.md` (the ledger: `stage:`, tasks, completed, blocked), `future-work.md`, and in `deep` a change-level `AGENTS.md` and `docs/`. cal.diy makes it opt-in by phrase; Praxis makes it the floor. `fast` costs one `implementation.md`; `full` adds `design.md` and exactly one stop for approval; `deep` the rest. `spec-lifecycle` was evolved into this rather than duplicated (ADR-001), and the two divergent single-file templates are gone. The change that introduced this is its own first spec: `specs/spec-driven-workflow/`.
