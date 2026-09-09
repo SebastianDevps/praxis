@@ -1,6 +1,6 @@
 ---
 name: deep-research
-description: Use when a question needs evidence from multiple independent sources — a defensible answer on a contested topic, prior art, tradeoffs between technologies, how others solved this — scopes it, gathers, cross-checks, synthesizes with citations. NOT a quick recon of this repo (that is `scout`), NOT fetching one library's docs (that is `docs-seeker`).
+description: Use when a question needs evidence from multiple independent sources — a defensible answer on a contested topic, prior art, tradeoffs between technologies, how others solved this — scopes it, gathers, cross-checks, synthesizes with citations. NOT a quick recon of this repo (that is `scout`), NOT fetching one library's docs (that is `docs-seeker`), NOT whether to take on one named package (that is `dependency-adoption`).
 kind: skill
 od:
   category: research

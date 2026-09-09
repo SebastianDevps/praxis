@@ -1,0 +1,43 @@
+skill: buy-vs-build
+
+# Decides how a capability comes to exist: build · buy · bounded-buy · extend-what-exists.
+should_trigger:
+  - prompt: "Do we build our own feature flag system or pay a vendor for one?"
+    why: "A capability that must exist, with no shortlist yet — the core build-or-buy call."
+  - prompt: "Necesitamos facturación electrónica. ¿La construimos internamente o contratamos un proveedor?"
+    why: "Sourcing a capability from outside versus building it, stated in Spanish."
+  - prompt: "The team wants to write an in-house auth service instead of using an identity provider. Is that the right call?"
+    why: "Build-in-house versus source-from-outside, and the commodity-vs-differentiator question decides it."
+  - prompt: "¿Vale la pena desarrollar el motor de búsqueda internamente o adquirir una solución SaaS?"
+    why: "In-house build against a SaaS purchase for one capability."
+  - prompt: "We need a data warehouse capability next quarter. Should we source it or make it ourselves?"
+    why: "Explicit source-or-make framing on a capability, which is exactly this skill's object."
+  - prompt: "Management wants to buy a workflow platform. Make the case either way before we commit to a purchase."
+    why: "A buy is proposed and not yet committed; the verdict and its lock-in mitigation are still open."
+
+should_not_trigger:
+  - prompt: "We've narrowed it to Stripe and Adyen. Which one should we pick?"
+    route_to: "strategy-compare"
+    why: "The candidates already exist and the ask is the pick — buy-vs-build runs before a shortlist."
+  - prompt: "Should we add `date-fns` to the project, or is it too thinly maintained?"
+    route_to: "dependency-adoption"
+    why: "The object is one package's adoption, not a capability to source."
+  - prompt: "We signed the vendor last week and migration starts Monday. Poke holes in the plan."
+    route_to: "decision-challenge"
+    why: "The decision is already made; this attacks it rather than reaching it."
+  - prompt: "Does this repo already have something that generates PDFs before I write one?"
+    route_to: "scout"
+    why: "Recon of what THIS repo holds, with no sourcing decision in play."
+  - prompt: "We want to do something about customer onboarding but we haven't defined what yet."
+    route_to: "brainstorming"
+    why: "The capability itself is still undefined — scoping comes before any build-or-buy verdict."
+
+capability:
+  - scenario: "A tech lead asks whether to build or buy a notification service for a product where messaging is not the differentiator."
+    must_include:
+      - "Scopes the capability below product level before comparing anything, and says why a product-level question cannot be answered."
+      - "Asks the differentiator question once — is this how we beat competitors — rather than running commodity, utility and core framings as separate passes."
+      - "Checks whether something already in place can be extended or replaced before proposing a build or a purchase."
+      - "Reports a criterion with no evidence as SKIP with the reason, never as a middling score or a blank."
+      - "Names a verdict from build · buy · bounded-buy · extend-what-exists, with lock-in mitigation attached to any vendor outcome."
+      - "States the specific finding that would overturn the verdict."

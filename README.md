@@ -109,6 +109,31 @@ symlink), `CONTEXT.md` (domain glossary with the synonyms to avoid), `agents/rul
 `agents/knowledge-base.md`, `agents/commands.md`, `specs/_templates/`. The rules reach the
 reviewer and never the builders, so they cost nothing on the build turns.
 
+## What it does with code you don't own
+
+`/praxis:investigate` points the same method at something outside your repo: a repo URL, a package,
+a competitor's product, a technology you are weighing. It returns a cited assessment with a verdict,
+and the verdict names the finding that would overturn it. Not a summary.
+
+The gap is real outside Praxis too. Across every public collection surveyed, no published skill or
+agent does architecture *evaluation* as opposed to architecture *documentation*. C4 documentation
+exists; tradeoff analysis and buy-vs-build do not. Anthropic's own `Explore` subagent prompt is 45
+lines of file-search specialist with no output schema.
+
+So the method went in as cited text rather than paraphrase: ATAM's nine steps and five output types
+(CMU/SEI-2000-TR-004), C4 and arc42 for structure, Thoughtworks' 2022 build-vs-buy criteria, the
+OpenSSF Concise Guide and Scorecard, and Andrew Nesbitt's `managing-dependencies` for executable
+thresholds. `dependency-adoption` **computes** its verdict against `packages.ecosyste.ms`,
+`api.scorecard.dev` and `deps.dev` instead of asserting it, and it never uses a star count as a
+reason: the primary source classifies stars and downloads as "gameable".
+
+Where the primary sources contradict each other the contradiction is reported, not resolved. Four of
+them: ATAM's phase count (SEI says two, the 2002 book says four), three incompatible bus-factor
+definitions, Scorecard's 20-vs-18 check count, and MADR's disagreement about which sections are
+optional. And a dossier with no `SKIP` on a partial target is a defect, not a success —
+[the dossier contract](pipelines/investigation.md) makes every section either cited evidence, `SKIP`
+with the reason it could not run, or `GAP` with what it had nothing to check against.
+
 ## Why Praxis
 
 - **Taste, enforced.** A Ship Gate refuses Inter/Roboto, AI-purple gradients and zero-a11y output. Every web deliverable gets a font check, a Baseline table and an a11y/motion pass — even when you don't ask.
@@ -124,11 +149,11 @@ reviewer and never the builders, so they cost nothing on the build turns.
 
 | | | |
 |---|---|---|
-| **40** skills | taste, process, adversarial review, per-project memory |
-| **11** agents | design · engineer · backend · platform · security · reviewer · researcher · orchestrator · a three-lens refuter panel |
+| **44** skills | taste, process, adversarial review, foreign-artifact assessment, per-project memory |
+| **12** agents | design · engineer · backend · platform · security · reviewer · researcher · analyst · orchestrator · a three-lens refuter panel |
 | **6** crafts | always-on disciplines, each injected into the dispatches it governs |
-| **4** pipelines | named phase sequences, rendered as Run Cards |
-| **9** commands | `/praxis:init` `:approve` `:design` `:feature` `:bug` `:refactor` `:loop` `:learn` `:mode` |
+| **5** pipelines | named phase sequences, rendered as Run Cards |
+| **10** commands | `/praxis:init` `:approve` `:design` `:feature` `:bug` `:refactor` `:investigate` `:loop` `:learn` `:mode` |
 
 ## Team memory, in your repo
 
@@ -183,6 +208,26 @@ on a field the model owns, and 3/3 unattended runs approved themselves; the mark
 measured 0/3. The method imports were measured too (`evals/value/`, $11.33): `tdd` produced
 vertical slices 3/3 vs 0/3, but its "confirm the seams first" stop held 0/3 — recorded, with the
 fix filed, not smoothed over.
+
+The investigation suite found the sharpest one against us, and it was about our own instrument. The
+boundary gate rewarded deleting boundaries: a `NOT` clause removed from a skill description was
+caught by nothing, and the gated metric *preferred* the mutant by 0.6 points. It was fixed inside
+the same change — `scripts/boundary-audit.mjs` and `tests/boundary.test.mjs` now hold a
+one-directional ratchet over 54 recorded boundaries, so adding one passes silently and deleting one
+fails by name.
+
+Then the suite lost its own negative control. Five cells against a repo published after the model's
+cutoff, $43.61: the arm with the four skills **deleted** — pipeline, agent and command intact — met
+every acceptance criterion in one run for $6.14, while the full suite needed a second attempt and
+$20.07. Both reached the same verdict by the same route, and neither found it through a skill; both
+found it in `package.json`. So what is measured is that the pipeline earns its keep against no suite
+at all, and the four skills are **unproven**. Two of them never ran — they skipped, correctly, on a
+target with no stated quality requirement — so this is n=1 over half the suite, and the follow-up
+names its own conditions rather than resting here.
+
+One thing that eval proved by accident: the arm that got cut off mid-investigation still wrote a
+19 KB dossier with **zero** `SKIP`s and passed every other check. The rule that a dossier with no
+`SKIP` on a partial target is a defect was the only thing that caught it, on its first opportunity.
 
 Claiming rigor is free. Publishing the run that contradicts you is the only version of it anyone
 can check.

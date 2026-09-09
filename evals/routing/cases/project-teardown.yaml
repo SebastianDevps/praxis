@@ -1,0 +1,49 @@
+skill: project-teardown
+
+# Reconstructs a codebase you do not own into a cited dossier. It reconstructs; it does not judge.
+should_trigger:
+  - prompt: "We're inheriting this repo from the agency next week. Take it apart and tell me how it's actually built."
+    why: "A codebase the user does not own and has no author to ask — the teardown subject exactly."
+  - prompt: "Reconstruye la arquitectura de este proyecto open source; no es nuestro y no tenemos contexto de quién lo escribió."
+    why: "Reconstruction of a foreign codebase, with no owner to consult — Spanish phrasing of the core job."
+  - prompt: "Map out how this competitor's plugin works from its source: entry points, data flow, how it deploys."
+    why: "Foreign source plus the data-flow probe and deployment view — Phase 1 and Phase 2 together."
+  - prompt: "Necesito un dossier del stack y del ciclo de vida de un request de este repositorio ajeno, con citas path:line."
+    why: "Names the dossier, the request lifecycle and the citation contract on a repo that is not the user's."
+  - prompt: "I have no idea what this codebase does. Give me the C4 container and component view with citations."
+    why: "C4 levels over an unfamiliar target is this skill's output structure."
+  - prompt: "Before we decide anything about this library, do a full teardown of the project — stack, structure, tests, CI."
+    why: "The six sweeps over a project under consideration, ahead of any verdict."
+
+should_not_trigger:
+  - prompt: "Before I add a rate limiter, does our own codebase already have something like it, and what conventions should I match?"
+    route_to: "scout"
+    why: "The subject is THIS repo — scout's scope is 'this repo, and only this repo'. The boundary is the subject, not the depth."
+  - prompt: "How does the industry handle multi-tenant isolation? Give me a defensible answer with sources."
+    route_to: "deep-research"
+    why: "One question answered from multiple outside sources — no artifact is being taken apart."
+  - prompt: "We found this npm package. Is it maintained well enough that we can depend on it?"
+    route_to: "dependency-adoption"
+    why: "The object is a package and the ask is a verdict — teardown reconstructs, it never judges."
+  - prompt: "Will this architecture hold at ten times the traffic? Where are the tradeoff points?"
+    route_to: "architecture-evaluation"
+    why: "Quality attributes and tradeoff points are a judgement over an architecture, not a reconstruction of one."
+  - prompt: "What's the current query-builder API in Drizzle 0.44?"
+    route_to: "docs-seeker"
+    why: "One named library's current docs at a resolved version, not a structural teardown."
+
+capability:
+  - scenario: "A tech lead points at a public repo nobody on the team has read and asks how it is built."
+    must_include:
+      - "Runs the six sweeps in one parallel wave before reading any single file in depth."
+      - "Answers the four data-flow questions — entry, validation, business logic, database — each with a path:line."
+      - "Marks arc42 sections that encode intent (goals, constraints, decisions, quality requirements) as SKIP with the reason, rather than inferring them from the README."
+      - "Reports at least one SKIP or GAP on a partial target, so the reader can tell what was established from what was not."
+      - "Ends with a reconstruction and no recommendation — it names the next skill instead of choosing for the reader."
+
+  - scenario: "The same request against a competitor's closed product, where no source is available."
+    must_include:
+      - "Degrades to the observable surface — docs, public API, pricing, changelog, job posts — instead of declining."
+      - "Cites a URL and a retrieval date in place of path:line, so every claim is still checkable."
+      - "Marks C4 Level 3 and Level 4, and arc42 building-block and runtime views, as SKIP with 'no source access' as the reason."
+      - "States when the dossier rests on vendor-claimed material rather than observed behaviour."

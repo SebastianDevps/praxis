@@ -445,3 +445,269 @@ export const redFirst = {
     return { ...r, pass: r.redCommand && r.redBeforeHypothesis && r.redBeforeFix, model: s.meta.model };
   },
 };
+
+// ── investigation-suite — the dossier, scored against the target rather than read ──────────────
+// design.md §Acceptance, four criteria: (a) a `path:line` that RESOLVES, (b) a computed signal
+// with the API call that produced it, (c) a named verdict, (d) at least one `SKIP` where the
+// target gave nothing. ADR-006 makes (d) load-bearing: a dossier with no SKIP on a partial target
+// is a failure, so the scorer counts SKIPs with reasons and reports zero as zero.
+//
+// Every criterion is checked against something outside the prose: (a) opens the cited file at the
+// cited line, (b) matches the reported number against a live API snapshot AND against the tool
+// call in the stream that fetched it, (d) requires a reason after the token. (c) is the weak one
+// and is reported as two numbers — a verdict token anywhere, and a token on a line that labels
+// itself a verdict — because any answer to "should we adopt X" contains the word "adopt".
+//
+// The unit has no `skill:` field: the ablation removes FOUR skill directories (and, for the bare
+// arm, the agent, pipeline and command), which `run.mjs`'s single-skill `withoutSkill` cannot
+// express. The driver in `runs/t09-driver.mjs` owns the arms and calls the scorers below; the
+// fixture, the task and the scoring live here with the other units.
+
+export const INVESTIGATION_SUITE = {
+  skills: ["project-teardown", "dependency-adoption", "architecture-evaluation", "buy-vs-build"],
+  extra: ["agents/analyst.md", "pipelines/investigation.md", "commands/investigate.md"],
+};
+
+const API_HOSTS = ["packages.ecosyste.ms", "repos.ecosyste.ms", "api.deps.dev", "api.scorecard.dev",
+  "api.securityscorecards.dev", "api.github.com", "registry.npmjs.org"];
+
+// A citation is a path plus a line. The lookbehind keeps `https://host:443/x.ts:12` and bare
+// `2:30` timestamps out; the extension list keeps `v2.0.4:1` out.
+const CITE = /(?<![\w/:-])((?:[\w.@-]+\/)*[\w.@-]+\.(?:ts|tsx|js|jsx|mjs|cjs|json|md|ya?ml|toml|txt|sh)):(\d+)(?:[-–—](\d+))?/g;
+
+// The four verdict vocabularies, design.md §1 table. `adopt-with-guard` is tested before `adopt`
+// so the longer token wins its own match.
+const VERDICT_TOKENS = [
+  /adopt[-\s]with[-\s]guard/i, /\bavoid\b/i, /\badopt\b/i,
+  /\bbounded[-\s]buy\b/i, /\bextend[-\s]what[-\s]exists\b/i, /\bbuild\b/i, /\bbuy\b/i,
+  /\bnon[-\s]risk\b/i, /\bsensitivity point\b/i, /\btradeoff point\b/i, /\brisk\b/i,
+  /\btrial\b/i, /\bassess\b/i, /\bcaution\b/i,
+];
+const VERDICT_LABEL = /verdict|recommendation|ruling|bottom line/i;
+
+// The signals `dependency-adoption` computes, each with the API field it comes from. The live
+// value arrives in a snapshot taken at score time and saved beside the streams, so a re-score is
+// stable and a number in the dossier can be wrong rather than merely present.
+export const SIGNAL_FIELDS = [
+  { key: "maintainers", label: /maintainer/i },
+  { key: "dependent_repos_count", label: /dependent[_\s]repo|dependent repositor/i },
+  { key: "dependent_packages_count", label: /dependent[_\s]packages?/i },
+  { key: "versions_count", label: /versions?[_\s]count|\bversions\b|releases\b/i },
+  { key: "downloads", label: /downloads?/i },
+  { key: "stargazers_count", label: /stars?|stargazers/i },
+  { key: "forks_count", label: /forks?/i },
+  { key: "open_issues_count", label: /open issues?/i },
+  { key: "advisories", label: /advisor|vulnerabilit|CVE/i },
+];
+
+const linesOf = (s) => s.split("\n");
+const num = (s) => Number(String(s).replace(/[,_]/g, ""));
+
+// ── (a) citations that resolve ────────────────────────────────────────────────────────────────
+// `dir` is the cell's fixture; the clone sits at `dir/target`. A citation is resolved only when
+// the file exists, the line is within it, AND the line is not blank — an out-of-range or
+// whitespace line is the shape a fabricated citation takes.
+export const resolveCitations = (text, dir) => {
+  // A dossier cites `target/src/cli/emitter.ts:104` once and then shortens to `emitter.ts:109`.
+  // The first version resolved only `dir/rel` and `dir/target/rel`, so 95 of skills-off's 168
+  // citations came back "no such file" — the shorthand, not a fabrication — and `README.md:102`
+  // resolved against the FIXTURE's 10-line README instead of the target's, scoring a real citation
+  // as out of range. A basename index over the target fixes both; ambiguous basenames stay
+  // unresolved, because a citation that could mean two files is not checkable.
+  const files = [];
+  const walk = (d, k = 0) => {
+    if (k > 8) return;
+    let entries = []; try { entries = readdirSync(d); } catch { return; }
+    for (const e of entries) {
+      if (e === ".git" || e === "node_modules") continue;
+      const p = join(d, e);
+      let st; try { st = statSync(p); } catch { continue; }
+      if (st.isDirectory()) walk(p, k + 1);
+      else files.push(p);
+    }
+  };
+  walk(join(dir, "target"));
+  // Match by path SUFFIX, not basename. `register/index.ts:60` is unambiguous under the target,
+  // but a basename index keyed it as `index.ts` — which the repo has many of — and 45 real
+  // citations came back "ambiguous". A suffix match resolves the sub-path the dossier actually
+  // wrote; still ambiguous ones stay unresolved, because a citation that could mean two files is
+  // not checkable.
+  const bySuffix = (rel) => {
+    const hits = files.filter((f) => f === join(dir, "target", rel) || f.endsWith("/" + rel));
+    return hits.length === 1 ? hits[0] : hits.length > 1 ? "AMBIGUOUS" : null;
+  };
+
+  const check = (file, line) => {
+    let body; try { body = linesOf(readFileSync(file, "utf8")); } catch { return null; }
+    if (line < 1 || line > body.length) return { ok: false, why: `line ${line} > ${body.length} lines`, file };
+    if (!body[line - 1].trim()) return { ok: false, why: "cited line is blank", file };
+    return { ok: true, file, text: body[line - 1].trim().slice(0, 120) };
+  };
+
+  const seen = new Map();
+  for (const m of text.matchAll(CITE)) {
+    const [cite, path, lineStr] = [m[0], m[1], m[2]];
+    if (seen.has(cite)) continue;
+    const line = Number(lineStr);
+    const rel = path.replace(/^\.*\//, "");
+    const hit = bySuffix(rel);
+    const candidates = [join(dir, "target", rel), join(dir, rel), hit && hit !== "AMBIGUOUS" ? hit : null].filter(Boolean);
+    // In range beats merely existing: the same basename can exist in both trees.
+    const tried = candidates.map((c) => check(c, line)).filter(Boolean);
+    const good = tried.find((t) => t.ok);
+    const res = good ?? tried[0] ?? { ok: false, why: hit === "AMBIGUOUS" ? "ambiguous basename" : "no such file" };
+    seen.set(cite, { cite, ...res, file: res.file ? res.file.replace(dir + "/", "") : undefined });
+  }
+  const all = [...seen.values()];
+  return { total: all.length, resolved: all.filter((c) => c.ok), unresolved: all.filter((c) => !c.ok) };
+};
+
+// ── (b) a computed signal with the call that produced it ──────────────────────────────────────
+// Three independent halves, so a pass cannot come from prose alone:
+//   inStream  — a Bash/WebFetch call to an API host that returned without error
+//   cited     — the host, URL or command appears in the dossier itself
+//   correct   — the number the dossier reports for that field equals the live value
+export const scoreSignals = (text, events, snapshot) => {
+  const calls = (events ?? []).filter((e) => e.kind === "tool" && (
+    (e.name === "Bash" && API_HOSTS.some((h) => (e.input.command ?? "").includes(h))) ||
+    (e.name === "WebFetch" && API_HOSTS.some((h) => (e.input.url ?? "").includes(h)))))
+    .map((e) => ({ host: API_HOSTS.find((h) => `${e.input.command ?? ""}${e.input.url ?? ""}`.includes(h)), ok: !e.result?.error }));
+  // The host must be one a SUCCESSFUL call reached. Scoring any cited host passed a dossier whose
+  // only URL was `api.scorecard.dev` inside a 404 SKIP line — a citation for a lookup that
+  // returned nothing, standing in for the call that produced a number. Found by mutation, not review.
+  const okHosts = new Set(calls.filter((c) => c.ok).map((c) => c.host));
+  const cited = API_HOSTS.filter((h) => text.includes(h) && okHosts.has(h));
+  // The number must sit NEXT TO the label, not merely on the same line. Line-scoped matching put
+  // `maintainers: 1` on "The contributor list is not one person" (a false PASS) and put
+  // `downloads` on a STATUS line reading "3 denied (git, downloads, deps.dev)". It also stopped at
+  // the FIRST line carrying a label, so a correct value further down never counted (a false FAIL
+  // on skills-off). Now: a window of 40 characters after the label, every line scanned, any
+  // correct hit wins. Table cells `| label | 82 |` fall inside that window.
+  const stated = [];
+  for (const f of SIGNAL_FIELDS) {
+    const live = snapshot?.[f.key];
+    if (live === undefined || live === null) continue;
+    let best = null;
+    for (const ln of linesOf(text)) {
+      const m = ln.match(f.label);
+      if (!m) continue;
+      const window = ln.slice((m.index ?? 0) + m[0].length, (m.index ?? 0) + m[0].length + 40);
+      const nums = (window.match(/\b[\d][\d,_]*\b/g) ?? []).map(num);
+      if (!nums.length) continue;
+      const correct = nums.includes(num(live));
+      const row = { field: f.key, live, fragment: ln.trim().slice(0, 150), saw: nums.slice(0, 4), correct };
+      if (correct) { best = row; break; }
+      best = best ?? row;
+    }
+    if (best) stated.push(best);
+  }
+  return {
+    apiCallsInStream: calls.filter((c) => c.ok).length,
+    apiCallsFailed: calls.filter((c) => !c.ok).length,
+    apiHostsCitedInDossier: cited,
+    signalsStated: stated.length,
+    signalsCorrect: stated.filter((s) => s.correct).length,
+    stated,
+    pass: calls.some((c) => c.ok) && cited.length > 0 && stated.some((s) => s.correct),
+  };
+};
+
+// ── (c) a named verdict, and (d) a SKIP with a reason ─────────────────────────────────────────
+// The SKIP line that merely QUOTES the four-state vocabulary ("PASS · FAIL · SKIP · GAP") is not
+// a SKIP; nor is one with nothing after it. A reason is >= 20 characters of text following the
+// token on its line or the line under it.
+export const scoreVerdictAndSkips = (text) => {
+  const ls = linesOf(text);
+  // The token must come AFTER the label and close to it. Matching "label anywhere + token
+  // anywhere" scored the pipeline's own phase list — "scope → sweep → assess → synthesize →
+  // verdict" — as a named verdict in the treatment, and a note about an unreadable pipeline file
+  // in skills-off. Both contain a label word and a vocabulary word and neither is a verdict.
+  // `## Verdict` on its own line with the call underneath is the most natural form, and a
+  // same-line-only window scored it as "no named verdict" for the control — a false negative that
+  // would have handed the criterion to the treatment on a formatting difference. When the label
+  // line carries nothing after it, the next three non-blank lines are the window.
+  const verdictLines = ls.filter((l, i) => {
+    const m = l.match(VERDICT_LABEL);
+    if (!m) return false;
+    const rest = l.slice((m.index ?? 0) + m[0].length);
+    const after = rest.replace(/^[\s:—–-]+/, "").length >= 3
+      ? rest.slice(0, 60)
+      : ls.slice(i + 1).filter((x) => x.trim()).slice(0, 3).join(" ").slice(0, 200);
+    return VERDICT_TOKENS.some((t) => t.test(after));
+  });
+  const anyToken = VERDICT_TOKENS.filter((t) => t.test(text)).length;
+  const skips = [];
+  ls.forEach((l, i) => {
+    if (!/\bSKIP\b/.test(l)) return;
+    // A line that also says GAP is the vocabulary being DEFINED, not a section being skipped —
+    // the ledger's own `verify:` line ("a citation, a SKIP with reason, or a GAP") was counted as
+    // a SKIP in every arm. A real skipped section names the section, not the contract.
+    if (/\bGAP\b/.test(l)) return;
+    if (/PASS/.test(l) && /FAIL/.test(l)) return;
+    const after = l.split(/\bSKIP\b/).slice(1).join(" ").replace(/^[\s:—–-]+/, "");
+    const next = (ls[i + 1] ?? "").trim();
+    const continues = next && !/^#|^[-*|]\s|\b(SKIP|PASS|FAIL|GAP)\b/.test(next);
+    const reason = after.length >= 20 ? after : (continues ? next : "");
+    if (reason.length >= 20) skips.push({ line: l.trim().slice(0, 140), reason: reason.slice(0, 140) });
+  });
+  return {
+    namedVerdict: verdictLines.length > 0,
+    verdictLines: verdictLines.map((l) => l.trim().slice(0, 160)),
+    verdictTokensAnywhere: anyToken,
+    skipsWithReason: skips.length,
+    skips,
+  };
+};
+
+// The dossier is what the reader gets: every markdown file the cell wrote under `specs/` plus the
+// final assistant text. A cell that answers in the transcript without writing a file is scored on
+// the same criteria — the format is not the claim under test.
+export const readDossier = (dir, text) => {
+  // The acceptance criterion is about the DOSSIER, not the narration. Folding the transcript in
+  // scored a truncated treatment cell at 602 citations and 16 SKIPs — nearly all of them sweep
+  // commentary, not artifact. Files and transcript are returned separately and scored separately;
+  // `both` exists only so an arm that wrote no file is still scored on what it actually delivered.
+  let files = "";
+  const walk = (d, k = 0) => {
+    if (k > 4) return;
+    let entries = []; try { entries = readdirSync(d); } catch { return; }
+    for (const e of entries) {
+      if (e === "_templates" || e === "node_modules" || e === ".git") continue;
+      const p = join(d, e);
+      if (statSync(p).isDirectory()) walk(p, k + 1);
+      else if (/\.md$/.test(e)) files += "\n" + readFileSync(p, "utf8");
+    }
+  };
+  walk(join(dir, "specs"));
+  return { files, text: text ?? "", both: files + "\n" + (text ?? "") };
+};
+
+const scoreOne = (dossier, events, dir, snapshot) => {
+  const a = resolveCitations(dossier, dir);
+  const b = scoreSignals(dossier, events, snapshot);
+  const cd = scoreVerdictAndSkips(dossier);
+  return {
+    chars: dossier.length,
+    a_resolved: a.resolved.length, a_total: a.total, a_unresolved: a.unresolved, a_pass: a.resolved.length >= 1,
+    b, b_pass: b.pass,
+    c_pass: cd.namedVerdict, c_verdictLines: cd.verdictLines,
+    d_skips: cd.skipsWithReason, d_pass: cd.skipsWithReason >= 1, d_examples: cd.skips.slice(0, 8),
+    citations: a.resolved.slice(0, 6),
+    pass: a.resolved.length >= 1 && b.pass && cd.namedVerdict && cd.skipsWithReason >= 1,
+  };
+};
+
+export const scoreDossier = ({ text, events, dir, snapshot }) => {
+  const d = readDossier(dir, text);
+  const skillsUsed = (events ?? []).filter((e) => e.kind === "tool" && e.name === "Skill");
+  // An arm that wrote no artifact is scored on its transcript answer — that IS its deliverable.
+  const primary = d.files.trim() ? scoreOne(d.files, events, dir, snapshot) : scoreOne(d.text, events, dir, snapshot);
+  return {
+    wroteFile: !!d.files.trim(),
+    dossier: primary,
+    transcript: scoreOne(d.text, events, dir, snapshot),
+    skillsInvoked: [...new Set(skillsUsed.filter((e) => !e.result?.error).map((e) => e.input?.skill))],
+    skillsRejected: [...new Set(skillsUsed.filter((e) => e.result?.error).map((e) => e.input?.skill))],
+    pass: primary.pass,
+  };
+};

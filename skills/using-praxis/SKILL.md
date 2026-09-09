@@ -102,6 +102,10 @@ model cannot write — and `hooks/stop` blocks once until `implementation.md` re
 | Approach unclear (2+ options) | — | `strategy-compare` (decide before building) |
 | A consequential decision needs attacking before commitment | — | `decision-challenge` |
 | Substantial change is green and about to be called done | `refuter-correctness` + `refuter-security` + `refuter-tests` (one wave) | — |
+| Take apart a codebase someone else owns | `analyst` | `project-teardown` |
+| Whether to take on a package, Action or plugin | `analyst` | `dependency-adoption` |
+| Will this architecture hold under its quality requirements | `analyst` | `architecture-evaluation` |
+| Build it in-house or source it | `analyst` | `buy-vs-build` |
 | CI, containers, test infrastructure | `platform` | `web-testing` |
 | No written quality bar; "define our standards" | `platform` | `quality-bar` |
 

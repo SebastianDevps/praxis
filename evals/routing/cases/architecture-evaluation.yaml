@@ -1,0 +1,43 @@
+skill: architecture-evaluation
+
+# Judges whether an architecture holds under its quality requirements, naming risks, non-risks,
+# sensitivity points and tradeoff points. It evaluates; it does not draw or design.
+should_trigger:
+  - prompt: "We're at 40k requests a minute next quarter. Will this architecture hold, and where does it break first?"
+    why: "A quality requirement (load) put to an existing architecture — the will-it-hold question."
+  - prompt: "¿Esta arquitectura soporta los requisitos de latencia y disponibilidad que nos comprometimos, o dónde falla?"
+    why: "Evaluation of an existing architecture against stated quality attributes."
+  - prompt: "Run an ATAM on the payments platform — I want the risks and tradeoff points, not a diagram."
+    why: "The method by name, and the ATAM output types are exactly what this skill produces."
+  - prompt: "Caching everything in the edge layer helps latency but hurts consistency. What else does that decision pull on?"
+    why: "A property affecting more than one quality attribute — a tradeoff point analysis."
+  - prompt: "Antes de escalar a multi-región, evalúa qué decisiones de la arquitectura actual se vuelven riesgosas."
+    why: "Assessing which architectural decisions become risks under a new quality requirement."
+  - prompt: "Which properties of this design are we not allowed to change without breaking availability?"
+    why: "Sensitivity points — the yellow-flag properties critical to one quality attribute."
+
+should_not_trigger:
+  - prompt: "Where should the seam go between the billing module and the ledger, and how deep should its interface be?"
+    route_to: "codebase-design"
+    why: "One module's interface and seam placement, not an architecture judged against quality requirements."
+  - prompt: "I inherited this repo. Map the stack, the entry points and how a request flows through it."
+    route_to: "project-teardown"
+    why: "Reconstructing and describing what the architecture is — no verdict on whether it holds."
+  - prompt: "We already committed to the Kafka migration next sprint. Poke holes in it before we start."
+    route_to: "decision-challenge"
+    why: "Attacking a commitment already made, returning proceed/hold/stop — not an attribute-driven evaluation."
+  - prompt: "Postgres or DynamoDB for the event store? We have both on the table."
+    route_to: "strategy-compare"
+    why: "Picking between two candidate options, not evaluating an architecture that already exists."
+  - prompt: "Threat-model the OAuth callback and check it against the OWASP top ten before merge."
+    route_to: "security"
+    why: "A threat surface checklist on a specific auth path, not a quality-attribute tradeoff analysis."
+
+capability:
+  - scenario: "A tech lead asks whether the current architecture will hold at 10x traffic, and the repo states no SLOs anywhere."
+    must_include:
+      - "Asks for the quality-attribute requirements — the latency and availability numbers — instead of inventing them, and stops for the answer."
+      - "Reports the sections it could not analyze as SKIP with the reason, rather than filling them in."
+      - "Names non-risks alongside risks, each with the assumption that must not change for it to stay a non-risk."
+      - "Names any tradeoff point with the two or more quality attributes it pulls against, not just one."
+      - "Stops at naming where the sensitivities are — it does not build a formal performance model to settle the question."

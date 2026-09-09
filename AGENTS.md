@@ -170,6 +170,15 @@ Supporting constructs:
 
 Lifecycle files live under `skills/` (`agentic-lifecycle`, `spec-lifecycle`, `autonomous-loop`). Pointers only here.
 
+Assessment of a target Praxis does **not** own — a repo, a package, an architecture, a capability —
+runs the same way: `skills/` holds the four methods (`project-teardown`, `dependency-adoption`,
+`architecture-evaluation`, `buy-vs-build`), `pipelines/investigation.md` composes them
+(`scope → sweep → assess → synthesize → verdict`), `/praxis:investigate` triggers it, and the
+`analyst` agent carries it — read-mostly, and the one agent that returns a verdict rather than
+facts, which is why it is not `researcher`. Its deliverable is a dossier whose every section is
+cited evidence, `SKIP` with the reason it could not run, or `GAP` with what it had nothing to check
+against.
+
 ---
 
 ## Learning (`/praxis:learn`)

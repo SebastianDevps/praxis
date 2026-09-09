@@ -1,6 +1,6 @@
 ---
 name: scout
-description: Use before proposing an approach or building something new — recon of what THIS repo already has that bears on it: prior art, conventions you must match, overlapping utilities, installed dependencies. Produces a findings note, never a decision. NOT external or library investigation (that is `deep-research`), NOT picking between options already found (that is `strategy-compare`).
+description: Use before proposing an approach or building something new — recon of what THIS repo already has that bears on it: prior art, conventions you must match, overlapping utilities, installed dependencies. Produces a findings note, never a decision. NOT external or library investigation (that is `deep-research`), NOT picking between options already found (that is `strategy-compare`), NOT taking apart a codebase someone else owns (that is `project-teardown`).
 kind: skill
 od:
   category: research
