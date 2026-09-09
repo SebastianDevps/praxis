@@ -40,3 +40,8 @@ owner: Sebastian
 - Parent change `spec-driven-workflow` stays `implemented`; this one hardens its ADR-006.
 - Known gaps, documented in the hook headers: Bash writes to `.praxis/approved/`; the model can run
   `scripts/approve.sh` itself through Bash — the command text tells it to wait, nothing mechanical does.
+- 2026-09-09, post-release · `hooks/stop` blocked a turn that changed no source: the trigger was the
+  five untracked evaluation documents in `docs/` and `untitled.md`, present since before this change.
+  First live observation of the block (`evals/floor` had 0 in 26 cells) — PASS for the mechanism, and
+  the "working tree ≈ session" looseness stated in the hook header seen in practice. Verify evidence:
+  `git status --short | rg -v '^\?\? (docs/|untitled)'` → empty. Follow-up: `future-work.md` DFU-1.
