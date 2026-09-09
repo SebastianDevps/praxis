@@ -4,6 +4,8 @@ All notable changes to Praxis are documented here. Format follows [Keep a Change
 
 ## [Unreleased]
 
+## [0.6.1] — 2026-09-09
+
 ### Fixed
 
 - **`stop` no longer blocks on files that were dirty before the session.** The first live block in this repo was a false positive: five untracked documents older than the change counted as "source changed this turn", because the hook read the working tree with no notion of a session. `session-start` now writes `.praxis/session-started` on `startup` and `clear` (kept on `resume` and `compact`), and `stop` counts only files newer than it; without the marker it behaves as before, so hosts without `session-start` (Codex) lose nothing. Verified with `touch -t` on either side of the marker (`specs/stop-session-scope/`); two earlier attempts put the marker in the future and are recorded as the method's own trap.
