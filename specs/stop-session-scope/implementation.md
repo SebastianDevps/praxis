@@ -34,3 +34,7 @@ owner: Sebastian
 
 ## Session Notes
 - Triggered by the first live `hooks/stop` block, recorded in specs/hook-owned-approval/implementation.md.
+- 09:2x, after commit 
+  `hooks/stop` (installed 0.6.0 copy) blocked again on the same five untracked docs — the false positive
+  this change fixes, reproduced once more with the ledger clean. Working tree: only `?? docs/*`, `?? untitled.md`.
+  Expected until 0.6.1 is installed. GAP for the installed copy; PASS for the working-tree hook (T02).

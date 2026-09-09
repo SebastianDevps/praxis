@@ -1,6 +1,6 @@
 {
   "name": "praxis",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Clarity-first agent framework — opinionated taste, a visible process loop (research → clarify → plan → subagent execution → verify), and per-project memory the agent learns. Builds systems from scratch at scale without shipping generic AI slop.",
   "author": {
     "name": "Sebastian Guerra",
