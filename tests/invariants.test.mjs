@@ -95,12 +95,19 @@ const LEDGER_CONSUMERS = [
   "commands/loop.md",
 ];
 
-test("every skill that touches the ledger names PROGRESS.md and nothing else", () => {
+// ADR-002 (specs/spec-driven-workflow): the ledger moved into the change folder. PROGRESS.md is
+// now the index of changes — it may still be named, but only in a sentence that says so. A
+// consumer that names it any other way is pointing the executor at a file with no task lines.
+test("every skill that touches the ledger names specs/<change>/implementation.md and nothing else", () => {
   for (const f of LEDGER_CONSUMERS) {
     const src = read(f);
-    assert.match(src, /PROGRESS\.md/, `${f} does not name the canonical ledger`);
+    assert.match(src, /specs\/<change>\/implementation\.md/, `${f} does not name the canonical ledger`);
     for (const alias of [/\bplan\.md\b/, /\bprogress\.md\b/, /\btasks\/\*\.md\b/]) {
       assert.doesNotMatch(src, alias, `${f} still names a ledger alias — there is one ledger`);
+    }
+    for (const m of src.matchAll(/PROGRESS\.md/g)) {
+      const sentence = src.slice(src.lastIndexOf(". ", m.index) + 1, src.indexOf(".", m.index + 11) + 1);
+      assert.match(sentence, /index/, `${f} names PROGRESS.md as something other than the index: "${sentence.trim()}"`);
     }
   }
 });
@@ -165,7 +172,10 @@ test("every priming surface enumerates the phase vocabulary where the Run Card f
 // presence in a Run Card. This version parses the two real shapes — `field:` inside the fenced
 // block, and `| \`field\` |` as a table row — and asserts against what it actually parsed.
 const RUN_CARD_SURFACES = [...PRIMING_SURFACES, "agents/orchestrator.md", "AGENTS.md"];
-const RUN_CARD_FIELDS = ["phase", "approach", "research", "verify"];
+// `spec` joined the card with the spec folder (specs/spec-driven-workflow §3). Its fenced form is
+// `spec:     specs/<change>/   (stage: <stage>)` — a literal path carrying a placeholder rather
+// than a bare `<placeholder>`, so the fenced parser accepts any value that holds one.
+const RUN_CARD_FIELDS = ["spec", "phase", "approach", "research", "verify"];
 
 // read() collapses whitespace, which destroys the line structure this parser needs.
 const rawRead = (p) => readFileSync(join(ROOT, p), "utf8");
@@ -173,7 +183,7 @@ const rawRead = (p) => readFileSync(join(ROOT, p), "utf8");
 function runCardFields(src) {
   const found = new Set();
   for (const line of src.split("\n")) {
-    const fenced = line.match(/^\s*([a-z_]+):\s+[<[{(]/);
+    const fenced = line.match(/^\s*([a-z_]+):\s+(?:[<[{(]|\S.*<[^>]+>)/);
     if (fenced) found.add(fenced[1]);
     const row = line.match(/^\|\s*`([a-z_]+)`\s*\|/);
     if (row) found.add(row[1]);
@@ -181,16 +191,89 @@ function runCardFields(src) {
   return found;
 }
 
-test("every surface that renders a Run Card renders the same four fields", () => {
+test("every surface that renders a Run Card renders the same five fields", () => {
   for (const f of RUN_CARD_SURFACES) {
     const src = rawRead(f);
     const found = runCardFields(src);
     // Without this the parser could match nothing and every assertion below would pass on an
     // empty set — the exact failure this gate was rewritten to remove.
-    assert.ok(found.size >= 4, `${f}: parsed ${found.size} Run Card fields — the format changed`);
+    assert.ok(found.size >= 5, `${f}: parsed ${found.size} Run Card fields — the format changed`);
     const missing = RUN_CARD_FIELDS.filter((x) => !found.has(x));
     assert.deepEqual(missing, [], `${f} renders a Run Card missing ${missing}`);
     assert.doesNotMatch(src, /review_gate/, `${f} still documents the retired six-field Run Card`);
+  }
+});
+
+// ── the spec folder ───────────────────────────────────────────────────────────────────────────
+// The kernel and the router both say what a change leaves behind: the Run Card names its spec
+// folder, `fast` writes implementation.md before stopping, `full`/`deep` stop once after design.md,
+// and a resume starts from the ledger. Two surfaces, one guarantee each — reword one and the other
+// still promises the old flow. Same canary as PRIMING_INVARIANTS: every surface that primes a run
+// carries the spec rules, the Cursor always-apply rule included.
+const SPEC_SURFACES = ["skills/using-praxis/SKILL.md", "hooks/context/contract.md", ".cursor/rules/praxis.mdc"];
+
+const SPEC_INVARIANTS = [
+  ["spec line on the Run Card", /spec:\s+specs\/<change>\/\s+\(stage: <stage>\)/],
+  ["fast writes implementation.md before stopping", /specs\/<change>\/implementation\.md` — Status, Completed, verify evidence — before you stop/],
+  ["resume reads the ledger first", /read `specs\/<change>\/implementation\.md` first/],
+];
+
+for (const surface of SPEC_SURFACES) {
+  for (const [label, re] of SPEC_INVARIANTS) {
+    test(`${surface} keeps the ${label}`, () => {
+      assert.match(read(surface), re);
+    });
+  }
+}
+
+// The floor is hook-backed, so only the two surfaces on hosts that run the hooks may claim it. The
+// Cursor rule stays out: hooks-cursor.json registers neither event, and a surface that promised a
+// gate the host does not run would be the "inert gate that looks armed" the hooks warn about.
+const FLOOR_SURFACES = ["skills/using-praxis/SKILL.md", "hooks/context/contract.md"];
+const FLOOR_INVARIANT = /`hooks\/pre-tool-use` denies source edits[^;]*asks until `\.praxis\/approved\/<change>` exists — a record the model cannot write[^;]*`hooks\/stop` blocks once[^;]*; `PRAXIS_FLOOR=off` is the only override/;
+
+// ADR-006: the approval stop is the host's permission prompt, not prose. The first live cell showed
+// the prose STOP not holding while the mechanical deny did, so on hook-backed hosts the rule says
+// "the first source edit will ask" and `stage: planned` is the record that someone answered. The
+// Cursor rule keeps the prose STOP — it has no PreToolUse, so prose is all it has.
+//
+// specs/hook-owned-approval: evals/floor measured 3/3 unattended runs setting `stage: planned`
+// themselves once the ask was refused. So the approval is now a marker the model cannot write —
+// `.praxis/approved/<change>`, from `hooks/post-tool-use` or `/praxis:approve` — and `stage:
+// planned` is prose that unlocks nothing. Both surfaces must say so, or the model reads the old
+// contract and the field it owns looks like the gate again.
+const ASK_INVARIANTS = [
+  ["approval is the host's ask", /write `specs\/<change>\/design\.md` and set the Run Card to `Needs your decision`; the first source edit will ask/i],
+  ["approval is a record the model cannot write", /The approval is a record the model cannot write: `\.praxis\/approved\/<change>`, written by `hooks\/post-tool-use` when the approved edit ran, or by the person with `\/praxis:approve <change>`/],
+  ["planned is the human-readable record and unlocks nothing", /After approval set `stage: planned` in `implementation\.md` — the human-readable record, it unlocks nothing/],
+];
+const CURSOR_STOP = /write `specs\/<change>\/design\.md`, set the Run Card to `Needs your decision`, STOP/;
+
+for (const surface of FLOOR_SURFACES) {
+  test(`${surface} states the mechanical floor and its single override`, () => {
+    assert.match(read(surface), FLOOR_INVARIANT);
+  });
+  for (const [label, re] of ASK_INVARIANTS) {
+    test(`${surface} keeps the ${label}`, () => {
+      assert.match(read(surface), re);
+    });
+  }
+}
+
+test(".cursor/rules/praxis.mdc keeps the prose stop — it has no hook to ask with", () => {
+  const src = read(".cursor/rules/praxis.mdc");
+  assert.match(src, CURSOR_STOP);
+  assert.doesNotMatch(src, /first source edit will ask/, "the Cursor rule promises an ask no Cursor hook performs");
+  assert.doesNotMatch(src, /\.praxis\/approved/, "the Cursor rule names a marker no Cursor hook writes or reads");
+});
+
+test("the spec line sits first on the Run Card, above phase", () => {
+  for (const surface of SPEC_SURFACES) {
+    const src = read(surface);
+    const spec = src.search(/spec:\s+specs\/<change>\//);
+    const phase = src.search(/phase:\s*[<[{(]/);
+    assert.ok(spec !== -1 && phase !== -1, `${surface} lost a Run Card line`);
+    assert.ok(spec < phase, `${surface}: the spec line must come before phase:`);
   }
 });
 
@@ -211,8 +294,16 @@ test("every referenced template exists on disk", () => {
   // templates/spec.md was cited by three files and did not exist. links.test.mjs missed it: the
   // citations sit in backticks, and that test deliberately checks prose paths only. A path inside
   // code fences is "shown, not promised" — except when the sentence around it is a promise.
+  // The spec templates moved to specs/_templates/ (one source; the two old copies diverged and
+  // were deleted). spec-lifecycle promises every file in that folder, so every file is pinned.
   const cited = [
-    "skills/spec-lifecycle/templates/spec.md",
+    "specs/_templates/implementation.md",
+    "specs/_templates/design.md",
+    "specs/_templates/decisions.md",
+    "specs/_templates/future-work.md",
+    "specs/_templates/AGENTS.md",
+    "specs/_templates/CLAUDE.md",
+    "specs/_templates/docs/README.md",
     "skills/agentic-lifecycle/assets/task.template.md",
     "skills/agentic-lifecycle/assets/progress.template.md",
     "skills/agentic-lifecycle/assets/spec.template.json",

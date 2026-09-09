@@ -1,0 +1,35 @@
+skill: design-system-clean
+
+should_trigger:
+  - prompt: "Build a clean minimal SaaS dashboard."
+    why: "Names the system and its target surface."
+  - prompt: "Soft, restrained, lots of whitespace, one accent color."
+    why: "The clean signature: whitespace, restraint, single accent."
+  - prompt: "Una app de consumo con aspecto suave y sobrio, sin ruido visual."
+    why: "Soft restrained consumer UI, in Spanish."
+  - prompt: "Make it feel calm — rounded corners, gentle shadows, nothing shouting."
+    why: "Soft shadows and rounded geometry are the system's markers."
+  - prompt: "Settings page for a productivity app. Understated."
+    why: "A restrained product surface, the clean system's home ground."
+
+should_not_trigger:
+  - prompt: "Raw, expressive, visible structure, sharp edges."
+    route_to: "design-system-brutalist"
+    why: "The opposite aesthetic."
+  - prompt: "Tiled feature grid with varied tile sizes."
+    route_to: "design-system-bento"
+    why: "Modular tiles, not restrained whitespace."
+  - prompt: "Long-form article page with a good reading measure."
+    route_to: "editorial-layout"
+    why: "Reading layout, not a product UI system."
+  - prompt: "Audit this existing dashboard for design problems."
+    route_to: "design-review"
+    why: "Critique of something built, not building it."
+
+capability:
+  - scenario: "A SaaS settings dashboard must be built in a clean, restrained style."
+    must_include:
+      - "Uses whitespace as the primary hierarchy device rather than borders and dividers everywhere."
+      - "Limits the palette to ONE accent and a single gray family, warm or cool but not both."
+      - "Tints shadows toward the background hue instead of using pure black."
+      - "Does not default to Inter, Roboto or Open Sans."

@@ -1,0 +1,35 @@
+skill: agentic-lifecycle
+
+should_trigger:
+  - prompt: "How should we structure this so agents can run it almost autonomously?"
+    why: "The doctrine question — decision, verifiable contract, task files, auto-loop, review gate."
+  - prompt: "Where does the human review gate belong in an agent-driven build?"
+    why: "The non-negotiable review checkpoint is doctrine this skill owns."
+  - prompt: "Plan this multi-phase migration so it can be handed to agents end to end."
+    why: "Substantial multi-phase work planned for near-autonomous execution."
+  - prompt: "¿Cómo definimos un contrato verificable para que el agente sepa cuándo terminó?"
+    why: "The verifiable-contract half of the doctrine — how done is proven, not asserted."
+  - prompt: "Set up eval-driven verification for this agent workflow."
+    why: "Eval-driven verification is the part this doctrine adds over the bare phases."
+
+should_not_trigger:
+  - prompt: "Advance this change from plan to implement."
+    route_to: "spec-lifecycle"
+    why: "Phase mechanics, not the doctrine framing them."
+  - prompt: "Just keep looping on a fresh context until the build is green."
+    route_to: "autonomous-loop"
+    why: "The loop runner itself, not the doctrine above it."
+  - prompt: "Dispatch one implementer per task and review between."
+    route_to: "subagent-driven-development"
+    why: "Execution pattern for an existing ledger."
+  - prompt: "Write the task checklist for this."
+    route_to: "writing-plans"
+    why: "Authoring tasks, not designing the lifecycle."
+
+capability:
+  - scenario: "A team wants a multi-phase feature to run with minimal human babysitting."
+    must_include:
+      - "States where the human review gate is NON-NEGOTIABLE rather than optimizing it away."
+      - "Defines a verifiable contract for done — an observable gate, not a subjective judgement."
+      - "Uses task files with status so progress survives a lost context."
+      - "Distinguishes what the auto-loop may retry from what must escalate to a human."

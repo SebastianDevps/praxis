@@ -1,0 +1,42 @@
+skill: quality-bar
+
+# Standing up a project's written quality bar: detect stack, interview with defaults, measure
+# today's numbers, write CONSTRAINTS.md. It writes the floor down; it does not apply it.
+should_trigger:
+  - prompt: "This repo has no written standards. Help me set up a quality bar we can actually hold."
+    why: "Establishing the project's written bar from nothing is the core job."
+  - prompt: "What coverage threshold should we require, and where would it be enforced?"
+    why: "Choosing a threshold and naming where it runs is the constraint-definition half."
+  - prompt: "Necesitamos dejar por escrito nuestros estándares de calidad para este proyecto."
+    why: "Writing the standards down for the project — the artifact this skill produces."
+  - prompt: "Write a CONSTRAINTS.md for us with the dimensions we can measure today."
+    why: "Names the artifact and asks for it to be grounded in today's numbers."
+  - prompt: "Define the quality gates for this codebase and say which command checks each one."
+    why: "A dimension with a number and no command is an aspiration; this skill pairs them."
+  - prompt: "We keep arguing about lint rules per PR. Can we agree a floor once and stop relitigating?"
+    why: "The recurring dispute is the symptom of an unwritten bar — the bar is the fix."
+
+should_not_trigger:
+  - prompt: "We ship this to production tomorrow. Are we ready?"
+    route_to: "release-readiness"
+    why: "The standing floor at the ship moment, not writing the floor down in the first place."
+  - prompt: "For this pull request, what should I actually write tests for?"
+    route_to: "test-coverage-plan"
+    why: "Choosing what to test for one change, not defining the project-wide bar."
+  - prompt: "Does this login flow have an auth bypass we missed?"
+    route_to: "security"
+    why: "The threat surface of a specific change, not a quality standard."
+  - prompt: "Our test suite went red after the refactor. Find out why."
+    route_to: "systematic-debugging"
+    why: "Diagnosing a concrete failure, not setting a standard."
+  - prompt: "Break this migration into tasks I can hand to one agent each."
+    route_to: "writing-plans"
+    why: "Decomposition of work, not definition of quality."
+
+capability:
+  - scenario: "A team with no written standards asks for a quality bar they can hold."
+    must_include:
+      - "Detects the actual stack and test runner rather than assuming a default like `npm test`."
+      - "Measures today's numbers first and writes the floor at what holds now, not aspirationally."
+      - "Gives every dimension a command and a phase — a number without a command is named as an aspiration, not a constraint."
+      - "Records exceptions with an owner and an expiry rather than silently widening the floor."

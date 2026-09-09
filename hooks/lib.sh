@@ -112,6 +112,21 @@ praxis_trace() {
   printf '%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "${2:-}" >> "$PRAXIS_HOOK_TRACE" 2>/dev/null || true
 }
 
+# Which host is running this hook: cursor | codex | claude | copilot.
+#
+# Codex is tested BEFORE Claude: Codex exports PLUGIN_ROOT/PLUGIN_DATA and, per its
+# hooks reference, CLAUDE_PLUGIN_ROOT "for compatibility" — so CLAUDE_PLUGIN_ROOT
+# alone cannot tell the two apart, while PLUGIN_ROOT is Codex-only. Without the
+# Codex branch at all, Codex fell through to the flat Copilot shape and dropped
+# the context silently.
+praxis_host() {
+  if [ -n "${CURSOR_PLUGIN_ROOT:-}" ]; then printf 'cursor'
+  elif [ -n "${PLUGIN_ROOT:-}${PLUGIN_DATA:-}" ]; then printf 'codex'
+  elif [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -z "${COPILOT_CLI:-}" ]; then printf 'claude'
+  else printf 'copilot'
+  fi
+}
+
 # Emit context in the dialect the current host actually consumes.
 # Claude Code and Codex read the nested hookSpecificOutput form; Cursor reads a
 # flat additional_context; Copilot reads a flat additionalContext. Claude Code
@@ -121,17 +136,7 @@ praxis_trace() {
 # Pass a third argument to force a host when detection cannot infer it.
 praxis_emit() {
   local event="$1" context="$2" host="${3:-}"
-
-  if [ -z "$host" ]; then
-    if [ -n "${CURSOR_PLUGIN_ROOT:-}" ]; then host=cursor
-    elif [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -z "${COPILOT_CLI:-}" ]; then host=claude
-    # Codex exposes PLUGIN_ROOT/PLUGIN_DATA and no CLAUDE_PLUGIN_ROOT. Without
-    # this branch it fell through to the flat Copilot shape and Codex dropped
-    # the context silently.
-    elif [ -n "${PLUGIN_ROOT:-}${PLUGIN_DATA:-}" ]; then host=codex
-    else host=copilot
-    fi
-  fi
+  [ -n "$host" ] || host="$(praxis_host)"
 
   case "$host" in
     cursor)        printf '{\n  "additional_context": "%s"\n}\n' "$context" ;;
@@ -237,4 +242,162 @@ praxis_agent_skills() {
 $names
 EOF
   printf '%s' "$out"
+}
+
+# --- Spec folders ------------------------------------------------------------
+#
+# The per-change record lives in the USER's repository: `specs/<change>/`, one
+# folder per change, `implementation.md` as its ledger (specs/spec-driven-workflow,
+# ADR-002). Every hook that reads or gates on it resolves paths through the
+# helpers below, so "where is the ledger" has one answer.
+
+# A string-valued JSON field, first occurrence, no jq. Enough for the flat
+# host payloads every hook receives; a value containing an escaped quote is
+# truncated at it rather than mis-parsed.
+praxis_json_string() {
+  printf '%s' "$1" \
+    | sed -n "s/.*\"$2\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" \
+    | head -1
+}
+
+# The project root: the git toplevel of the project dir, else the project dir.
+# Physical path (`pwd -P`), so a target under /tmp compares equal to the same
+# file under /private/tmp — macOS hands hooks both spellings.
+praxis_project_root() {
+  local dir="${1:-$(praxis_project_dir)}" top
+  top=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null) || top="$dir"
+  (cd "$top" 2>/dev/null && pwd -P) || printf '%s' "$top"
+}
+
+# Collapse `.` and `..` lexically. Input must be absolute.
+praxis_normalize_path() {
+  local IFS=/ seg out=""
+  for seg in $1; do
+    case "$seg" in ""|.) ;; ..) out="${out%/*}" ;; *) out="${out}/${seg}" ;; esac
+  done
+  printf '%s' "${out:-/}"
+}
+
+# Canonical absolute path for a target that may not exist yet: the deepest
+# existing ancestor is resolved physically, the remainder appended verbatim.
+#   praxis_canonical_path <path> [<base for a relative path>]
+praxis_canonical_path() {
+  local p="$1" base="${2:-$PWD}" rest="" dir
+  case "$p" in /*) ;; *) p="${base}/${p}" ;; esac
+  p=$(praxis_normalize_path "$p")
+  dir="$p"
+  while [ ! -d "$dir" ]; do
+    rest="${dir##*/}${rest:+/$rest}"
+    dir="${dir%/*}"
+    [ -n "$dir" ] || { dir=/; break; }
+  done
+  dir=$(cd "$dir" 2>/dev/null && pwd -P) || return 1
+  if [ -z "$rest" ]; then printf '%s' "$dir"
+  elif [ "$dir" = / ]; then printf '/%s' "$rest"
+  else printf '%s/%s' "$dir" "$rest"
+  fi
+}
+
+# Spec-side paths, relative to the project root. Writing here is how the
+# agent CREATES the record, so the floor never stands in front of it.
+# `.praxis/approved/` is the one exception: the approval record is written by
+# the person (via the host's ask, or /praxis:approve), never by the model.
+praxis_is_spec_side() {
+  case "$1" in
+    .praxis/approved/*) return 1 ;;
+    specs/*|.praxis/*|agents/*|AGENTS.md|CLAUDE.md|PROGRESS.md|CONSTRAINTS.md) return 0 ;;
+  esac
+  return 1
+}
+
+# The approval marker for a change: `.praxis/approved/<change>`, an empty file whose
+# existence is the record that a person approved the design (specs/hook-owned-approval).
+praxis_approved_marker() { printf '%s/.praxis/approved/%s' "$1" "$2"; }
+praxis_approved() { [ -n "${2:-}" ] && [ -f "$(praxis_approved_marker "$1" "$2")" ]; }
+
+# Create `.praxis/` on first use and, only then, its .gitignore. `active-change` and
+# `approved/` are per-machine session state, not the team's record — same rule as
+# `sessions.jsonl` in the memory store. Written only when absent: a project that has
+# edited this file keeps its edit.
+praxis_ensure_praxis_dir() {
+  local dir="$1/.praxis"
+  [ -d "$dir" ] || mkdir -p "$dir" 2>/dev/null || return 1
+  [ -f "${dir}/.gitignore" ] || printf 'active-change\napproved/\n' > "${dir}/.gitignore" 2>/dev/null || true
+}
+
+# The file paths an edit tool call targets, one per line, from the host payload.
+# Claude Code: tool_input.file_path (MultiEdit carries the same key). Codex apply_patch:
+# every `*** Add/Update/Delete File:` header; JSON keeps the patch on one line, so a
+# header ends at the escaped newline or the closing quote.
+praxis_edit_paths() {
+  local paths; paths="$(praxis_json_string "$1" file_path)"
+  if [ -z "$paths" ]; then
+    paths=$(printf '%s' "$1" \
+      | grep -oE '\*\*\* (Add|Update|Delete) File: [^"\\]+' \
+      | sed -E 's/^\*\*\* (Add|Update|Delete) File: //')
+  fi
+  printf '%s' "$paths"
+}
+
+# The first source-side target among those paths, relative to <root>; nothing when
+# every path is spec-side or outside the project.
+#   praxis_source_target <root> <cwd> <paths, newline-separated>
+praxis_source_target() {
+  local root="$1" cwd="$2" p abs rel
+  while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    p="${p//\\\//\/}"; p="${p//\\\\/\\}"          # undo JSON escaping of / and \
+    abs="$(praxis_canonical_path "$p" "$cwd")" || continue
+    case "$abs" in "$root"/*) rel="${abs#"$root"/}" ;; *) continue ;; esac
+    praxis_is_spec_side "$rel" && continue
+    printf '%s' "$rel"; return 0
+  done <<EOF
+$3
+EOF
+  return 0
+}
+
+# Every per-change ledger under <root>/specs, one absolute path per line.
+# `_templates` is the blank form, never a change. Empty output means the
+# project has not adopted the folder model.
+praxis_spec_ledgers() {
+  local root="$1" f
+  for f in "${root}"/specs/*/implementation.md; do
+    [ -f "$f" ] || continue
+    case "$f" in */specs/_templates/*) continue ;; esac
+    printf '%s\n' "$f"
+  done
+}
+
+# The change the session is working on: `.praxis/active-change` (one line,
+# written when the spec folder is created), else the most recently modified
+# ledger's folder, else empty. The named change need not exist yet — the floor
+# uses the name to say which file to create.
+praxis_active_change() {
+  local root="$1" name="" f newest=""
+  if [ -f "${root}/.praxis/active-change" ]; then
+    name=$(head -n 1 "${root}/.praxis/active-change" 2>/dev/null | tr -d '[:space:]')
+    case "$name" in */*|*..*|_templates) name="" ;; esac
+  fi
+  if [ -z "$name" ]; then
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      if [ -z "$newest" ] || [ "$f" -nt "$newest" ]; then newest="$f"; fi
+    done <<EOF
+$(praxis_spec_ledgers "$root")
+EOF
+    if [ -n "$newest" ]; then name="${newest%/implementation.md}"; name="${name##*/}"; fi
+  fi
+  printf '%s' "$name"
+}
+
+# The `stage:` value from a ledger's frontmatter, trailing comment stripped.
+# Empty when the file or the key is missing.
+praxis_ledger_stage() {
+  [ -f "$1" ] || return 0
+  awk '
+    NR == 1 && /^---[ \t]*$/ { fm = 1; next }
+    fm && /^---[ \t]*$/       { exit }
+    fm && /^stage:/ { sub(/^stage:[ \t]*/, ""); sub(/[ \t]*#.*$/, ""); sub(/[ \t]+$/, ""); print; exit }
+  ' "$1"
 }

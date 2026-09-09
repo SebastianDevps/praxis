@@ -44,15 +44,15 @@ Every run follows these steps in order. Each step is visible, not implicit.
 Classify the request:
 
 - **Trivial** — single file, no new behavior, no public surface change → inline edit + verify.
-- **Substantial** — multi-file, new behavior, public surface, or unclear scope → run the spec lifecycle.
+- **Substantial** — multi-file, new behavior, public surface, or unclear scope → run the spec lifecycle: create `specs/<change>/` from `specs/_templates/`, write the change name to `.praxis/active-change`, and add one line to `PROGRESS.md` — the index of changes (name, stage, link), not a ledger.
 - **Ambiguous approach** — two or more plausible strategies exist → invoke `strategy-compare` before deciding. Never pick silently.
 
 ### 2. Research First
 
 Before proposing an approach, run reconnaissance:
 
-- `scout` — check what already exists in the repo and what prior art covers the need.
-- `docs-seeker` — fetch current library docs for any unfamiliar or recently updated API.
+- invoke `scout` — check what already exists in the repo and what prior art covers the need.
+- invoke `docs-seeker` — fetch current library docs for any unfamiliar or recently updated API.
 
 Never decide on stale assumptions. Research is not optional for substantial changes.
 
@@ -80,18 +80,29 @@ Harness rules (see `orchestration` craft for full mechanics):
 
 ### 4. Phases + Run Card
 
-Run the spec lifecycle (`spec-lifecycle`). For the doctrine that frames it — when to plan for
-near-autonomous execution and where the human review gate is non-negotiable — see `agentic-lifecycle`.
+Invoke `spec-lifecycle` and run it. For the doctrine that frames it — when to plan for
+near-autonomous execution and where the human review gate is non-negotiable — invoke
+`agentic-lifecycle`.
+
+**One owner per spec file.** You own `design.md` and `decisions.md`: `define` fills Problem,
+User Stories and Scope; `plan` fills Technical Design and Acceptance, records every weighed
+alternative as an ADR in `decisions.md`, and lists the tasks in `implementation.md`. Builders
+update `implementation.md` only; a decision a builder or reviewer runs into comes back to you to
+record. At `full` and `deep`, once `design.md` is written set the Run Card to `Needs your
+decision` and STOP — the single approval point; after it, building is not interrupted again by
+the spec. Mode minimums and file format: `spec-lifecycle` and `docs/task-model.md`.
+
 After each phase, render a Run Card:
 
 | Field | Content |
 |---|---|
+| `spec` | `specs/<change>/` and its `stage:` — the folder this run writes into |
 | `phase` | one of `define · plan · build · verify · review · ship`, or `Needs your decision` when stopped and waiting on you |
 | `approach` | `inline`, or `delegate → <specialist>` |
 | `research` | what you actually checked before deciding |
 | `verify` | the acceptance gate — how you will prove it is right |
 
-These are the same four fields the kernel mandates and the README advertises. Do not add fields
+These are the same fields the kernel mandates and the README advertises. Do not add fields
 here: an orchestrator that renders a different card than the one the contract defines is the drift
 `docs/task-model.md` exists to stop. The approval handshake lives in `phase:` — `Needs your
 decision` is what a human review checkpoint looks like on the card.
@@ -162,4 +173,4 @@ before a decision is made, this one grades a **finding about a diff** after one 
 
 ### 6. Synthesize + Learn
 
-Summarize what changed and why. If a reusable pattern emerged from this run, suggest `/learn` to compound the lesson into a new skill.
+Summarize what changed and why. Advance `stage:` in `specs/<change>/implementation.md` and the change's line in `PROGRESS.md`. If a reusable pattern emerged from this run, suggest `/learn` to compound the lesson into a new skill.

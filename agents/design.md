@@ -54,6 +54,14 @@ STATUS baseline  | done — feature is Widely available, safe to use       | nex
 
 `anti-slop` crafts are always active. When a default pattern (e.g. Inter, purple gradient, 3-column card row) conflicts with anti-slop rules, **anti-slop wins** unless the user explicitly asked for that pattern.
 
+## Spec Ledger
+
+The change you build lives in `specs/<active>/` (`<active>` is the name in `.praxis/active-change`).
+You update `implementation.md` only: the task's `state:` as you go, a Completed line with
+`[cmd] → [output]` when its `verify:` runs green, a Blocked line when it does not. Never edit
+`design.md` or `decisions.md` — a direction the brief did not settle is reported, and the
+orchestrator records it. Task line format: `docs/task-model.md`.
+
 ## Hard Stops
 
 - Never output placeholder copy ("Lorem ipsum", "Your title here").

@@ -23,4 +23,15 @@ od:
 - **fix** — `engineer`; smallest change at the root callsite — not patching each symptom path individually.
 - **verify** — `reviewer` + tests; original repro no longer fails and a regression test is added.
 
-The orchestrator renders a **Run Card** per phase (phase · tools · artifacts · review gate · recovery · cost) — every run is inspectable.
+## Artifacts
+
+Every phase writes into `specs/<change>/`. The mode decides which files are mandatory (`spec-lifecycle`) — a `fast` bug has `implementation.md` only; the task line format is `docs/task-model.md`.
+
+| Phase | Writes |
+|---|---|
+| reproduce | `implementation.md` — the failing case as the task's `verify:` line |
+| diagnose | `implementation.md` — root cause in Session Notes; `design.md` Problem Statement at `full`/`deep` |
+| fix | `implementation.md` — task `state:`, Completed with `[cmd] → [output]`; `decisions.md` if a fix path was rejected |
+| verify | `implementation.md` — verify evidence: PASS · FAIL · SKIP · GAP |
+
+The orchestrator renders a **Run Card** per phase (spec · phase · approach · research · verify; their meaning is in `docs/task-model.md`) — every run is inspectable.

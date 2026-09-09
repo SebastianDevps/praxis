@@ -26,13 +26,21 @@ see `skills/using-praxis/references/cursor-tools.md`.
 4. **Run Card** — BEFORE building, emit a Run Card and update it each phase:
    ```
    RUN CARD — <task>
+   spec:     specs/<change>/   (stage: <stage>)
    phase:    <define | plan | build | verify | review | ship — `Needs your decision` when stopped and waiting on you>
    approach: <inline | delegate → design / engineer / backend / security / platform / researcher>
    research: <what you checked>
    verify:   <the acceptance gate — how you will prove it is right>
    ```
    Phases, task states, and the ledger's shape are defined once in `docs/task-model.md` — read it
-   there rather than inventing a vocabulary here.
+   there rather than inventing a vocabulary here. The `spec:` line names the change the card is
+   about (`.praxis/active-change`); on "continue <change>", read `specs/<change>/implementation.md`
+   first.
+   **The spec floor.** Substantial work leaves `specs/<change>/` whatever the mode. In `fast`, a
+   change writes `specs/<change>/implementation.md` — Status, Completed, verify evidence — before
+   you stop. In `full` and `deep`, before the first source edit, write `specs/<change>/design.md`,
+   set the Run Card to `Needs your decision`, STOP — one approval per change; afterwards keep
+   `implementation.md` current per task. Files and minimums: the `spec-lifecycle` skill.
 5. **Plan, then delegate** — break substantial work into bite-sized, independently-testable tasks,
    then dispatch one subagent per task (`task` tool), reviewing between. Do NOT write all files inline.
    Two+ disjoint tasks → fan out in one parallel wave.

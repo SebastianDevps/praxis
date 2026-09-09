@@ -69,6 +69,16 @@ const WIRING = [
     /\.gitignore[\s\S]{0,120}sessions\.jsonl/,
   ],
   [
+    "hooks/subagent-stop",
+    "counts the per-change ledgers, not the flat index (ADR-002 in specs/spec-driven-workflow)",
+    /praxis_spec_ledgers/,
+  ],
+  [
+    "hooks/lib.sh",
+    "resolves the ledgers in one place, so capture and the floor never disagree on where they are",
+    /praxis_spec_ledgers\(\)[\s\S]{0,300}specs\/\*\/implementation\.md/,
+  ],
+  [
     "skills/learn-prune/SKILL.md",
     "decays on last_used, which is the only signal that a lesson still earns its line",
     /last_used/,

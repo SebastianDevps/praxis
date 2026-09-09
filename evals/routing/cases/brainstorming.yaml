@@ -1,0 +1,35 @@
+skill: brainstorming
+
+should_trigger:
+  - prompt: "Build me a dashboard."
+    why: "Substantial build request with no scope, data, or framework named — material ambiguity before any code."
+  - prompt: "Quiero una landing para mi producto, hazla bonita."
+    why: "Underspecified design request; guessing silently would build what was imagined, not what was wanted."
+  - prompt: "Add notifications to the app."
+    why: "A feature request that hides several contract-changing decisions (channel, trigger, delivery)."
+  - prompt: "We should probably let users export their data somehow."
+    why: "Fuzzy intent, no format, scope or destination — clarify before planning."
+  - prompt: "Make the onboarding better."
+    why: "No definition of better and no success criterion; one question at a time is the correct move."
+
+should_not_trigger:
+  - prompt: "We've scoped it. Now break it into tasks I can hand to implementers."
+    route_to: "writing-plans"
+    why: "Scope is settled; the ask is the task ledger."
+  - prompt: "Redis or in-memory for the session store? Both are on the table."
+    route_to: "strategy-compare"
+    why: "The options are already named — the ask is a scored pick, not elicitation."
+  - prompt: "Fix the typo in the footer link."
+    route_to: "none"
+    why: "Trivial, unambiguous, single file — clarifying would be ceremony."
+  - prompt: "Replicate this page from the screenshot I attached."
+    route_to: "frontend-design"
+    why: "A faithful replica answers most of its own questions; the reference removes the ambiguity."
+
+capability:
+  - scenario: "A user says 'build me a dashboard' with nothing else attached."
+    must_include:
+      - "Asks exactly ONE question and STOPS, rather than a numbered list of five."
+      - "Asks a contract-changing question (what data, who uses it) rather than a cosmetic preference."
+      - "Does not write any code or scaffold any file before the ambiguity is resolved."
+      - "Infers what it legitimately can from the repo first, so it only asks what looking cannot answer."

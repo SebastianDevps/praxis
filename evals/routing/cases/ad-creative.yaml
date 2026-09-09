@@ -1,0 +1,35 @@
+skill: ad-creative
+
+should_trigger:
+  - prompt: "Design the paid social creative for this launch."
+    why: "A campaign asset — the core job."
+  - prompt: "I need banner variants for the display campaign in three sizes."
+    why: "Format-fit per placement is central to the skill."
+  - prompt: "Haz el creativo para el anuncio de Instagram de este producto."
+    why: "Ad creative for a named platform, in Spanish."
+  - prompt: "This ad isn't stopping the scroll. Rework the hook."
+    why: "Hook-first is the skill's opening move."
+  - prompt: "One message, clear CTA, sized for LinkedIn feed."
+    why: "The skill's own constraints stated back."
+
+should_not_trigger:
+  - prompt: "Write the headline and subhead copy."
+    route_to: "copywriting"
+    why: "The words alone, without the asset around them."
+  - prompt: "Define our brand voice and tokens."
+    route_to: "brand"
+    why: "The identity system rather than one campaign asset."
+  - prompt: "Build the landing page the ad points at."
+    route_to: "frontend-design"
+    why: "A web surface, not a campaign creative."
+  - prompt: "Make the pitch deck."
+    route_to: "deck-builder"
+    why: "Slides, not a paid asset."
+
+capability:
+  - scenario: "A paid social creative is needed for a product launch across two placements."
+    must_include:
+      - "Leads with a hook that works in the first moment of the placement, not a slow build."
+      - "Carries ONE message per asset rather than stacking claims."
+      - "Fits each placement's real format and safe areas rather than scaling one design down."
+      - "Ends on a clear, specific CTA instead of a generic 'learn more'."

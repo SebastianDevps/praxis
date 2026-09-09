@@ -1,0 +1,35 @@
+skill: security
+
+should_trigger:
+  - prompt: "I'm about to merge the auth refactor. Anything I should check first?"
+    why: "Code touching auth, pre-merge — the checklist's home ground."
+  - prompt: "We're adding Stripe payments. What's the threat surface?"
+    why: "Payments plus threat framing."
+  - prompt: "Este endpoint recibe input del usuario y lo mete en una query. ¿Qué reviso?"
+    why: "Untrusted input reaching a sink, in Spanish."
+  - prompt: "Run the OWASP checklist against this handler."
+    why: "Names the framing directly."
+  - prompt: "We're storing user documents. What do we need to get right?"
+    why: "User data handling triggers the threat-modeling pass."
+
+should_not_trigger:
+  - prompt: "Attack this finished diff with fresh context and find what leaks."
+    route_to: "refuter-security"
+    why: "The adversarial lens on a completed change, with a deliberately narrowed input set."
+  - prompt: "Is this code readable and well structured?"
+    route_to: "reviewer"
+    why: "General quality, not the threat surface."
+  - prompt: "The auth call returns 401 unexpectedly. Debug it."
+    route_to: "systematic-debugging"
+    why: "An observed failure needs reproduction, not a checklist."
+  - prompt: "Which auth provider should we pick?"
+    route_to: "strategy-compare"
+    why: "A decision between named options."
+
+capability:
+  - scenario: "An auth refactor is about to merge and a pre-merge check is requested."
+    must_include:
+      - "Walks the threat surface — input, authz, secrets, session handling — rather than reading for style."
+      - "Distinguishes authenticated from AUTHORIZED and checks the second explicitly."
+      - "Names the concrete risk and its consequence rather than citing an OWASP category alone."
+      - "Says what it did NOT check, so the pass is not mistaken for full coverage."

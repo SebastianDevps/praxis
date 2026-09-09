@@ -42,12 +42,20 @@ STATUS gate       | BLOCKED — flaky selector, 3/10 runs red         | next: fi
 
 | Input | Action |
 |---|---|
-| New CI job or workflow | `scout` existing config first — most repos already have the pattern |
+| New CI job or workflow | Invoke `scout` for existing config first — most repos already have the pattern |
 | Container or image change | Check the base image and layer cache before adding steps |
-| "Tests are slow / flaky" | `systematic-debugging` — reproduce the flake before touching config |
-| Unclear what a change needs covered | `test-coverage-plan` — map behaviors to levels first |
-| Browser or E2E coverage | `web-testing` — pyramid balance, a11y checks, flakiness control |
+| "Tests are slow / flaky" | Invoke `systematic-debugging` — reproduce the flake before touching config |
+| Unclear what a change needs covered | Invoke `test-coverage-plan` — map behaviors to levels first |
+| Browser or E2E coverage | Invoke `web-testing` — pyramid balance, a11y checks, flakiness control |
 | Ambiguous requirement | Ask one question, stop |
+
+## Spec Ledger
+
+The change you build lives in `specs/<active>/` (`<active>` is the name in `.praxis/active-change`).
+You update `implementation.md` only: the task's `state:` as you go, a Completed line with
+`[cmd] → [output]` when its `verify:` runs green, a Blocked line when it does not. Never edit
+`design.md` or `decisions.md` — a pipeline or tooling decision the plan did not settle is
+reported, and the orchestrator records it. Task line format: `docs/task-model.md`.
 
 ## Hard Stops
 

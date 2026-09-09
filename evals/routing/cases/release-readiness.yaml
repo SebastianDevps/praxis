@@ -1,0 +1,42 @@
+skill: release-readiness
+
+# The project's standing release floor at the ship moment: rollback path, post-deploy evidence,
+# smallest increment. It applies the floor; it does not write it down.
+should_trigger:
+  - prompt: "We're deploying this to production this afternoon. Are we actually ready?"
+    why: "The ship moment with the standing floor as the question — the core job."
+  - prompt: "Before I merge this, what's the rollback path if it goes wrong in production?"
+    why: "Rollback is one of the three properties this floor checks at the release boundary."
+  - prompt: "¿Qué falta para poder entregar este cambio al cliente sin riesgo?"
+    why: "Handing a change to a person is a release; the ask is the standing floor."
+  - prompt: "How will we know this worked once it's live? We have no post-deploy signal."
+    why: "Post-deploy evidence is the observable property of the release floor."
+  - prompt: "This branch has six weeks of work in it. Should we ship it as one release?"
+    why: "Smallest shippable increment is the third property of the floor."
+  - prompt: "Run the pre-ship checklist on this change before it goes out."
+    why: "Explicit invocation of the standing floor at the ship boundary."
+
+should_not_trigger:
+  - prompt: "We have no written standards. Help us define our quality bar and thresholds."
+    route_to: "quality-bar"
+    why: "Writing the floor down in the first place, not applying it at the ship moment."
+  - prompt: "Does this endpoint leak the token in the error response?"
+    route_to: "security"
+    why: "The threat surface of a specific change, not the release floor."
+  - prompt: "Which cases should this PR's tests cover?"
+    route_to: "test-coverage-plan"
+    why: "This task's acceptance criteria, not the project's standing release floor."
+  - prompt: "The deploy failed and the logs are unreadable. Work out what broke."
+    route_to: "systematic-debugging"
+    why: "Diagnosing a live failure, not deciding whether to ship."
+  - prompt: "Compare blue-green against rolling deploys for our setup."
+    route_to: "strategy-compare"
+    why: "Choosing between named approaches, not applying the release floor to one change."
+
+capability:
+  - scenario: "A developer asks whether a change is ready to deploy this afternoon."
+    must_include:
+      - "Asks for the rollback path and names it as a blocker when there is none."
+      - "Requires a post-deploy signal that would show the change working, not just that it deployed."
+      - "Challenges the increment size when the change bundles unrelated work into one release."
+      - "Reports a check that ran with nothing to fail on as a GAP rather than a PASS."

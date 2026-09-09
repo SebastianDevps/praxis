@@ -38,38 +38,52 @@ it and this file points at it.
 ## The visible loop (run it OUT LOUD for substantial work)
 
 Each step is shown to the user, never implicit. This visibility IS the product. The `/praxis:mode`
-dial governs how much of it appears: in `fast` mode the Run Card and the ledger are dropped — the
-ceremony, never the crafts, the research, or the verification.
+dial governs how much of it appears: in `fast` mode the Run Card and the task lines are dropped — the
+ceremony, never the crafts, the research, or the verification. Substantial work leaves a folder,
+`specs/<change>/`, whatever the mode; in `fast` a change writes `specs/<change>/implementation.md`
+— Status, Completed, verify evidence — before you stop. For the files and their minimums, see
+`spec-lifecycle`. The floor is mechanical: `hooks/pre-tool-use` denies source edits until the
+mode's minimum spec file exists and asks until `.praxis/approved/<change>` exists — a record the
+model cannot write — and `hooks/stop` blocks once until `implementation.md` records the work;
+`PRAXIS_FLOOR=off` is the only override.
 
 1. **Determine** — restate the task and the plan in one or two lines.
-2. **Research first** — look before building: read the reference/screenshot closely, `scout` the
-   repo for prior art, `docs-seeker` for unfamiliar APIs. Never decide on stale assumptions.
+2. **Research first** — look before building: read the reference/screenshot closely, invoke
+   `scout` for prior art in this repo, invoke `docs-seeker` for unfamiliar APIs. Never decide on
+   stale assumptions.
 3. **Clarify** — if anything material is still ambiguous after looking (scope, framework, data,
-   key behavior), run `brainstorming`: ask the user ONE question at a time and STOP before building.
+   key behavior), invoke `brainstorming`: ask the user ONE question at a time and STOP before
+   building.
    Do not guess silently on substantial work — you would build what you imagined, not what they
    want. A faithful replica answers most of itself; ask only what the reference cannot tell you.
 4. **Run Card** — BEFORE building, emit this block; update it at each phase:
    ```
    RUN CARD — <task>
+   spec:     specs/<change>/   (stage: <stage>)
    phase:    <define | plan | build | verify | review | ship — `Needs your decision` when stopped and waiting on you>
    approach: <inline | delegate → design / engineer / backend / security / platform / researcher>
    research: <what you checked>
    verify:   <the acceptance gate — how you will prove it is right>
    ```
    Phases, task states, and the ledger's shape are defined once in `docs/task-model.md` — read it
-   there rather than inventing a vocabulary here.
-5. **Delegate; add a ledger only for a plan you accepted** — **do NOT write all the files inline in
-   the main thread**, and two+ disjoint tasks fan out in one parallel wave. Work whose shape is
-   already clear goes straight to delegation, however many files. Work whose shape is NOT clear
-   gets the plan first: state it, set the Run Card phase to `Needs your decision`, and STOP. Once
-   the user accepts, break it into bite-sized independently-testable tasks in a ledger
-   (`writing-plans`) — never a vague 4-bullet plan — and execute task-by-task via
-   `subagent-driven-development`: one implementer subagent per task, review between, progress in
-   the ledger. A file count is not an acceptance; a ledger nobody agreed to is ceremony charged to
-   the wrong person. For an unattended iterate-until-done run, use `/praxis:loop`
-   (`autonomous-loop` discipline, guardrails outside the model).
-6. **Verify** — run the acceptance gate. For web output that is the `frontend-design` Ship Gate
-   (font ≠ Inter, mandatory Baseline table, a11y, motion). Red → fix → re-verify. Never "should work."
+   there rather than inventing a vocabulary here. The `spec:` line names the change the card is
+   about (`.praxis/active-change`); on "continue <change>", read `specs/<change>/implementation.md`
+   first.
+5. **Design, get the one approval, then delegate** — write `specs/<change>/design.md` and set the
+   Run Card to `Needs your decision`; the first source edit will ask — the host's permission
+   prompt is the one approval per change. The approval is a record the model cannot write:
+   `.praxis/approved/<change>`, written by `hooks/post-tool-use` when the approved edit ran, or
+   by the person with `/praxis:approve <change>`. After approval set `stage: planned` in
+   `implementation.md` — the human-readable record, it unlocks nothing — keep it current per
+   task, and the floor is silent. Then **do NOT write all the files inline in the main thread**, and two+ disjoint
+   tasks fan out in one parallel wave. Once the user accepts, invoke `writing-plans` to break it
+   into bite-sized independently-testable tasks in the ledger — never a vague 4-bullet plan — then
+   invoke `subagent-driven-development` and execute task-by-task: one implementer subagent per
+   task, review between, progress in the ledger. A file count is not an acceptance; a ledger
+   nobody agreed to is ceremony charged to the wrong person. For an unattended iterate-until-done
+   run, use `/praxis:loop`, which invokes `autonomous-loop` — guardrails outside the model.
+6. **Verify** — run the acceptance gate. For web output, invoke `frontend-design` and run its
+   Ship Gate (font ≠ Inter, mandatory Baseline table, a11y, motion). Red → fix → re-verify. Never "should work."
    A check that ran and had nothing to fail on is a GAP, not a PASS — the kernel carries the four
    result states and the words to report them in.
 7. **Synthesize** — state what changed and why; if a reusable pattern emerged, suggest `/learn`.

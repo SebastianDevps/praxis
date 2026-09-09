@@ -1,0 +1,35 @@
+skill: data-visualization
+
+should_trigger:
+  - prompt: "Chart our monthly revenue trend."
+    why: "Building a chart — the core job."
+  - prompt: "Add metric cards and a breakdown panel to the analytics page."
+    why: "Metric cards and dashboard panels are in scope."
+  - prompt: "Necesito visualizar la distribución de estas latencias, ¿qué gráfico va?"
+    why: "Chart selection for a question, in Spanish."
+  - prompt: "Build a D3 force graph of the dependency tree."
+    why: "Explicit data-viz work."
+  - prompt: "This pie chart with 14 slices is useless. What should it be instead?"
+    why: "Picking the right chart for the question is the skill's first job."
+
+should_not_trigger:
+  - prompt: "Build the page the chart sits on."
+    route_to: "frontend-design"
+    why: "The surrounding page is a different discipline."
+  - prompt: "Make the tiles varied sizes across the feature grid."
+    route_to: "design-system-bento"
+    why: "Tile layout, not the chart inside it."
+  - prompt: "Pick our brand accent color."
+    route_to: "color-expert"
+    why: "Identity palette rather than categorical series encoding."
+  - prompt: "The chart renders blank in production only."
+    route_to: "systematic-debugging"
+    why: "An observed failure needs reproduction and root cause."
+
+capability:
+  - scenario: "A dashboard panel must show latency distribution across services."
+    must_include:
+      - "Picks the chart from the QUESTION being asked rather than defaulting to a bar chart."
+      - "Removes chartjunk — no gratuitous gridlines, 3D, or decorative gradients."
+      - "Labels series directly instead of forcing a legend round-trip where direct labels fit."
+      - "Keeps it accessible — not encoding meaning by color alone, and readable at the real size."

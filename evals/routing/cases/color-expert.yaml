@@ -1,0 +1,35 @@
+skill: color-expert
+
+should_trigger:
+  - prompt: "Build me a palette from this accent color."
+    why: "Palette construction — the core job."
+  - prompt: "The contrast on our buttons fails WCAG. Fix the colors."
+    why: "Contrast repair is squarely this skill."
+  - prompt: "Add a dark mode that doesn't just invert everything."
+    why: "Dark mode requires semantic tokens, which is the skill's output."
+  - prompt: "Necesito tokens de color semánticos, no un montón de hex sueltos."
+    why: "Semantic color tokens, in Spanish."
+  - prompt: "Which accent should we use so it still reads on the dark surface?"
+    why: "Accent selection constrained by contrast."
+
+should_not_trigger:
+  - prompt: "Define the whole brand — type, spacing, voice, everything."
+    route_to: "brand"
+    why: "The full identity, of which color is one part."
+  - prompt: "Review the whole page and tell me what's wrong."
+    route_to: "design-review"
+    why: "A full critique, not a palette task."
+  - prompt: "What mood should this product have?"
+    route_to: "creative-director"
+    why: "Direction before the palette exists."
+  - prompt: "Pick colors for the chart series."
+    route_to: "data-visualization"
+    why: "Categorical chart encoding has its own constraints."
+
+capability:
+  - scenario: "A single accent color is given and a full semantic palette is needed, light and dark."
+    must_include:
+      - "Produces SEMANTIC tokens (surface, text, border, accent) rather than a list of raw hex values."
+      - "Verifies contrast for text on every surface pair it defines, in both modes."
+      - "Uses off-black and off-white rather than pure #000 and #fff."
+      - "Tints shadows toward the background hue instead of using pure black."

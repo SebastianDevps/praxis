@@ -1,0 +1,35 @@
+skill: praxis-memory
+
+should_trigger:
+  - prompt: "What has this project learned so far? Read the Praxis memory."
+    why: "Reading the accumulated store — the core job."
+  - prompt: "Record that this repo uses pnpm workspaces and never npm."
+    why: "Writing a durable project convention into the store."
+  - prompt: "Guarda esta lección en la memoria del proyecto."
+    why: "Writing to the store, in Spanish."
+  - prompt: "Where does Praxis keep its per-project lessons?"
+    why: "A question about the store's shape and location."
+  - prompt: "Add a learned skill for the deploy sequence we keep repeating."
+    why: "Writing a learned procedure into the store."
+
+should_not_trigger:
+  - prompt: "This candidate skill has been sitting in probation. Is it good enough to trust?"
+    route_to: "learn-graduate"
+    why: "Pressure-testing a candidate for promotion is its own skill."
+  - prompt: "The index has grown to forty lines of stale lessons. Clean it."
+    route_to: "learn-prune"
+    why: "Curation and pruning is its own skill."
+  - prompt: "What does this repo do for background jobs?"
+    route_to: "scout"
+    why: "Repo recon, not the memory store."
+  - prompt: "Research how others handle this."
+    route_to: "deep-research"
+    why: "External investigation, not accumulated project memory."
+
+capability:
+  - scenario: "A durable project convention must be written to memory."
+    must_include:
+      - "Keeps index.md to ONE line per entry, because it is loaded in full every session."
+      - "Puts the detail in lessons.md and only the pointer in the index."
+      - "Records a verified date so a later reader can judge staleness."
+      - "Checks for an existing entry covering the same fact and updates it rather than duplicating."

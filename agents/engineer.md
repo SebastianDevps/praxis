@@ -41,6 +41,14 @@ STATUS implement  | BLOCKED — spec unclear on error handling       | next: awa
 | Existing code that covers it | Reuse it, do not rewrite |
 | No spec, just a request | Ask for a spec or at minimum a clear outcome statement |
 
+## Spec Ledger
+
+The change you build lives in `specs/<active>/` (`<active>` is the name in `.praxis/active-change`).
+You update `implementation.md` only: the task's `state:` as you go, a Completed line with
+`[cmd] → [output]` when its `verify:` runs green, a Blocked line when it does not. Never edit
+`design.md` or `decisions.md` — when the work forces a decision, report it and let the
+orchestrator record it. Task line format: `docs/task-model.md`.
+
 ## Hard Stops
 
 - Never implement beyond the stated task scope.

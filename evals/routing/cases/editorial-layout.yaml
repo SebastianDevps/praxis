@@ -1,0 +1,35 @@
+skill: editorial-layout
+
+should_trigger:
+  - prompt: "Lay out this blog post so it's actually comfortable to read."
+    why: "Long-form reading page — the core surface."
+  - prompt: "The article page has lines that run the full width and it's exhausting."
+    why: "Line measure is the problem this skill owns."
+  - prompt: "Maqueta esta nota larga con buen ritmo tipográfico."
+    why: "Typographic rhythm on a long-form piece, in Spanish."
+  - prompt: "Set up the typography scale and vertical rhythm for our documentation pages."
+    why: "Reading flow and rhythm on a content surface."
+  - prompt: "This essay needs pull quotes, figures and captions that don't break the flow."
+    why: "Editorial furniture inside a reading layout."
+
+should_not_trigger:
+  - prompt: "Swiss style grid system for the whole marketing site."
+    route_to: "design-system-swiss"
+    why: "The grid system in the abstract, not one reading page."
+  - prompt: "Turn this into a slide deck."
+    route_to: "deck-builder"
+    why: "Slides, not a reading page."
+  - prompt: "Write the article."
+    route_to: "copywriting"
+    why: "The words, not the layout."
+  - prompt: "The article renders fine but the images 404."
+    route_to: "systematic-debugging"
+    why: "An observed failure, not a layout question."
+
+capability:
+  - scenario: "A long-form article page must be laid out for readability."
+    must_include:
+      - "Constrains the line measure to a readable range rather than letting text span full width."
+      - "Sets a vertical rhythm so headings, paragraphs and figures share a consistent spacing scale."
+      - "Uses text-wrap balance on headings and pretty on body paragraphs."
+      - "Keeps figures and pull quotes from interrupting the reading column's rhythm."

@@ -11,9 +11,13 @@ framework learns from experience by authoring new skills. It runs on any host
 
 - **Clarity over machinery.** Skills and guides carry only the non-obvious delta beyond what the
   model already knows. If the model knows it, cut it. ("Redundancy Mirror")
-- **No enforcement.** No gates; nothing blocks an action. Trust comes from transparency and
-  measurement, not guardrails. Three lifecycle hooks *prime* the run (see Activation) — they
-  inject context only; they never block. Priming is orientation, not a gate.
+- **A floor, not a ceiling.** Three lifecycle hooks *prime* the run (see Activation) — they inject
+  context and never block. Two more hold the one invariant that priming alone did not (measured:
+  0/8 Run Cards in `full`): every change leaves `specs/<change>/`, and the mode dial decides how
+  much of it is mandatory, never whether it exists. `pre-tool-use` denies a source edit until the
+  mode's minimum spec file exists and asks once for the design's approval; `post-tool-use` records
+  that approval where the model cannot write it; `stop` blocks once until `implementation.md`
+  records the work. Nothing else gates. `PRAXIS_FLOOR=off` is the only override, and it is documented, not hidden.
 - **Brevity as a constraint.** Terse beats thorough. Default to short; expand only when the task
   genuinely requires it.
 - **Learning by authoring.** The framework grows by producing new skills from real experience — no
@@ -39,6 +43,7 @@ A pipeline is a sequence of phases. At runtime each pipeline renders as an inspe
 
 | Field | What it holds |
 |---|---|
+| `spec` | `specs/<change>/` and its `stage:` — the folder this card is about |
 | `phase` | one of `define · plan · build · verify · review · ship`, or `Needs your decision` when stopped and waiting on you |
 | `approach` | `inline`, or `delegate → <specialist>` |
 | `research` | what you actually checked before deciding |
@@ -76,10 +81,12 @@ the craft arrives as context, nothing gates the agent's actions. See `crafts/` f
 ## Intensity
 
 `fast | full | deep`, default `full`, set with `/praxis:mode` and held in a flag file so it holds
-every turn rather than being re-judged. `fast` drops the Run Card and the ledger; `deep` adds
-mandatory research, explicit approach comparison, and an adversarial review pass. The dial governs
-ceremony only — crafts, the ladder, and the safety carve-outs are identical at every level. The
-active level travels into dispatched specialists.
+every turn rather than being re-judged. `fast` drops the Run Card and keeps only
+`specs/<change>/implementation.md`; `full` adds `design.md` and one stop for your approval; `deep`
+adds mandatory research, explicit approach comparison, an adversarial review pass, and the full
+spec folder (ADRs, `AGENTS.md`, `docs/`). The dial governs ceremony only — crafts, the ladder, and
+the safety carve-outs are identical at every level. The active level travels into dispatched
+specialists. Minimums per mode: `skills/spec-lifecycle`.
 
 ---
 
@@ -93,13 +100,20 @@ first-party SessionStart hooks).
 
 ### A — Lifecycle hooks (default, Claude Code and Codex)
 
-Three events, all pure context injection, all consistent with No Enforcement:
+Three priming events, pure context injection, plus three that hold the spec floor:
 
-| Hook | Injects | Why |
+| Hook | Injects / decides | Why |
 |---|---|---|
 | `session-start` | the thin `using-praxis` router + this project's learned memory | orientation, once |
 | `user-prompt-submit` | the compact operating contract (`hooks/context/contract.md`) | anti-drift — a router read at turn 1 is buried by turn 40 |
 | `subagent-start` | the contract + the dispatched agent's required crafts | session context is parent-thread only; without it a delegated agent runs Praxis-unaware |
+| `pre-tool-use` | denies `Edit`/`Write` outside spec-side paths until the mode's minimum spec file exists (`fast`: `implementation.md`; `full`/`deep`: `design.md`); in `full`/`deep` it answers the first source edit with `ask` until `.praxis/approved/<change>` exists, and denies any `Edit`/`Write` to that marker | the one invariant priming did not hold; the deny names the exact local file to create, and copies `specs/_templates/` in if missing |
+| `post-tool-use` | writes `.praxis/approved/<change>` when the approved source edit actually ran | the approval is a record the model cannot write — measured: 3/3 unattended runs advanced `stage:` themselves when the stage was the gate. `/praxis:approve <change>` writes the same record where no prompt exists |
+| `stop` | blocks once when source changed and no `specs/*/implementation.md` did | the record is written while the evidence is fresh, not remembered later |
+
+`subagent-stop` captures a memory row and never speaks to the model. The floor runs on Claude Code
+and Codex; Cursor's `stop` cannot block and its `preToolUse` dialect is unverified, so Cursor,
+Gemini and Copilot get the same rules as prose only.
 
 Heavy content stays lazy-loaded. Scope the subagent injection with the `PRAXIS_SUBAGENT_MATCHER`
 regex; it fails open on a bad pattern, a missing `agent_type`, or a stalled payload.
@@ -127,11 +141,24 @@ to your always-on rules file (`~/.claude/CLAUDE.md`, `AGENTS.md`, `.cursorrules`
 
 ## Workflow
 
-The lean spec lifecycle:
+Every change is a folder, `specs/<change>/`, copied from `specs/_templates/` — the convention is
+borrowed from `calcom/cal.diy` and scaled by the mode dial:
 
 ```
-new → research → design → plan → implement
+implementation.md   the ledger: stage · tasks · completed · blocked      (every mode)
+design.md           the source of truth, reviewed before source is edited (full · deep)
+decisions.md        ADRs, written when the decision is made               (when weighed · deep)
+future-work.md      deferred follow-ups                                   (when captured · deep)
+AGENTS.md · docs/   change-specific instructions, user-facing docs        (deep)
 ```
+
+```
+new → designed → planned → implemented → shipped
+```
+
+`/praxis:init` scaffolds the project side the same way: `AGENTS.md` (+ `CLAUDE.md` symlink),
+`agents/rules/` with a category-prefix convention, `agents/knowledge-base.md`, `agents/commands.md`,
+and `.claude/rules -> ../agents/rules`.
 
 Supporting constructs:
 
@@ -182,8 +209,8 @@ Adding a new host: write one adapter file that points here. No framework changes
 
 ## Verification
 
-Praxis has no enforcement at runtime, but it does have gates at author time — the
-claims in this file are tested, not asserted:
+The runtime floor is two hooks; everything else is priming. The gates that matter most are at
+author time — the claims in this file are tested, not asserted:
 
 ```bash
 node scripts/validate-resources.mjs   # frontmatter contract

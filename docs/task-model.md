@@ -8,13 +8,38 @@ another arrived in a shape the receiver did not recognise.
 
 ---
 
-## The ledger: `PROGRESS.md`
+## The ledger: `specs/<change>/implementation.md`
 
-One file, at the repo root, named `PROGRESS.md`. Not `plan.md`, not `progress.md`, not `tasks/`.
+One file per change, `specs/<change>/implementation.md`. Not `plan.md`, not `progress.md`, not
+`tasks/`. It holds the task lines below, under `## Tasks`, plus `## Completed`, `## Blocked` and
+`## Session Notes`; its frontmatter carries the change's `stage:`. The folder around it — `design.md`,
+`decisions.md`, `future-work.md` — is `spec-lifecycle`'s; the task lines are this file's.
 
 It is durable state, and that is its whole reason for existing: **it is what survives compaction.**
 A plan that lives in the conversation is gone the moment the context is trimmed, and the next
 iteration re-derives it wrong. Write the ledger before dispatching anything.
+
+`PROGRESS.md`, at the repo root, is not a ledger any more: it is the **index of changes**, one line
+per change with its stage and a link, and nothing else —
+
+```
+- spec-driven-workflow · stage: planned · specs/spec-driven-workflow/
+```
+
+Which change a Run Card is about is `.praxis/active-change`: one line, the change name, written when
+`specs/<change>/` is created and rewritten when the user names another change. Hooks that count
+`state:` read `specs/*/implementation.md`, never the index.
+
+## Which phase writes which file
+
+| phase | writes | who |
+|---|---|---|
+| `define` | `design.md` Problem, User Stories, Scope | orchestrator (`brainstorming` when ambiguous) |
+| `plan` | `design.md` Technical Design + Acceptance; `decisions.md`; `implementation.md` tasks | orchestrator; `writing-plans` fills the tasks |
+| `build` | `implementation.md` task `state:` + Completed | engineer / backend / design / platform |
+| `verify` | `implementation.md` verify evidence, PASS · FAIL · SKIP · GAP | the builder, then `reviewer` |
+| `review` | `decisions.md` when a finding changed a decision | reviewer; refuters in `deep` |
+| `ship` | `docs/`, `future-work.md`, `stage: shipped` | `release-readiness` |
 
 ## A task line
 
@@ -90,8 +115,9 @@ the only thing the state is for.
 
 ## Not to be confused with `stage:`
 
-`spec-lifecycle` tracks a **change** through `new → researched → designed → planned → implemented`
-in a `stage:` frontmatter field. That is a different granularity: one change contains many tasks.
+`spec-lifecycle` tracks a **change** through `new → designed → planned → implemented → shipped` in
+the `stage:` frontmatter field of `implementation.md`. That is a different granularity: one change
+contains many tasks.
 
 Three words, three meanings, no overlap:
 
@@ -109,10 +135,10 @@ cheapest moment to fix it is before anything depends on the ambiguity.
 
 | concern | skill |
 |---|---|
-| breaking work into tasks and writing the ledger | `writing-plans` |
+| breaking work into tasks and writing the ledger's task lines | `writing-plans` |
 | executing it, one subagent per task, review between | `subagent-driven-development` |
 | executing it unattended, one task per iteration | `autonomous-loop` |
-| tracking a change across stages | `spec-lifecycle` |
+| tracking a change across stages, and the spec folder around the ledger | `spec-lifecycle` |
 | the project's standing quality bar, written once with numbers | `quality-bar` |
 | why any of this makes autonomy possible | `agentic-lifecycle` |
 
