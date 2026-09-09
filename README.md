@@ -89,6 +89,26 @@ being unsure what to build does. [The full shape](docs/task-model.md).
 
 ---
 
+## How it engineers
+
+Given a well-defined task, the agent works the way a senior does. The method is
+[Matt Pocock's](https://github.com/mattpocock/skills), imported as text and cited line by line;
+the floor that makes it stick is Praxis's own.
+
+```
+define    grill the frontier — facts come from subagents, decisions from you, one question at a time
+plan      design at the seam: deep modules, few seams, the interface is the test surface
+build     red before green, one vertical slice at a time, no refactor inside the loop
+verify    a red command before any bug hypothesis; PASS · FAIL · SKIP · GAP, never silence
+review    Standards and Spec in separate contexts, findings cite a smell or a spec line, never blended
+ship      rollback path, post-deploy evidence, the smallest increment
+```
+
+`/praxis:init` gives the project the shape the method expects: `AGENTS.md` (+ `CLAUDE.md`
+symlink), `CONTEXT.md` (domain glossary with the synonyms to avoid), `agents/rules/` by category,
+`agents/knowledge-base.md`, `agents/commands.md`, `specs/_templates/`. The rules reach the
+reviewer and never the builders, so they cost nothing on the build turns.
+
 ## Why Praxis
 
 - **Taste, enforced.** A Ship Gate refuses Inter/Roboto, AI-purple gradients and zero-a11y output. Every web deliverable gets a font check, a Baseline table and an a11y/motion pass — even when you don't ask.
@@ -156,6 +176,13 @@ simply spending 3× the compute — and every arm found every defect, every time
 $29.83 spent to find that a headline feature cost **3.65× for identical detection**, published
 rather than deleted. A $3 smoke also stopped an $18 run from producing an invalid answer, and the
 learning A/B measured **~12× fewer tokens** on facts the project had already decided.
+
+The spec floor was measured the same way (`evals/floor/`, $10.60). With it, `design.md` existed
+before the first source edit in 3/3 runs; without it, 0/3. The first version gated the approval
+on a field the model owns, and 3/3 unattended runs approved themselves; the marker-gated version
+measured 0/3. The method imports were measured too (`evals/value/`, $11.33): `tdd` produced
+vertical slices 3/3 vs 0/3, but its "confirm the seams first" stop held 0/3 — recorded, with the
+fix filed, not smoothed over.
 
 Claiming rigor is free. Publishing the run that contradicts you is the only version of it anyone
 can check.

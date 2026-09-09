@@ -82,3 +82,6 @@ Waves: {T01, T02, T03, T04, T05, T07} parallel (disjoint files; invariants.test.
 ## Session Notes
 - Nine skill names in the first research brief did not exist in Matt's repo (they came from the Addy
   section of the old plan); the agent verified with `git log --all --diff-filter=A` and corrected it.
+- Ship: committed on feat/mattpocock-imports, PR #13 opened. `hooks/stop` blocked this turn on the pre-existing
+  untracked docs: the 0.6.1 hook needs `.praxis/session-started`, written at session start, and this session
+  began before the reinstall — no marker, old behaviour. Expected until the next session.
