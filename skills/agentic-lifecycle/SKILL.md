@@ -32,7 +32,8 @@ are defined once in **`docs/task-model.md`**. This skill does not restate them �
 seven-stage table that disagreed with three other skills about both the vocabulary and the
 filename.
 
-One ledger — `PROGRESS.md` — read and written by every stage below.
+One ledger per change — `specs/<change>/implementation.md` — read and written by every stage
+below; `PROGRESS.md` is only the index of changes.
 
 | you need | go to |
 |---|---|
@@ -46,7 +47,7 @@ This skill adds what none of those carry: the thesis, the eval-driven pillar, an
 
 **The one gate that is not delegable.** A verifiable contract — the feature list where every item
 names its own check and every check starts failing — is what makes "done" decidable by a machine.
-`assets/spec.template.json` is that contract; `spec-lifecycle`'s `templates/spec.md` is the
+`assets/spec.template.json` is that contract; `spec-lifecycle`'s `specs/_templates/` folder is the
 human-readable companion. Same intent, two surfaces: prose for people, JSON for the loop. **If the
 contract is wrong, autonomous execution amplifies the error** rather than catching it, which is why
 this gate is human-owned and the rest can be handed over.

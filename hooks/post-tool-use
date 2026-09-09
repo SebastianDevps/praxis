@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# PostToolUse hook — writes the approval record (specs/hook-owned-approval, ADR-001).
+#
+# The floor's approval stop is the host's `ask` on the first source edit of a designed
+# change. The one thing the model cannot do is answer its own permission prompt, so the
+# durable trace of that answer is written HERE, after the edit ran: `.praxis/approved/<change>`.
+# `pre-tool-use` gates on that marker — not on `stage:`, which the model owns and, measured in
+# evals/floor, advances by itself (3/3 unattended runs) once the ask is refused.
+#
+# Written when, and only when: the edit targeted a source-side path, the mode is full or deep
+# (in fast nothing asks, so an edit there is not an approval of anything), the active change
+# has `design.md`, and no marker exists yet. Empty file; its existence is the record.
+#
+# The first time this creates `.praxis/`, it also writes `.praxis/.gitignore` excluding
+# `active-change` and `approved/`: per-machine session state, same rule as the memory
+# store's `sessions.jsonl`.
+#
+# LOOSENESS, stated: the hook fires after any edit the host let through. On Claude Code that
+# means the person answered the ask — or an `acceptEdits` permission mode auto-approved it,
+# which the matrix showed `-p` does not do. Recorded as observed, not documented. And
+# PRAXIS_FLOOR=off skips this hook too: with the floor off nothing asked, so a marker
+# written then would record an approval that never happened.
+#
+# Never blocks; a hook that cannot write leaves one stderr line and exits 0.
+#
+# Hosts: Claude Code and Codex fire PostToolUse with the same payload shape as PreToolUse
+# (`tool_name`, `tool_input`, `cwd`); Codex reports `apply_patch` with the patch in
+# `tool_input.command`.
+
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "${SCRIPT_DIR}/lib.sh"
+
+note() { printf 'praxis post-tool-use: %s\n' "$1" >&2; exit 0; }
+
+[ "${PRAXIS_FLOOR:-}" = off ] && exit 0
+
+payload=""
+IFS= read -r -d '' -t 1 payload
+[ -n "$payload" ] || exit 0
+
+tool="$(praxis_json_string "$payload" tool_name)"
+case "$tool" in Edit|Write|MultiEdit|NotebookEdit|apply_patch) ;; *) exit 0 ;; esac
+
+paths="$(praxis_edit_paths "$payload")"
+[ -n "$paths" ] || exit 0
+
+cwd="$(praxis_json_string "$payload" cwd)"
+[ -n "$cwd" ] || cwd="$PWD"
+root="$(praxis_project_root "${CLAUDE_PROJECT_DIR:-${CODEX_PROJECT_DIR:-$cwd}}")"
+[ -n "$root" ] || exit 0
+
+target="$(praxis_source_target "$root" "$cwd" "$paths")"
+[ -n "$target" ] || exit 0
+case "$target" in .praxis/approved/*) exit 0 ;; esac
+
+case "$(praxis_mode)" in full|deep) ;; *) exit 0 ;; esac
+
+change="$(praxis_active_change "$root")"
+[ -n "$change" ] || exit 0
+[ -f "${root}/specs/${change}/design.md" ] || exit 0
+praxis_approved "$root" "$change" && exit 0
+
+praxis_ensure_praxis_dir "$root" || note "cannot create ${root}/.praxis"
+mkdir -p "${root}/.praxis/approved" 2>/dev/null || note "cannot create .praxis/approved"
+: > "$(praxis_approved_marker "$root" "$change")" 2>/dev/null || note "cannot write the marker for ${change}"
+
+praxis_trace "PostToolUse" "approved ${change}"
+exit 0

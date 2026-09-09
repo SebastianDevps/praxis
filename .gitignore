@@ -15,6 +15,7 @@ evals/route/runs/
 evals/*
 !evals/routing/
 !evals/value/
+!evals/floor/
 
 # The run ledger. docs/task-model.md tells end users to create this in THEIR project root;
 # marketplace.json packages with "source": "./" and no allowlist, so a committed copy here
@@ -26,3 +27,8 @@ PROGRESS.md
 # into every install under a filename the user owns.
 CONSTRAINTS.md
 evals/value/runs/
+evals/floor/runs/
+
+# Per-session pointer the spec floor reads; a teammate must not inherit it.
+.praxis/active-change
+.praxis/approved/

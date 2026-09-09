@@ -44,6 +44,14 @@ STATUS security-check | WARN — token expiry not set              | next: fix +
 | Change with unclear test surface | Invoke `test-coverage-plan` — map behaviors before implementing |
 | Ambiguous requirement | Ask one question, stop |
 
+## Spec Ledger
+
+The change you build lives in `specs/<active>/` (`<active>` is the name in `.praxis/active-change`).
+You update `implementation.md` only: the task's `state:` as you go, a Completed line with
+`[cmd] → [output]` when its `verify:` runs green, a Blocked line when it does not. Never edit
+`design.md` or `decisions.md` — a schema or API decision the plan did not settle is reported,
+and the orchestrator records it. Task line format: `docs/task-model.md`.
+
 ## Hard Stops
 
 - Never write raw SQL via string concatenation — parameterized queries only.

@@ -28,7 +28,8 @@ delta a plan must add: each task is ONE reviewable unit with a concrete done-cri
 
 ## The plan IS a ledger file
 
-Write it to `PROGRESS.md`, NOT into chat. The line shape above — `phase:`, `state:`, `files:`,
+Write it to the change's ledger, `specs/<change>/implementation.md`, NOT into chat. The line shape
+above — `phase:`, `state:`, `files:`,
 `verify:` — and the values each field accepts are defined once in **`docs/task-model.md`**. Use
 them; a variant invented here is a variant the executor does not recognise.
 

@@ -400,3 +400,350 @@ test("subagent-stop survives a host that sends no payload at all", () => {
   assert.equal(row.agent, "unknown");
   assert.ok(row.ts, "the row still carries a timestamp");
 });
+
+// ── The spec floor: pre-tool-use, stop, and the per-change ledger ─────────────────────────────
+//
+// specs/spec-driven-workflow, ADR-003. The measured evaluation recorded 0/8 Run Cards in `full`
+// mode from priming alone; a prose rule "write the spec first" would travel the same channel.
+// So the floor is mechanical, and per `evidence-discipline` it is trusted only because it was
+// mutated: comment out the deny in `hooks/pre-tool-use` (or the block in `hooks/stop`) and
+// this section fails; restore it and this section passes. The commands and their output are
+// recorded in specs/spec-driven-workflow/implementation.md under T06.
+
+import { writeFileSync, appendFileSync } from "node:fs";
+import { dirname } from "node:path";
+
+function floorRepo({ mode = "full", git = true } = {}) {
+  const repo = mkdtempSync(join(tmpdir(), "praxis-floor-"));
+  const home = mkdtempSync(join(tmpdir(), "praxis-floor-home-"));
+  // The dial's flag file, where praxis_state_dir looks for it under Claude Code.
+  mkdirSync(join(home, ".claude"), { recursive: true });
+  writeFileSync(join(home, ".claude", ".praxis-mode"), mode);
+  if (git) execFileSync("git", ["init", "-q"], { cwd: repo });
+
+  const env = { CLAUDE_PLUGIN_ROOT: ROOT, CLAUDE_PROJECT_DIR: repo, HOME: home };
+  const hook = (name, input, extra = {}) =>
+    run(name, { input: JSON.stringify(input), env: { ...env, ...extra } });
+  const write = (rel, text = "") => {
+    mkdirSync(dirname(join(repo, rel)), { recursive: true });
+    writeFileSync(join(repo, rel), text);
+  };
+  const commit = () => {
+    execFileSync("git", ["add", "-A"], { cwd: repo });
+    execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "x"], { cwd: repo });
+  };
+  // The person's approval, as the hooks record it: an empty marker file.
+  const approve = (change) => write(`.praxis/approved/${change}`, "");
+  const approved = (change) => fsExists(join(repo, ".praxis/approved", change));
+  return { repo, hook, write, commit, approve, approved };
+}
+
+const ledger = (stage) => `---\ntitle: x\nstage: ${stage}     # new → designed → planned\n---\n\n## Tasks\n`;
+const edit = (path) => ({ tool_name: "Edit", tool_input: { file_path: path } });
+// No output is the allow: a PreToolUse hook that prints nothing changes nothing.
+const decision = (out) => (out.trim() === "" ? "allow" : JSON.parse(out).hookSpecificOutput.permissionDecision);
+const reason = (out) => JSON.parse(out).hookSpecificOutput.permissionDecisionReason;
+
+test("pre-tool-use in full denies a source edit with no spec, and names both files to create", () => {
+  const { repo, hook } = floorRepo({ mode: "full" });
+  const out = hook("pre-tool-use", edit(join(repo, "src/a.js")));
+  assert.equal(decision(out), "deny");
+  assert.match(reason(out), /design\.md/);
+  assert.match(reason(out), /implementation\.md/);
+  assert.match(reason(out), /active-change/, "the deny must say how to name the change");
+  assert.match(reason(out), /PRAXIS_FLOOR=off/, "the only override is stated, not hidden");
+});
+
+test("pre-tool-use in full allows once design.md exists and the person approved it", () => {
+  const { repo, hook, write, approve } = floorRepo({ mode: "full" });
+  write("specs/x/design.md", "# x\n");
+  write("specs/x/implementation.md", ledger("designed"));
+  approve("x");
+  assert.equal(decision(hook("pre-tool-use", edit(join(repo, "src/a.js")))), "allow");
+  // A relative path is resolved against the payload's cwd, the way hosts send it.
+  assert.equal(decision(hook("pre-tool-use", { ...edit("src/a.js"), cwd: repo })), "allow");
+  for (const stage of ["new", "planned", "implemented", "shipped"]) {
+    write("specs/x/implementation.md", ledger(stage));
+    assert.equal(decision(hook("pre-tool-use", edit(join(repo, "src/a.js")))), "allow", `stage ${stage} with the marker`);
+  }
+});
+
+// The approval stop. Prose ("Needs your decision") did not hold in the first live cell, and
+// gating on `stage:` did not hold in the matrix: 3/3 unattended runs set `stage: planned`
+// themselves after the refused ask. The host's own `ask` is the stop, and the record of the
+// answer is a marker the model cannot write — `.praxis/approved/<change>`.
+test("pre-tool-use in full asks while the marker is missing, whatever stage: says", () => {
+  const { repo, hook, write, approve } = floorRepo({ mode: "full" });
+  write("specs/x/design.md", "# x\n");
+  for (const stage of ["new", "designed", "planned", "implemented"]) {
+    write("specs/x/implementation.md", ledger(stage));
+    const out = hook("pre-tool-use", edit(join(repo, "src/a.js")));
+    assert.equal(decision(out), "ask", `stage ${stage} without the marker`);
+    assert.match(reason(out), /Approving this edit approves the design/);
+    assert.match(reason(out), /\.praxis\/approved\/x/, "the ask names the record the approval writes");
+    assert.match(reason(out), /\/praxis:approve x/, "and the person's command on hosts without a prompt");
+    assert.match(reason(out), /unlocks nothing/, "stage: must not read as the key");
+  }
+  approve("x");
+  assert.equal(decision(hook("pre-tool-use", edit(join(repo, "src/a.js")))), "allow");
+});
+
+test("the marker is not a bypass: a change whose design.md is gone is denied", () => {
+  const { repo, hook, write, approve } = floorRepo({ mode: "full" });
+  write("specs/x/implementation.md", ledger("planned"));
+  approve("x");
+  const out = hook("pre-tool-use", edit(join(repo, "src/a.js")));
+  assert.equal(decision(out), "deny");
+  assert.match(reason(out), /specs\/x\/design\.md does not exist/);
+});
+
+test("pre-tool-use denies Edit/Write to the approval record itself, in every mode", () => {
+  for (const mode of ["fast", "full", "deep"]) {
+    const { repo, hook } = floorRepo({ mode });
+    const out = hook("pre-tool-use", { tool_name: "Write", tool_input: { file_path: join(repo, ".praxis/approved/x") } });
+    assert.equal(decision(out), "deny", mode);
+    assert.match(reason(out), /written by the person/);
+    assert.match(reason(out), /\/praxis:approve/);
+  }
+});
+
+test("on Codex, where ask is parsed but not honoured, the approval stop is a deny", () => {
+  // Codex exports PLUGIN_ROOT/PLUGIN_DATA (and CLAUDE_PLUGIN_ROOT for compatibility); its
+  // reference says `ask` marks the hook failed and lets the tool call continue.
+  const { repo, hook, write, approve } = floorRepo({ mode: "full" });
+  write("specs/x/design.md", "# x\n");
+  write("specs/x/implementation.md", ledger("designed"));
+  const codex = { PLUGIN_ROOT: ROOT, PLUGIN_DATA: join(process.env.HOME, "nowhere") };
+  // The dial reads PLUGIN_DATA first under Codex; point it at the fixture's mode file.
+  const env = { ...codex, PLUGIN_DATA: codexData(repo) };
+  const out = hook("pre-tool-use", { ...edit("src/a.js"), cwd: repo }, env);
+  assert.equal(decision(out), "deny");
+  assert.match(reason(out), /Approving this edit approves the design/);
+  assert.match(reason(out), /cannot ask/);
+  assert.match(reason(out), /\/praxis:approve x/);
+  approve("x");
+  assert.equal(decision(hook("pre-tool-use", { ...edit("src/a.js"), cwd: repo }, env)), "allow");
+});
+
+// ── post-tool-use: the hook that writes the approval record ──────────────────────────────────
+//
+// It fires after the host let an edit through. In full/deep, at a designed change with no
+// marker, the only way an edit got through is that the person answered the ask — so this is
+// where the answer is recorded.
+
+test("post-tool-use writes the marker after a source edit of a designed change", () => {
+  const { repo, hook, write, approved } = floorRepo({ mode: "full" });
+  write("specs/x/design.md", "# x\n");
+  write("specs/x/implementation.md", ledger("designed"));
+  assert.equal(hook("post-tool-use", edit(join(repo, "src/a.js"))).trim(), "", "post-tool-use never speaks");
+  assert.ok(approved("x"), "the approval record was not written");
+  const ignore = fsRead(join(repo, ".praxis/.gitignore"), "utf8");
+  assert.match(ignore, /^approved\/$/m);
+  assert.match(ignore, /^active-change$/m);
+  // The marker is the record; a later edit changes nothing.
+  hook("post-tool-use", edit(join(repo, "src/b.js")));
+  assert.ok(approved("x"));
+});
+
+test("post-tool-use writes nothing for a spec-side edit, or when design.md is missing", () => {
+  const spec = floorRepo({ mode: "full" });
+  spec.write("specs/x/design.md", "# x\n");
+  spec.write("specs/x/implementation.md", ledger("designed"));
+  spec.hook("post-tool-use", edit(join(spec.repo, "specs/x/implementation.md")));
+  assert.ok(!spec.approved("x"), "a spec-side edit is not an approval");
+
+  const nodesign = floorRepo({ mode: "full" });
+  nodesign.write("specs/x/implementation.md", ledger("designed"));
+  nodesign.hook("post-tool-use", edit(join(nodesign.repo, "src/a.js")));
+  assert.ok(!nodesign.approved("x"), "a change with no design cannot be approved");
+  assert.ok(!fsExists(join(nodesign.repo, ".praxis")), "nothing to record, nothing scaffolded");
+});
+
+test("post-tool-use records nothing in fast, and nothing with PRAXIS_FLOOR=off", () => {
+  const fast = floorRepo({ mode: "fast" });
+  fast.write("specs/x/design.md", "# x\n");
+  fast.write("specs/x/implementation.md", ledger("designed"));
+  fast.hook("post-tool-use", edit(join(fast.repo, "src/a.js")));
+  assert.ok(!fast.approved("x"), "in fast nothing asked, so nothing was approved");
+
+  const off = floorRepo({ mode: "full" });
+  off.write("specs/x/design.md", "# x\n");
+  off.write("specs/x/implementation.md", ledger("designed"));
+  off.hook("post-tool-use", edit(join(off.repo, "src/a.js")), { PRAXIS_FLOOR: "off" });
+  assert.ok(!off.approved("x"), "with the floor off no ask happened; a marker would be a forged approval");
+});
+
+test("post-tool-use reads Codex apply_patch headers too", () => {
+  const { repo, hook, write, approved } = floorRepo({ mode: "full" });
+  write("specs/x/design.md", "# x\n");
+  write("specs/x/implementation.md", ledger("designed"));
+  const patch = "*** Begin Patch\n*** Update File: lib/b.py\n@@\n+x\n*** End Patch";
+  const env = { PLUGIN_ROOT: ROOT, PLUGIN_DATA: codexData(repo) };
+  hook("post-tool-use", { tool_name: "apply_patch", cwd: repo, tool_input: { command: patch } }, env);
+  assert.ok(approved("x"));
+});
+
+// Under Codex praxis_state_dir is PLUGIN_DATA; give the fixture a mode file there.
+function codexData(repo) {
+  const dir = join(repo, "..", `${repo.split("/").pop()}-data`);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, ".praxis-mode"), "full");
+  return dir;
+}
+
+// A deny the model cannot follow is a deny it works around: the first live cell refused
+// three reads of the plugin directory and then wrote a design from memory. So the deny
+// copies the templates into the project and points only at that local copy.
+test("a deny copies the templates into the project and refers to them relatively", () => {
+  const { repo, hook } = floorRepo({ mode: "full" });
+  const out = hook("pre-tool-use", edit(join(repo, "src/a.js")));
+  assert.equal(decision(out), "deny");
+  for (const f of ["design.md", "implementation.md", "AGENTS.md", "CLAUDE.md"]) {
+    assert.ok(fsExists(join(repo, "specs/_templates", f)), `specs/_templates/${f} not placed`);
+  }
+  assert.match(reason(out), /Read specs\/_templates\/design\.md, then Write specs\/<change>\/design\.md/);
+  assert.doesNotMatch(reason(out), new RegExp(ROOT.replace(/\/$/, "")), "the plugin path must not appear: the model cannot read it");
+  assert.doesNotMatch(reason(out), /\bcp\b/, "the model writes with its Write tool; it is not told to run cp");
+  assert.match(reason(out), /Technical Design/, "the shape is repeated for a model that still cannot read");
+  // Idempotent: a second deny does not touch an existing copy.
+  writeFileSync(join(repo, "specs/_templates/design.md"), "local edit\n");
+  hook("pre-tool-use", edit(join(repo, "src/b.js")));
+  assert.equal(fsRead(join(repo, "specs/_templates/design.md"), "utf8"), "local edit\n");
+});
+
+test("an allowed edit never writes into the project", () => {
+  const { repo, hook, write } = floorRepo({ mode: "fast" });
+  write("specs/x/implementation.md", ledger("new"));
+  hook("pre-tool-use", edit(join(repo, "src/a.js")));
+  assert.ok(!fsExists(join(repo, "specs/_templates")), "templates were placed on an allow");
+});
+
+test("pre-tool-use in full denies while design.md is missing, whatever the ledger says", () => {
+  const { repo, hook, write } = floorRepo({ mode: "full" });
+  for (const stage of ["new", "designed", "planned"]) {
+    write("specs/x/implementation.md", ledger(stage));
+    const out = hook("pre-tool-use", edit(join(repo, "src/a.js")));
+    assert.equal(decision(out), "deny", `stage ${stage} without a design`);
+    assert.match(reason(out), /specs\/x\/design\.md does not exist/);
+    assert.match(reason(out), /stage: designed/, "the deny names the exact transition");
+  }
+});
+
+test("pre-tool-use in fast needs only implementation.md", () => {
+  const { repo, hook, write } = floorRepo({ mode: "fast" });
+  const bare = hook("pre-tool-use", edit(join(repo, "src/a.js")));
+  assert.equal(decision(bare), "deny", "fast still has a floor");
+  assert.doesNotMatch(reason(bare), /design\.md/, "fast must not ask for a design document");
+
+  write("specs/x/implementation.md", ledger("new"));
+  assert.equal(decision(hook("pre-tool-use", edit(join(repo, "src/a.js")))), "allow");
+});
+
+test("pre-tool-use always allows the spec side, so the record can be created", () => {
+  const { repo, hook } = floorRepo({ mode: "full" });
+  for (const rel of ["specs/x/design.md", ".praxis/active-change", "agents/rules/quality-a.md", "AGENTS.md", "PROGRESS.md"]) {
+    assert.equal(decision(hook("pre-tool-use", edit(join(repo, rel)))), "allow", `${rel} was gated`);
+  }
+});
+
+test("pre-tool-use ignores a target outside the project root", () => {
+  const { hook } = floorRepo({ mode: "full" });
+  const elsewhere = mkdtempSync(join(tmpdir(), "praxis-elsewhere-"));
+  assert.equal(decision(hook("pre-tool-use", edit(join(elsewhere, "notes.md")))), "allow");
+});
+
+test("PRAXIS_FLOOR=off lifts the floor, and nothing else does", () => {
+  const { repo, hook } = floorRepo({ mode: "deep" });
+  const target = edit(join(repo, "src/a.js"));
+  assert.equal(decision(hook("pre-tool-use", target, { PRAXIS_FLOOR: "off" })), "allow");
+  assert.equal(decision(hook("pre-tool-use", target, { PRAXIS_FLOOR: "no" })), "deny", "only the literal `off` counts");
+});
+
+test("pre-tool-use resolves the active change from .praxis/active-change before mtime", () => {
+  const { repo, hook, write, approve } = floorRepo({ mode: "full" });
+  write("specs/old/design.md", "# old\n");
+  write("specs/old/implementation.md", ledger("planned"));
+  approve("old");
+  write("specs/new/implementation.md", ledger("new")); // newest by mtime, no design
+  // Without the pointer the newest ledger wins and the edit is denied.
+  assert.equal(decision(hook("pre-tool-use", edit(join(repo, "src/a.js")))), "deny");
+  write(".praxis/active-change", "old\n");
+  assert.equal(decision(hook("pre-tool-use", edit(join(repo, "src/a.js")))), "allow");
+});
+
+test("pre-tool-use reads Codex apply_patch headers, so the Codex registration is not inert", () => {
+  // Patch paths are repo-relative; the host's `cwd` is what they resolve against.
+  const { repo, hook } = floorRepo({ mode: "full" });
+  const patch = "*** Begin Patch\n*** Update File: lib/b.py\n@@\n+x\n*** End Patch";
+  const out = hook("pre-tool-use", { tool_name: "apply_patch", cwd: repo, tool_input: { command: patch } });
+  assert.equal(decision(out), "deny");
+  assert.match(reason(out), /lib\/b\.py/);
+  const spec = "*** Begin Patch\n*** Add File: specs/x/design.md\n@@\n+x\n*** End Patch";
+  assert.equal(decision(hook("pre-tool-use", { tool_name: "apply_patch", cwd: repo, tool_input: { command: spec } })), "allow");
+});
+
+const stopDecision = (out) => (out.trim() === "" ? "allow" : JSON.parse(out).decision);
+
+test("stop blocks once when source changed and no ledger did", () => {
+  const { hook, write, commit } = floorRepo();
+  write("specs/x/implementation.md", ledger("designed"));
+  write("src/a.js", "1\n");
+  commit();
+  write("src/a.js", "2\n");
+  const out = hook("stop", {});
+  assert.equal(stopDecision(out), "block");
+  assert.match(JSON.parse(out).reason, /specs\/x\/implementation\.md/, "the block names the active ledger");
+  assert.match(JSON.parse(out).reason, /GAP/, "unverified work is recorded as a GAP, not hidden");
+});
+
+test("stop allows when the ledger changed alongside the source", () => {
+  const { hook, write, commit, repo } = floorRepo();
+  write("specs/x/implementation.md", ledger("designed"));
+  write("src/a.js", "1\n");
+  commit();
+  write("src/a.js", "2\n");
+  appendFileSync(join(repo, "specs/x/implementation.md"), "- done\n");
+  assert.equal(stopDecision(hook("stop", {})), "allow");
+});
+
+test("stop never loops: stop_hook_active short-circuits to allow", () => {
+  const { hook, write, commit } = floorRepo();
+  write("src/a.js", "1\n");
+  commit();
+  write("src/a.js", "2\n");
+  assert.equal(stopDecision(hook("stop", { stop_hook_active: true })), "allow");
+  assert.equal(stopDecision(hook("stop", { stop_hook_active: false })), "block");
+});
+
+test("stop allows outside git, and with PRAXIS_FLOOR=off", () => {
+  const plain = floorRepo({ git: false });
+  plain.write("src/a.js", "1\n");
+  assert.equal(stopDecision(plain.hook("stop", {})), "allow");
+
+  const { hook, write, commit } = floorRepo();
+  write("src/a.js", "1\n");
+  commit();
+  write("src/a.js", "2\n");
+  assert.equal(stopDecision(hook("stop", {}, { PRAXIS_FLOOR: "off" })), "allow");
+});
+
+test("subagent-stop counts task states across every spec folder, never the templates", () => {
+  const { repo, hook, write } = floorRepo({ git: false });
+  mkdirSync(join(repo, ".praxis"), { recursive: true });
+  write("specs/a/implementation.md", "- T1 · state: done\n- T2 · state: done\n- T3 · state: pending\n");
+  write("specs/b/implementation.md", "- T1 · state: blocked(technical)\n");
+  write("specs/_templates/implementation.md", "- T1 · state: pending\n- T2 · state: pending\n");
+  write("PROGRESS.md", "- T9 · state: done\n"); // the index, not a ledger, once specs exist
+  hook("subagent-stop", { agent_type: "engineer" });
+  const row = JSON.parse(fsRead(join(repo, ".praxis/memory/sessions.jsonl"), "utf8").trim());
+  assert.equal(row.tasks, "done=2 blocked=1 pending=1");
+});
+
+test("subagent-stop falls back to PROGRESS.md where the folder model is not adopted", () => {
+  const { repo, hook, write } = floorRepo({ git: false });
+  mkdirSync(join(repo, ".praxis"), { recursive: true });
+  write("PROGRESS.md", "- T1 · state: done\n- T2 · state: pending\n- T3 · state: pending\n");
+  hook("subagent-stop", { agent_type: "engineer" });
+  const row = JSON.parse(fsRead(join(repo, ".praxis/memory/sessions.jsonl"), "utf8").trim());
+  assert.equal(row.tasks, "done=1 blocked=0 pending=2");
+});

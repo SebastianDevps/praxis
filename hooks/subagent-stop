@@ -49,11 +49,7 @@ mkdir -p "$mem" 2>/dev/null || exit 0
 payload=""
 IFS= read -r -d '' -t 1 payload
 
-field() {
-  printf '%s' "$payload" \
-    | sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" \
-    | head -1
-}
+field() { praxis_json_string "$payload" "$1"; }
 
 agent="$(field agent_type)"
 agent="${agent##*:}"                     # praxis:design -> design
@@ -78,10 +74,26 @@ ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 #
 # Counted, never quoted: the ledger is user-authored text and this row is appended to a
 # JSON file. Three integers cannot carry a quote, a newline, or a traversal into the line.
+#
+# The ledger is per change: every `specs/*/implementation.md` in the project, summed
+# (ADR-002 — `PROGRESS.md` is only the index of changes). A repo that has not adopted
+# the folder model still has its flat `PROGRESS.md`; counting that keeps the row honest
+# there instead of reporting "none" for a ledger that exists.
 tasks="none"
-ledger="${project}/PROGRESS.md"
-if [ -f "$ledger" ]; then
-  count() { grep -c -- "$1" "$ledger" 2>/dev/null | head -1 | tr -dc '0-9'; }
+ledgers="$(praxis_spec_ledgers "$(praxis_project_root "$project")")"
+[ -n "$ledgers" ] || { [ -f "${project}/PROGRESS.md" ] && ledgers="${project}/PROGRESS.md"; }
+if [ -n "$ledgers" ]; then
+  count() {
+    local total=0 f n
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      n="$(grep -c -- "$1" "$f" 2>/dev/null | head -1 | tr -dc '0-9')"
+      total=$((total + ${n:-0}))
+    done <<EOF
+$ledgers
+EOF
+    printf '%s' "$total"
+  }
   d="$(count 'state: done')"; b="$(count 'state: blocked')"; p="$(count 'state: pending')"
   tasks="done=${d:-0} blocked=${b:-0} pending=${p:-0}"
 fi

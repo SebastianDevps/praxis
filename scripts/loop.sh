@@ -2,17 +2,22 @@
 # loop.sh — guarded autonomous build loop ("ralph") driver for Praxis.
 #
 # Re-invokes `claude -p` on a FRESH context each iteration. The loop's memory is the
-# filesystem: PROGRESS.md (the ledger) + git history. ALL stop-limits are enforced HERE,
-# in bash, OUTSIDE the model — a runner safety bound on an opt-in process, never a gate on
-# the user's interactive session.
+# filesystem: the active change's ledger, specs/<change>/implementation.md (ADR-002;
+# PROGRESS.md is only the index of changes) + git history. ALL stop-limits are enforced
+# HERE, in bash, OUTSIDE the model — a runner safety bound on an opt-in process, never a
+# gate on the user's interactive session.
 #
 # Each guardrail below is commented with WHY it exists.
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# Shared with the hooks so "where is the ledger" has one answer (praxis_active_change).
+. "${SCRIPT_DIR}/../hooks/lib.sh"
+
 # ---- defaults (every guardrail is a flag) -----------------------------------------------
 TASK=""                       # one-line goal injected into each iteration prompt
-LEDGER="PROGRESS.md"          # durable progress file; the loop's only memory across iterations
+LEDGER=""                     # durable progress file; resolved below unless --ledger is given
 MAX_ITERATIONS=20             # WHY: hard ceiling — the iteration cap is the primary cost proxy
 MAX_DURATION="2h"             # WHY: wall-clock kill-switch — catches a hung/runaway iteration
 MAX_COST=""                   # WHY: optional cumulative USD cap (best-effort; see note below)
@@ -26,7 +31,9 @@ usage() {
 Usage: bash scripts/loop.sh --task "<goal>" [options]
 
   --task TEXT             One-line goal (required). Injected into every iteration prompt.
-  --ledger PATH           Progress ledger file (default: PROGRESS.md).
+  --ledger PATH           Progress ledger file (default: specs/<active change>/implementation.md,
+                          the change named in .praxis/active-change or the newest ledger;
+                          PROGRESS.md when the repo has no spec folders).
   --max-iterations N      Hard iteration ceiling (default: 20).
   --max-duration DUR      Wall-clock cap, e.g. 30m, 2h (default: 2h).
   --max-cost USD          Cumulative cost cap, best-effort (default: unset — see notes).
@@ -63,8 +70,19 @@ command -v "$CLAUDE_BIN" >/dev/null 2>&1 || { echo "error: '$CLAUDE_BIN' not fou
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
   echo "error: not inside a git repo — the loop uses git as its progress signal" >&2; exit 2; }
 
+# WHY: the ledger is per change. Same resolution as hooks/subagent-stop: the active change's
+# implementation.md, else the flat PROGRESS.md a pre-folder repo still carries.
+if [[ -z "$LEDGER" ]]; then
+  project_root="$(praxis_project_root "$PWD")"
+  active="$(praxis_active_change "$project_root")"
+  if [[ -n "$active" ]]; then LEDGER="${project_root}/specs/${active}/implementation.md"
+  else LEDGER="PROGRESS.md"
+  fi
+fi
+
 # WHY: the ledger is the loop's only memory. No ledger => no loop. Seed one if absent.
 if [[ ! -f "$LEDGER" ]]; then
+  mkdir -p "$(dirname "$LEDGER")"
   printf '# Progress Ledger\n\nTask: %s\n\n- [ ] (define bite-sized, independently-testable tasks here)\n' \
     "$TASK" > "$LEDGER"
   echo "[loop] seeded ledger at $LEDGER — fill it with a real plan before relying on the loop"

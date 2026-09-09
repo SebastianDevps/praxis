@@ -17,7 +17,8 @@ For the AUTOMATED version with hard numeric stop-limits enforced outside the mod
 
 ## Per-iteration contract
 
-1. **Read the ledger** (`PROGRESS.md`, shape in `docs/task-model.md`). Reconstruct state from it —
+1. **Read the ledger** (`specs/<change>/implementation.md`, shape in `docs/task-model.md`).
+   Reconstruct state from it —
    never assume you remember the last iteration. You don't; it was a different context.
 2. **Pick ONE item** — the highest-priority task in `state: pending`. Not two. One. Never take one
    in `blocked(user)`: it is waiting on a person, and an unattended run is not that person.

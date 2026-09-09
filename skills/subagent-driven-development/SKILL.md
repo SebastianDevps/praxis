@@ -36,7 +36,8 @@ durable progress — cheap next to a tangled inline build you have to unwind.
 
 ## The ledger is the progress, not the chat
 
-Progress lives in `PROGRESS.md` (written by `writing-plans`, shape in `docs/task-model.md`). Move a
+Progress lives in `specs/<change>/implementation.md` (written by `writing-plans`, shape in
+`docs/task-model.md`). Move a
 task `in_progress → review → done` as it goes; the checkbox is for a human skimming, `state:` is
 what you read. A task that stalls is `blocked(technical)`, one needing a decision you cannot make
 is `blocked(user)` — stop and surface it rather than choosing on the user's behalf.

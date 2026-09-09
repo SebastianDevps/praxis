@@ -1,0 +1,158 @@
+#!/usr/bin/env bash
+# PreToolUse hook — the floor of the spec-driven workflow (specs/spec-driven-workflow, ADR-003;
+# approval hardened in specs/hook-owned-approval, ADR-001).
+#
+# Praxis primes; it did not gate. The measured evaluation recorded what priming alone buys
+# for the record of a change: 0 Run Cards in 8/8 `full` cells. A prose rule saying "write the
+# spec first" travels the same channel and gets the same result. So the one invariant the
+# owner asked for — every change leaves `specs/<change>/`, in every mode — is held here,
+# mechanically, and scaled by the dial:
+#
+#   fast        `specs/<active>/implementation.md` exists
+#   full, deep  `specs/<active>/design.md` and `implementation.md` exist, AND the person
+#               approved the design: `.praxis/approved/<active>` exists → allow, whatever
+#               `stage:` says. No marker → the ONE approval stop, as the host's own
+#               primitive, `permissionDecision: "ask"`. When the person approves, the edit
+#               runs and `post-tool-use` writes the marker; the floor never asks again.
+#               No design → deny, naming the file to write.
+#
+# Why a marker and not `stage:`: evals/floor measured 3/3 unattended `full` runs setting
+# `stage: planned` themselves after the host refused the `ask`, then building. The ledger is
+# a field the model owns; the marker is written by a hook after an edit the person allowed,
+# or by the person through `/praxis:approve <change>`. Edit/Write targeting
+# `.praxis/approved/` is denied here so the model cannot forge it (Bash writes remain a
+# documented gap). In `claude -p` the host refuses `ask` — that is the intended outcome: an
+# unattended run must ship the marker, written by a person or by CI.
+#
+# Only source edits are gated. Writes under `specs/`, `.praxis/` (except `approved/`),
+# `agents/` and to the root instruction files are always allowed: that is how the agent
+# creates the record the floor asks for. Targets outside the project root are not this
+# project's business.
+#
+# A deny must be followable by the model that receives it. It cannot read the plugin
+# directory (in `claude -p` that is a refusal; interactively, a permission prompt), so on the
+# first deny the templates are copied into the project as `specs/_templates/` and every step
+# refers to that local copy: Read it, then Write `specs/<name>/<file>`. The required sections
+# are repeated in the message so a model that still cannot read produces the right shape.
+#
+# `<active>` is `.praxis/active-change` when present, else the most recently modified
+# ledger.
+#
+# Escape hatch: PRAXIS_FLOOR=off allows everything. That is the only override — there is
+# no phrase, flag file or prompt that lifts the floor from inside a session.
+#
+# Fail-open on anything unexpected (no payload, unreadable path, a host that speaks a
+# different dialect): the floor is about ceremony, not safety, so a hook defect must cost
+# a missing record, never a blocked editor. Each such fall-through leaves one stderr line.
+#
+# Hosts: Claude Code reads allow / deny / ask. Codex reads the same nested shape but its
+# reference says `ask` is "parsed but not supported yet" — the hook run is marked failed and
+# the tool call CONTINUES — so on Codex the approval stop is emitted as `deny` with the same
+# reason, pointing at `/praxis:approve` (host detection: praxis_host in lib.sh). Codex also
+# reports `tool_name: apply_patch` with the patch in `tool_input.command`; paths are read
+# from its `*** … File:` headers.
+
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "${SCRIPT_DIR}/lib.sh"
+PRAXIS_ROOT="$(praxis_root "$SCRIPT_DIR")"
+
+allow() { [ -n "${1:-}" ] && printf 'praxis pre-tool-use: %s — allowing\n' "$1" >&2; exit 0; }
+
+[ "${PRAXIS_FLOOR:-}" = off ] && exit 0
+
+payload=""
+IFS= read -r -d '' -t 1 payload
+[ -n "$payload" ] || allow "no payload"
+
+tool="$(praxis_json_string "$payload" tool_name)"
+case "$tool" in Edit|Write|MultiEdit|NotebookEdit|apply_patch) ;; *) exit 0 ;; esac
+
+paths="$(praxis_edit_paths "$payload")"
+[ -n "$paths" ] || allow "no file path in tool input"
+
+cwd="$(praxis_json_string "$payload" cwd)"
+[ -n "$cwd" ] || cwd="$PWD"
+root="$(praxis_project_root "${CLAUDE_PROJECT_DIR:-${CODEX_PROJECT_DIR:-$cwd}}")"
+[ -n "$root" ] || allow "cannot resolve the project root"
+
+# The first source-side target decides; an all-spec-side write is free.
+target="$(praxis_source_target "$root" "$cwd" "$paths")"
+[ -n "$target" ] || exit 0
+
+mode="$(praxis_mode)"
+host="$(praxis_host)"
+change="$(praxis_active_change "$root")"
+name="${change:-<change>}"
+ledger="${root}/specs/${change}/implementation.md"
+design="${root}/specs/${change}/design.md"
+
+# The blank forms, project-local, so the deny points at files the model may read. Copied
+# once, only on a deny — an allowed edit never writes into the user's repository. The
+# CLAUDE.md -> AGENTS.md symlink survives `cp -R` on both BSD and GNU; where it does not,
+# a plain copy stands in.
+ensure_templates() {
+  [ -d "${root}/specs/_templates" ] && return 0
+  local src="${PRAXIS_ROOT}/specs/_templates"
+  [ -d "$src" ] || { printf 'praxis pre-tool-use: no templates at %s\n' "$src" >&2; return 0; }
+  mkdir -p "${root}/specs" 2>/dev/null && cp -R "$src" "${root}/specs/_templates" 2>/dev/null \
+    || { printf 'praxis pre-tool-use: could not copy templates into %s/specs\n' "$root" >&2; return 0; }
+  if [ -e "${root}/specs/_templates/AGENTS.md" ] && [ ! -e "${root}/specs/_templates/CLAUDE.md" ]; then
+    cp "${root}/specs/_templates/AGENTS.md" "${root}/specs/_templates/CLAUDE.md" 2>/dev/null || true
+  fi
+}
+
+decide() {
+  praxis_trace "PreToolUse" "$1 ${mode} ${target}"
+  printf '{\n  "hookSpecificOutput": {\n    "hookEventName": "PreToolUse",\n    "permissionDecision": "%s",\n    "permissionDecisionReason": "%s"\n  }\n}\n' \
+    "$1" "$(escape_for_json "$2")"
+  exit 0
+}
+deny() { ensure_templates; decide deny "$1"; }
+
+# The approval record is not the model's to write, in any mode.
+case "$target" in
+  .praxis/approved/*)
+    decide deny "PRAXIS floor: ${target} is the approval record. It is written by the person — by approving the first source edit when the floor asks, or by running /praxis:approve ${name} — never by the model. Do not create or edit it."
+    ;;
+esac
+
+# Same trailer on every deny: what is free, and the only way out.
+trailer="Writes under specs/, .praxis/, agents/ are always allowed. Override: PRAXIS_FLOOR=off (env, session-wide)."
+sections="Overview, Problem Statement, User Stories, Scope, Technical Design, Acceptance"
+
+case "$mode" in
+  fast)
+    [ -n "$change" ] && [ -f "$ledger" ] && exit 0
+    deny "PRAXIS floor (fast): ${target} is a source edit and specs/${name}/implementation.md does not exist.
+1. Read specs/_templates/implementation.md, then Write specs/${name}/implementation.md in that shape (kebab-case change name): Status, one task line for this edit, Completed + verify evidence after the verify command runs.
+2. Write .praxis/active-change containing the single line: ${name}
+${trailer}"
+    ;;
+  *)
+    if [ -n "$change" ] && [ -f "$design" ] && [ -f "$ledger" ]; then
+      praxis_approved "$root" "$change" && exit 0
+      reason="specs/${change}/design.md is written and awaits the person's approval. Approving this edit approves the design: the approval writes .praxis/approved/${change} and the floor will not ask again. On a host without a prompt, or in an unattended run, the person runs /praxis:approve ${change}. After approval, set 'stage: planned' in specs/${change}/implementation.md as the record — the stage unlocks nothing; only the approval does."
+      case "$host" in
+        claude) decide ask "$reason" ;;
+        *) decide deny "${reason} (This host cannot ask, so the floor denies: stop and wait for the person to run /praxis:approve ${change}.)" ;;
+      esac
+    fi
+    if [ -z "$change" ] || [ ! -f "$ledger" ]; then
+      deny "PRAXIS floor (${mode}): ${target} is a source edit and specs/${name}/ has no design yet.
+1. Read specs/_templates/design.md, then Write specs/${name}/design.md (kebab-case change name) with: ${sections}.
+2. Read specs/_templates/implementation.md, then Write specs/${name}/implementation.md with 'stage: designed' in its frontmatter and the task list.
+3. Write .praxis/active-change containing the single line: ${name}
+4. STOP: the first source edit after that asks the person to approve the design.
+${trailer}"
+    else
+      deny "PRAXIS floor (${mode}): ${target} is a source edit and specs/${change}/design.md does not exist.
+1. Read specs/_templates/design.md, then Write specs/${change}/design.md with: ${sections}.
+2. Set 'stage: designed' in the frontmatter of specs/${change}/implementation.md.
+3. STOP: the first source edit after that asks the person to approve the design.
+${trailer}"
+    fi
+    ;;
+esac
+exit 0

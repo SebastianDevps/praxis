@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# Stop hook — the closing half of the floor (specs/spec-driven-workflow, ADR-003).
+#
+# `pre-tool-use` makes the record exist before source is touched. This makes it say what
+# happened: a turn that changed source and never touched a ledger is sent back once to
+# write Completed + verify evidence into `specs/<active>/implementation.md`. Same GAP
+# semantics the contract already uses — a claim with no evidence is a GAP, not a PASS.
+#
+# Applies in every mode: `fast`'s minimum IS implementation.md.
+#
+# "Block once" is the host's own mechanism: after a block the next Stop carries
+# `stop_hook_active: true` and this hook allows unconditionally, so it can never loop.
+#
+# LOOSENESS, stated: the hook reads the git working tree, and the working tree approximates
+# "this session". Changes left uncommitted by an earlier session count as this one's, and a
+# session that committed as it went shows nothing. Both errors cost one extra ledger line or
+# one missed reminder — acceptable for a floor whose alternative was measured at zero.
+#
+# Non-git project: allow (no cheap way to know what changed). PRAXIS_FLOOR=off: allow — the
+# only override; there is none from inside a session. Any unexpected condition: allow, with
+# one stderr line, because a broken reminder must never trap a session.
+#
+# Hosts: Claude Code and Codex both read `{"decision":"block","reason":...}` and both send
+# `stop_hook_active`.
+
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "${SCRIPT_DIR}/lib.sh"
+
+allow() { [ -n "${1:-}" ] && printf 'praxis stop: %s — allowing\n' "$1" >&2; exit 0; }
+
+[ "${PRAXIS_FLOOR:-}" = off ] && exit 0
+
+payload=""
+IFS= read -r -d '' -t 1 payload
+printf '%s' "$payload" | grep -Eq '"stop_hook_active"[[:space:]]*:[[:space:]]*true' && exit 0
+
+cwd="$(praxis_json_string "$payload" cwd)"
+[ -n "$cwd" ] || cwd="$PWD"
+root="$(praxis_project_root "${CLAUDE_PROJECT_DIR:-${CODEX_PROJECT_DIR:-$cwd}}")"
+git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
+
+# -uall lists every untracked file rather than a collapsed `dir/`, so a brand-new
+# `specs/<change>/implementation.md` is seen as the ledger it is.
+status="$(git -C "$root" status --porcelain -uall 2>/dev/null)" || allow "git status failed"
+
+source_touched=0; ledger_touched=0
+while IFS= read -r line; do
+  [ -n "$line" ] || continue
+  path="${line:3}"                       # porcelain v1: XY<space>path
+  path="${path##* -> }"                  # a rename reports old -> new; the new path is the edit
+  case "$path" in \"*\") path="${path#\"}"; path="${path%\"}" ;; esac
+  case "$path" in
+    specs/_templates/*) continue ;;
+    specs/*/implementation.md) ledger_touched=1 ;;
+    *) praxis_is_spec_side "$path" || source_touched=1 ;;
+  esac
+done <<EOF
+$status
+EOF
+
+[ "$source_touched" = 1 ] && [ "$ledger_touched" = 0 ] || exit 0
+
+change="$(praxis_active_change "$root")"
+ledger="specs/${change:-<change>}/implementation.md"
+praxis_trace "Stop" "block ${change:-none}"
+printf '{"decision":"block","reason":"%s"}\n' "$(escape_for_json "PRAXIS floor: the working tree has source changes and no specs/*/implementation.md changed. Before stopping, record this turn in ${ledger}: under Completed, what changed and which files; under the task line, the verify evidence as [cmd] → [output] with PASS, FAIL, SKIP or GAP. If the work was not verified, write GAP — do not stop on a claim. Override: PRAXIS_FLOOR=off.")"
+exit 0

@@ -60,6 +60,9 @@ Report each finding as:
 
 This agent is read-only. It never edits files. If a fix is needed, it describes what to change and hands back to the engineer.
 
+A finding that changes a decision — an approach rejected, a trade-off accepted — belongs in
+`specs/<active>/decisions.md`. The orchestrator writes it from your report; you never do.
+
 ## Hard Stops
 
 - Never close a review without a verdict — the highest severity present, `clean` if none — and never let a `BLOCK` stand without a specific recommended fix.

@@ -24,6 +24,7 @@ Ask for something substantial and the work becomes visible before a line is writ
 
 ```
 RUN CARD — add rate limiting to the public API
+spec:     specs/api-rate-limiting/   (stage: designed)
 phase:    plan — Needs your decision
 approach: delegate → backend
 research: scanned src/middleware (no limiter), Redis already a dependency
@@ -50,8 +51,9 @@ The model does not decide how much process to run. You do.
 | | `fast` | `full` | `deep` |
 |---|---|---|---|
 | a question | answered | answered | answered |
+| `specs/<change>/` | `implementation.md` | + `design.md` | + ADRs, `AGENTS.md`, `docs/` |
 | Run Card | — | ✓ | ✓ |
-| stops for your approval | — | ✓ | ✓ |
+| stops for your approval | — | ✓ once, after `design.md` | ✓ |
 | mandatory research | — | — | ✓ |
 | approach comparison | — | — | ✓ |
 | adversarial review | — | — | ✓ |
@@ -60,9 +62,12 @@ The dial holds across turns and travels into every dispatched specialist. It cha
 the **ceremony** only — the taste rules, the simplicity ladder and the safety
 carve-outs are identical at every level.
 
-## Every task carries its own position
+## Every change leaves a folder
 
-One ledger, `PROGRESS.md`, that survives a context wipe:
+`specs/<change>/` — design, decisions, implementation, future work — copied from a template and
+committed with your code. The convention comes from [cal.diy](https://github.com/calcom/cal.diy/tree/main/specs);
+Praxis makes it the floor instead of an opt-in. Its `implementation.md` is the ledger that
+survives a context wipe:
 
 ```
 - [ ] T04 · phase: build · state: blocked(user) · Add POST /login route
@@ -91,7 +96,8 @@ being unsure what to build does. [The full shape](docs/task-model.md).
 - **It stops for your approval.** And the stop is written to a file, so a resumed session still knows it is waiting on a person.
 - **A question gets an answer.** Not a process. The dial scales ceremony, and a question has none to scale.
 - **It learns per project.** Recurring lessons land in `.praxis/memory/` as plain Markdown, committed to your repo, read back every session.
-- **It never blocks you.** Praxis primes; it does not gate. Hooks inject context and nothing else.
+- **A floor, not a ceiling.** Two hooks hold one invariant: a change leaves `specs/<change>/`, and the dial decides how much of it. In `full` that is one stop, after `design.md`: the first source edit asks for your permission, and saying yes is recorded by a hook as `.praxis/approved/<change>` — a record the model cannot write, so it cannot approve itself; then it builds without interruption. Without a prompt (Codex, unattended runs), you approve with `/praxis:approve <change>`. Nothing else gates. `PRAXIS_FLOOR=off` turns it off, and the README says so instead of hiding it. The floor runs on Claude Code and Codex; on Cursor, Gemini and Copilot the same rules arrive as prose.
+- **Your project gets a scaffold.** `/praxis:init` writes `AGENTS.md` (+ `CLAUDE.md` symlink), `agents/rules/` with a category-prefix convention, `agents/knowledge-base.md` and `agents/commands.md` — the shape cal.diy uses — creating only what is missing.
 
 ## What's inside
 
@@ -101,7 +107,7 @@ being unsure what to build does. [The full shape](docs/task-model.md).
 | **11** agents | design · engineer · backend · platform · security · reviewer · researcher · orchestrator · a three-lens refuter panel |
 | **6** crafts | always-on disciplines, each injected into the dispatches it governs |
 | **4** pipelines | named phase sequences, rendered as Run Cards |
-| **7** commands | `/praxis:design` `:feature` `:bug` `:refactor` `:loop` `:learn` `:mode` |
+| **9** commands | `/praxis:init` `:approve` `:design` `:feature` `:bug` `:refactor` `:loop` `:learn` `:mode` |
 
 ## Team memory, in your repo
 

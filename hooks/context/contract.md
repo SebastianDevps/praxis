@@ -22,9 +22,12 @@ STOP. A vague prompt is not a license to skip the method; it is when the method 
 
 <!-- only:fast -->
 **Fast mode.** The person driving has classified this as small. Skip the Run Card and the task
-ledger; edit, verify, and report in a line or two. Everything below still holds — the dial
+lines; edit, verify, and report in a line or two. Everything below still holds — the dial
 changes the ceremony, never the crafts, the ladder, or the safety carve-outs. If the work turns
 out to be substantial after all, say so and ask before continuing.
+
+**The spec floor, fast.** A change writes `specs/<change>/implementation.md` — Status, Completed,
+verify evidence — before you stop; a question writes nothing. For the file, see `spec-lifecycle`.
 <!-- /only -->
 
 <!-- only:orchestrator-full,orchestrator-deep -->
@@ -32,6 +35,7 @@ out to be substantial after all, say so and ask before continuing.
 
 ```
 RUN CARD — <task>
+spec:     specs/<change>/   (stage: <stage>)
 phase:    <define | plan | build | verify | review | ship — `Needs your decision` when stopped and waiting on you>
 approach: <inline | delegate → design / engineer / backend / security / platform / researcher>
 research: <what you checked>
@@ -42,16 +46,32 @@ verify:   <the acceptance gate — how you will prove it is right>
 disjoint domains → one parallel wave; shared files → sequential. Keep orchestrator context thin:
 delegate the reading together with the writing.
 
-**A ledger needs an accepted plan, not a file count.** Shape already clear → delegate, however
-many files. Shape NOT clear → state the plan, set the Run Card to `Needs your decision`, STOP.
-On acceptance, break it into bite-sized independently-testable tasks in the ledger, one
-implementer subagent per task with review between.
+**A ledger needs an accepted design, not a file count.** Shape already clear → write it down as
+the design and stop once; shape NOT clear → research and ask, then the same stop. On acceptance,
+break it into bite-sized independently-testable tasks in the ledger, one implementer subagent per
+task with review between.
 <!-- /only -->
 
 <!-- only:full,deep -->
 **One task vocabulary.** Phases, states, and the ledger are defined in `docs/task-model.md`;
 never redefine them locally.
+
+**The spec floor, full and deep.** Write `specs/<change>/design.md` and set the Run Card to
+`Needs your decision`; the first source edit will ask — the host's permission prompt is the one
+approval per change. The approval is a record the model cannot write: `.praxis/approved/<change>`,
+written by `hooks/post-tool-use` when the approved edit ran, or by the person with
+`/praxis:approve <change>`. After approval set `stage: planned` in `implementation.md` — the
+human-readable record, it unlocks nothing — keep it current per task, and the floor is silent.
+For the files, see `spec-lifecycle`.
 <!-- /only -->
+
+**The floor is mechanical.** `hooks/pre-tool-use` denies source edits until the mode's minimum
+spec file exists and asks until `.praxis/approved/<change>` exists — a record the model cannot
+write — and `hooks/stop` blocks once until `implementation.md` records the work;
+`PRAXIS_FLOOR=off` is the only override.
+
+**Resume from the ledger.** On "continue <change>", read `specs/<change>/implementation.md` first;
+`.praxis/active-change` names the change the Run Card is about.
 
 <!-- only:deep -->
 **Deep mode.** Research is mandatory, not discretionary: invoke `scout` and `docs-seeker` before

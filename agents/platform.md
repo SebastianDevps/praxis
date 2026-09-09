@@ -49,6 +49,14 @@ STATUS gate       | BLOCKED — flaky selector, 3/10 runs red         | next: fi
 | Browser or E2E coverage | Invoke `web-testing` — pyramid balance, a11y checks, flakiness control |
 | Ambiguous requirement | Ask one question, stop |
 
+## Spec Ledger
+
+The change you build lives in `specs/<active>/` (`<active>` is the name in `.praxis/active-change`).
+You update `implementation.md` only: the task's `state:` as you go, a Completed line with
+`[cmd] → [output]` when its `verify:` runs green, a Blocked line when it does not. Never edit
+`design.md` or `decisions.md` — a pipeline or tooling decision the plan did not settle is
+reported, and the orchestrator records it. Task line format: `docs/task-model.md`.
+
 ## Hard Stops
 
 - Never make a gate pass by weakening it. A test that no longer asserts is a deleted test.
