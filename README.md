@@ -92,6 +92,7 @@ being unsure what to build does. [The full shape](docs/task-model.md).
 ## Why Praxis
 
 - **Taste, enforced.** A Ship Gate refuses Inter/Roboto, AI-purple gradients and zero-a11y output. Every web deliverable gets a font check, a Baseline table and an a11y/motion pass — even when you don't ask.
+- **It engineers like a senior.** Seams agreed before the first test, red before green, vertical slices sized to one fresh context, a red command before any bug hypothesis, and a review that runs Standards and Spec in separate contexts and never blends them. The method is Matt Pocock's; the floor that makes it stick is ours.
 - **It asks before it guesses.** A vague prompt gets one question back, not a wall of code built from what the model imagined.
 - **It stops for your approval.** And the stop is written to a file, so a resumed session still knows it is waiting on a person.
 - **A question gets an answer.** Not a process. The dial scales ceremony, and a question has none to scale.
@@ -103,7 +104,7 @@ being unsure what to build does. [The full shape](docs/task-model.md).
 
 | | | |
 |---|---|---|
-| **38** skills | taste, process, adversarial review, per-project memory |
+| **40** skills | taste, process, adversarial review, per-project memory |
 | **11** agents | design · engineer · backend · platform · security · reviewer · researcher · orchestrator · a three-lens refuter panel |
 | **6** crafts | always-on disciplines, each injected into the dispatches it governs |
 | **4** pipelines | named phase sequences, rendered as Run Cards |

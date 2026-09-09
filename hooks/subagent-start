@@ -77,6 +77,31 @@ and trigger only; invoking one loads its full instructions.
 ${skills}"
 fi
 
+# The project's documented standard travels with `reviewer` and with no builder
+# (ADR-002, specs/mattpocock-imports): sandcastle loads CODING_STANDARDS.md only
+# in review "without costing tokens during implementation", and the implementer
+# already carries the most context pressure. Pointers, never bodies. Fail-open:
+# a project that documents nothing gets no section, and a resolution error costs
+# one stderr line and the Fowler floor alone — never the dispatch.
+if [ "${agent_type##*:}" = "reviewer" ]; then
+  rules=$(praxis_project_rules "$(praxis_project_root)" 2>/dev/null) \
+    || { printf 'praxis: project rules unavailable; reviewer dispatched on the Fowler floor alone\n' >&2; rules=""; }
+  if [ -n "$rules" ]; then
+    contract="${contract}
+
+---
+
+# Project standards for \`reviewer\`
+
+This repo documents how its code should be written. The builders never received
+these (the rules are enforced in review, not paid for on every build turn); the
+Standards axis reads each before it runs, and a documented rule overrides the
+Fowler floor. Listed by path and title; read the file for the rule.
+
+${rules}"
+  fi
+fi
+
 praxis_trace "SubagentStart" "$agent_type"
 praxis_emit "SubagentStart" "$(escape_for_json "PRAXIS — active mode: ${mode}
 

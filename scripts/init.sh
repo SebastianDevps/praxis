@@ -3,8 +3,9 @@
 #
 # Runs in the CURRENT directory (the user's project) and creates ONLY what is missing:
 #
-#   AGENTS.md                     project instructions, host-agnostic
+#   AGENTS.md                     project instructions, host-agnostic; capabilities index
 #   CLAUDE.md -> AGENTS.md
+#   CONTEXT.md                    domain glossary: terms with Avoid lists, no implementation
 #   agents/README.md              index of rules by section
 #   agents/rules/_sections.md     section order + impact
 #   agents/rules/_template.md     rule frontmatter, incorrect -> correct example
@@ -79,6 +80,9 @@ copy_tree_if_missing() {
 # ---- project instructions ----------------------------------------------------------------
 copy_if_missing "${ASSETS}/AGENTS.md" "AGENTS.md"
 link_if_missing "AGENTS.md" "CLAUDE.md"
+
+# ---- CONTEXT.md : the domain glossary, a separate file so it stays free of instructions -----
+copy_if_missing "${ASSETS}/CONTEXT.md" "CONTEXT.md"
 
 # ---- agents/ : curated project knowledge --------------------------------------------------
 copy_if_missing "${ASSETS}/agents/README.md"            "agents/README.md"

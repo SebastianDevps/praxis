@@ -8,6 +8,7 @@ skills:
   - test-coverage-plan
   - systematic-debugging
   - quality-bar
+  - tdd
 od:
   craft:
     requires:
@@ -46,6 +47,7 @@ STATUS gate       | BLOCKED — flaky selector, 3/10 runs red         | next: fi
 | Container or image change | Check the base image and layer cache before adding steps |
 | "Tests are slow / flaky" | Invoke `systematic-debugging` — reproduce the flake before touching config |
 | Unclear what a change needs covered | Invoke `test-coverage-plan` — map behaviors to levels first |
+| Build-tooling logic with defined inputs and outputs | Invoke `tdd` — red before green at an agreed seam |
 | Browser or E2E coverage | Invoke `web-testing` — pyramid balance, a11y checks, flakiness control |
 | Ambiguous requirement | Ask one question, stop |
 

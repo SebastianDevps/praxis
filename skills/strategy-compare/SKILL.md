@@ -17,6 +17,8 @@ Before committing to an approach for a substantial change when two or more plaus
 
 Do not run this on trivial changes (single file, no new behavior — just do it).
 
+When the candidates are shapes of a module's interface — where a seam goes, how deep the module is — invoke `codebase-design` for the vocabulary before scoring them.
+
 ## Steps
 
 1. **Name 2–4 candidates.** More candidates add noise; fewer miss the real alternative.

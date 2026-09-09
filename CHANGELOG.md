@@ -4,6 +4,11 @@ All notable changes to Praxis are documented here. Format follows [Keep a Change
 
 ## [Unreleased]
 
+### Added
+
+- **Engineering method from Matt Pocock, as text inside the floor** (`specs/mattpocock-imports/`). His repo has zero hooks and zero evals by design; Praxis had the floor and thin method. What entered, each with its source line: `tdd` (pre-agreed seams confirmed with the person, red→green, the three anti-patterns, no refactor inside the loop), `codebase-design` (module · interface · seam · adapter · depth, the deletion test, "one adapter is a hypothetical seam, two is a real one"), grilling folded into `brainstorming` (frontier, facts are the agent's job via subagents, a recommended answer per question), the red-command gate in `systematic-debugging` ("No red-capable command, no hypothesis.") with the senior bug report as `pipelines/bug.md`'s output contract, vertical slices sized to a fresh context and the verify triad (automated check · automated review · human review) in `docs/task-model.md`, writing-for-agents in `docs/skill-doctrine.md` §4, `CONTEXT.md` and a capabilities index in `/praxis:init`, and the ralph refinements in `/praxis:loop` (priority order, `HANG ON A SECOND` re-scoping, `ABORT` as exit 1, signals matched on their own line). The reviewer runs two axes in separate contexts, Standards (Fowler's twelve smells plus the repo's `agents/rules/`, which reach the reviewer and never the builders) and Spec (against `design.md`; missing → GAP), never merged or reranked.
+- **Not imported, on purpose:** his `/implement` that commits without asking, the tracker-publishing skills, the sandcastle engine, slopwatch (an empty stub), and his substring git guard. Three mechanical follow-ups are their own specs.
+
 ## [0.6.1] — 2026-09-09
 
 ### Fixed

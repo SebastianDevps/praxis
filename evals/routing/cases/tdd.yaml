@@ -1,0 +1,40 @@
+skill: tdd
+
+should_trigger:
+  - prompt: "Build the discount calculator test-first: failing test, then the code."
+    why: "A concrete behavior with inputs and outputs, asked for test-first."
+  - prompt: "Let's do TDD for the new rate limiter."
+    why: "TDD named explicitly on a behavior to build."
+  - prompt: "Red-green: write a failing test for the parser, then make it pass."
+    why: "The red → green loop named, one slice at a time."
+  - prompt: "Fix this bug test-first — write the failing test before you touch the fix."
+    why: "A fix driven by a failing test at a seam, not a diagnosis session."
+  - prompt: "Write the test first for the checkout total, one test at a time, no batch of tests."
+    why: "Vertical slicing requested against the horizontal anti-pattern."
+  - prompt: "Hagamos la validación de cupones con TDD, primero el test que falla."
+    why: "TDD on a defined behavior, in Spanish."
+
+should_not_trigger:
+  - prompt: "What should we test for this new feature? Give me a test plan."
+    route_to: "test-coverage-plan"
+    why: "Choosing what to cover, before any loop runs."
+  - prompt: "This test is flaky — passes locally, fails in CI. Find out why."
+    route_to: "systematic-debugging"
+    why: "An observed failure to diagnose, not a behavior to build."
+  - prompt: "Set up Playwright for this app."
+    route_to: "web-testing"
+    why: "Wiring the runner and the browser pyramid, not the red-green loop."
+  - prompt: "What coverage threshold should this repo require?"
+    route_to: "quality-bar"
+    why: "The project's standing bar, not a test for one behavior."
+  - prompt: "Where should the seam go between the order module and the payment gateway?"
+    route_to: "codebase-design"
+    why: "The shape of the interface is the question, not the tests at it."
+
+capability:
+  - scenario: "Build a discount calculator test-first from a short spec."
+    must_include:
+      - "NAMES the seams it intends to test at and waits for confirmation before any test file exists."
+      - "Writes ONE failing test, then only enough code to pass it, before the next test appears."
+      - "Expected values are literals traceable to the spec, not recomputed the way the code computes them."
+      - "No refactor step inside the loop; refactoring is deferred to review."

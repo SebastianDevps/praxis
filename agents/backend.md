@@ -7,6 +7,8 @@ skills:
   - systematic-debugging
   - security
   - test-coverage-plan
+  - tdd
+  - codebase-design
 od:
   craft:
     requires:
@@ -42,6 +44,7 @@ STATUS security-check | WARN — token expiry not set              | next: fix +
 | Auth / payment / PII path | Invoke `security` and apply its checklist before merge |
 | Bug or regression | Invoke `systematic-debugging` — reproduce first, fix at root |
 | Change with unclear test surface | Invoke `test-coverage-plan` — map behaviors before implementing |
+| Service logic with defined inputs and outputs | Invoke `tdd` — confirm the seams before the first test; `codebase-design` when the interface shape is the question |
 | Ambiguous requirement | Ask one question, stop |
 
 ## Spec Ledger
