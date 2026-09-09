@@ -18,9 +18,11 @@
 // for is decoration, and this one was decoration until section labels included bold lines — the
 // clash lived in "**External — …**", not in a `##` heading.
 //
-// KNOWN LIMIT: it sees a shared word, not a shared job. All 9 of today's hits were read and all 9
+// KNOWN LIMIT: it sees a shared word, not a shared job. All 7 of today's hits were read and all 7
 // are benign — "Brand Safety" is not defining a brand, WCAG ratios are not auditing a page. They
-// are the baseline in tests/boundary.test.mjs, and the gate fails on a tenth, not on these.
+// are the baseline in tests/boundary.test.mjs, and the gate fails on an eighth, not on these.
+// (9 before T07, which reworded two innocent labels; 7 both before and after the /gi fix below,
+// because that rewording had already suppressed the two false positives the fix removes at source.)
 
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
@@ -35,7 +37,7 @@ const STOP = new Set(("the a an of to in for that is are and or not with what wh
   + "something anything first then also only just have has been").split(" "));
 
 const fm = (t) => t.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] ?? "";
-const description = (t) => (fm(t).match(/description:\s*([\s\S]*?)(?:\n[a-z_]+:|$)/)?.[1] ?? "").trim();
+export const description = (t) => (fm(t).match(/description:\s*([\s\S]*?)(?:\n[a-z_]+:|$)/)?.[1] ?? "").trim();
 const words = (s) => (s.toLowerCase().match(/[a-z][a-z-]{3,}/g) ?? []).filter((w) => !STOP.has(w));
 
 // Section LABELS, not just markdown headings. scout's clash lived in "**External — …**", a bold
@@ -43,13 +45,23 @@ const words = (s) => (s.toLowerCase().match(/[a-z][a-z-]{3,}/g) ?? []).filter((w
 const labels = (t) => t.replace(/^---[\s\S]*?\n---\n/, "").split("\n")
   .filter((l) => /^#{2,3}\s/.test(l) || /^\s*[-*]?\s*\*\*[^*]+\*\*/.test(l));
 
+// The clause the doctrine writes: `NOT <excluded> (that is `sibling`)`.
+//
+// CASE-SENSITIVE, and that is the fix, not an oversight. This matched `/gi` and so read the
+// lowercase "not" in ordinary prose as the start of a clause: project-teardown says "a codebase you
+// do not own", and everything from that "not" to the next "(that is `x`)" — the whole positive
+// claim — was swallowed into `excluded`. Two of the nine clashes reported before this fix were that
+// artefact; the labels they accused were innocent. Uppercase `NOT` is the doctrine's own convention,
+// so requiring it costs nothing and removes the false-positive class entirely. `\b` keeps CANNOT out.
+export const CLAUSE_RE = /\bNOT\s+([^(]+?)\s*\(that is\s*`([a-z0-9-]+)`\)/g;
+
 export function boundaryClashes(root = DEFAULT_ROOT) {
   const out = [];
   for (const id of readdirSync(join(root, "skills")).sort()) {
     const file = join(root, "skills", id, "SKILL.md");
     if (!existsSync(file)) continue;
     const text = readFileSync(file, "utf8");
-    for (const [, excluded, sibling] of description(text).matchAll(/NOT\s+([^(]+?)\s*\(that is\s*`([a-z0-9-]+)`\)/gi)) {
+    for (const [, excluded, sibling] of description(text).matchAll(CLAUSE_RE)) {
       const ex = new Set(words(excluded));
       for (const label of labels(text)) {
         const hit = words(label).find((w) => ex.has(w));

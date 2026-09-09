@@ -242,3 +242,178 @@ It does not say the seam-confirmation rule fails interactively, where a question
 person answers; `-p` has no person. It does not say the skills would change anything on a codebase
 larger than one module, or on a model other than opus. n=3, one fixture per unit, one task each:
 enough to tell a 3/3-vs-0/3 from a tie, not enough to size a 3/3-vs-2/3.
+
+---
+
+# Unit 8 — the investigation suite, 2026-09-09
+
+Question: does the four-skill investigation suite produce a dossier the model does not produce
+without it? Design §Acceptance names four criteria and ADR-006 makes the fourth load-bearing —
+(a) a `path:line` that **resolves**, (b) a computed signal with the API call that produced it,
+(c) a named verdict, (d) at least one `SKIP` where the target gave nothing. *A dossier with no
+`SKIP` on a partial target is a failure, not a success.*
+
+claude 2.1.267 · model `claude-opus-5[1m]` · `--permission-mode acceptEdits` · `PRAXIS_FLOOR` **on**
+(a dossier lands under `specs/`, which the floor never gates — verified in `hooks/pre-tool-use:27`)
+· n=1 per arm · **$43.61 all in, 5 cells.**
+
+## The target, and why this one
+
+`gajus/zod-compiler` — a Zod-schema-to-validator compiler, cloned at `32d255b`, 181 commits,
+~22k lines of TypeScript, BSD-3-Clause, published to npm.
+
+- **Outside my training and outside this corpus.** The GitHub repo was created 2026-06-10, after
+  the model's cutoff. Zero mentions in this repository, checked two orthogonal ways (`rg -il` and
+  `rg -uu -il`, the second ignoring `.gitignore`).
+- **It discriminates.** 803 stars and 220k downloads against `maintainers: 1` and
+  `dependent_repos_count: 0`. That is precisely the case `dependency-adoption` Layer 2 exists for —
+  the gameable signal and the computed one pointing in opposite directions.
+- **It is genuinely partial**, so (d) is a real criterion here and not a formality:
+  `api.scorecard.dev` returns **HTTP 404** for it, there is no stated SLO, and a build-time
+  compiler has no request lifecycle and no database. Three places a dossier must say `SKIP`.
+
+Live values were snapshotted once (`runs/investigation-snapshot.json`, 21:04:59Z) so a re-score is
+stable and a number in a dossier can be *wrong* rather than merely present.
+
+## The arms, and why the control is split in two
+
+`run.mjs`'s ablation is `withoutSkill(one)` and its treatment prompt is hard-coded to
+`Invoke praxis:<skill> first`. This unit removes four skill directories and reaches the suite
+through a command, so `runs/t09-driver.mjs` owns the arms and imports the fixture and scorers from
+`units.mjs` — the same split T10 used, not a second harness. `evals/floor`'s `PRAXIS_FLOOR=off`
+precedent does not apply: that is an env switch the product actually has, and there is no
+equivalent for a skill.
+
+| arm | plugin | prompt |
+|---|---|---|
+| `treatment` | full | `/praxis:investigate <ask>` |
+| `skills-off` | minus the four new skills | `/praxis:investigate <ask>` — design §Acceptance's literal control |
+| `bare` | minus the skills **and** `agents/analyst.md`, `pipelines/investigation.md`, `commands/investigate.md` | `<ask>` — the model's own priors |
+
+`skills-off` keeps the command, so the prompt is identical to the treatment's. `bare` has no command
+to invoke; that asymmetry is unavoidable and is the price of measuring priors at all.
+
+## Result
+
+Dossier files only — the artifact, not the narration.
+
+| cell | cost | ended | (a) citations resolved | (b) signal + call | (c) named verdict | (d) SKIPs | all four |
+|---|---|---|---|---|---|---|---|
+| treatment r1 | $8.00 | **cut off, $8 cap** | 0/0 | yes | no | 2 | **FAIL** |
+| treatment r2 | $20.07 | **cut off, $20 cap** | **21/21** | yes | yes | 3 | **PASS** |
+| skills-off r1 | $8.14 | cut off, $8 cap | 19/20 | no | yes | **0** | **FAIL** |
+| skills-off r2 | $6.14 | **completed** | **27/30** | yes | yes | 2 | **PASS** |
+| bare r1 | $1.25 | completed | **0/0** | no | yes | **0** | **FAIL** |
+
+**The suite did not beat its own control. It tied it, and lost on cost.**
+
+`skills-off` — the pipeline, the `analyst` agent and the command, with all four skills deleted —
+met every one of design §Acceptance's four criteria, in a single uninterrupted run, for **$6.14**.
+The treatment met the same four criteria only on its second attempt, and only after the budget
+ceiling was raised from $8 to $20 — which it then hit as well. Two treatment cells, two truncations.
+
+The two arms even reached the same verdict by the same route. Both found that `zod-compiler`
+declares `peerDependencies.zod: "^4.5.0"`, that zod 4.5 ships `z.compile()` natively, and that the
+package you must install to use the dependency is the package that makes it largely unnecessary.
+Treatment: *"VERDICT — do not adopt now. Use zod's own `z.compile()` first."* Control:
+*"Do not adopt `zod-compiler`. Adopt zod's own `z.compile()` instead — but measure before doing
+either."* Neither reached that through a skill; both reached it by reading `target/package.json`.
+
+**Where the suite does win is against the bare model.** `bare` wrote no artifact at all, answered
+in the transcript, and failed three of four criteria: **zero** `path:line` citations, **zero** calls
+to any of the six package/security APIs, and **zero** `SKIP`s. Its prose is not bad — it caught the
+bus factor and the `fix:`-commit density — but nothing in it is checkable, and it never found the
+`z.compile()` fact that decides the question. So the measured value of this change lives in
+`pipelines/investigation.md`, `agents/analyst.md` and `commands/investigate.md`. On this target,
+against this control, the four skills are not where it lives.
+
+### ADR-006's criterion did the work it was written to do
+
+`skills-off` r1 produced an 18,911-character dossier with **zero** `SKIP`s — a complete-looking
+report over an investigation that had been cut off mid-flight by the budget cap. Every other
+criterion passed. Without (d) that cell reads as a success. That is the exact failure ADR-006
+predicted, caught by the exact check ADR-006 specified, and it is the strongest evidence in this
+run that the criterion earns its place.
+
+## Negatives and setup facts, named
+
+- **The treatment could not finish inside $20, twice.** The pipeline's `sweep` fans out to
+  `praxis:analyst` subagents which fan out again; r2 burned $20 with `num_turns: 2` at the top
+  level. The control does the same job for a third of that. Cost is not a tiebreaker here — it is
+  the finding.
+- **r1 of the treatment spent its entire $8 on the sweep and produced no dossier at all** — only
+  `scope.md`. That artifact was good (it declared its GAPs, cited the literal `curl`, and flagged
+  stars and downloads as *"gameable, not admissible as reasons"*), but a scope note is not the
+  deliverable.
+- **Bash was denied throughout, in every arm identically.** The fixture's
+  `.claude/settings.local.json` allow rules do not cover a compound command that opens with a
+  variable assignment (`T=/path; grep …`) or `cd target && …`, so a large share of the sweeps came
+  back denied and the arms fell back to `Read`. Identical in both arms, so the comparison holds,
+  but every arm investigated with one hand tied.
+- **32 of the control's citations are bare-basename shorthand** (`transform.ts:6`, `index.ts:23`)
+  that matches more than one file in the target tree. The scorer reports them unresolved and so
+  would a reader. One more points at a blank line. 27/30 is the count after a suffix-matching
+  resolver; the raw dossier is looser than that number suggests.
+- **The treatment invoked exactly one of its own four skills at the top level** (`dependency-adoption`,
+  in r1). r2 invoked none directly — the work went to subagents. Whether the skills reached those
+  subagents is not observable in the parent stream.
+- **Criterion (c) barely discriminates.** All three arms produced a named verdict, `bare` included.
+  Any answer to "should we adopt X" contains a verdict token; the criterion is close to a GAP and
+  should not be read as evidence of anything.
+
+## Scorer defects, eight of them, each found by reading rather than by review
+
+Two were caught by mutating the scorer *before* any money was spent; six by reading the streams and
+the dossiers against the numbers.
+
+1. **(b) accepted a host cited from a failure.** `api.scorecard.dev` appeared in the dossier only
+   inside a 404 `SKIP` line, and that satisfied "the API call that produced it". The host must now
+   be one a **successful** call in the stream reached.
+2. **(d) let a reasonless `SKIP` borrow the next line's text** — which, in the mutation, was the
+   line that merely quotes `PASS · FAIL · SKIP · GAP`. The next line now has to be prose.
+3. **(a) resolved only `dir/rel` and `dir/target/rel`.** A dossier names a full path once and then
+   shortens to `emitter.ts:109`; 95 of 168 real citations scored "no such file", and `README.md:102`
+   resolved against the *fixture's* 10-line README rather than the target's, scoring in-range
+   citations as out of range.
+4. **(a) then keyed the fallback on basename**, so `register/index.ts:60` — unambiguous — came back
+   "ambiguous basename" 45 times. Suffix matching fixed it; 135/168 became the honest number.
+5. **(b) matched a number anywhere on a line carrying the label.** `maintainers = 1` scored
+   **correct** off *"The contributor list is not one person"*, and `downloads` scored off a STATUS
+   line reading *"3 denied (git, downloads, deps.dev)"*. It also stopped at the first labelled line,
+   so a correct value further down never counted. The number must now sit within 40 characters of
+   the label, and every line is scanned.
+6. **(c) and (d) scored the contract instead of the content.** The ledger's own `verify:` line
+   ("a citation, a `SKIP` with reason, or a `GAP`") counted as a `SKIP` in every arm, and the
+   pipeline's phase list — *scope → sweep → assess → synthesize → **verdict*** — counted as a named
+   verdict in the treatment.
+7. **The transcript was folded into the dossier.** A truncated treatment cell that wrote 16 KB of
+   artifact scored 602 citations and 16 `SKIP`s, nearly all of it sweep commentary. Files and
+   narration are now scored separately; an arm that writes no file is scored on its transcript,
+   because that is what it delivered.
+8. **(c) failed on a heading.** `## Verdict` with the call on the next line scored as *no named
+   verdict* — a false negative against the **control**, which would have handed the criterion to the
+   treatment on a formatting difference.
+
+And one defect in the proof itself: fixing (8) made the (c) mutation stop failing, because the
+fixture carried two verdict labels and the look-ahead found the second. A check that cannot fail is
+a GAP, so the mutation was rewritten to remove the verdict *token* rather than one label. After the
+rewrite all nine mutations fail their own criterion and the restored baseline passes — both
+directions, `runs/t09-scorer-proof.mjs`.
+
+## What it says and does not say
+
+It says: on one real, moderately sized, genuinely partial public repository, the investigation
+suite's four skills added nothing measurable over the same pipeline and agent with those four
+directories deleted — same four criteria met, same verdict reached, at a third of the cost and
+without the budget truncation the treatment hit twice. It says the pipeline, the agent and the
+command *do* add something large over the bare model: citations that resolve, computed signals tied
+to their calls, and `SKIP`s where the target gave nothing, none of which the bare arm produced.
+
+It does not say the four skills are worthless. n=1 per arm, one target, one task, one model,
+non-interactive. The target was chosen to discriminate on `dependency-adoption`'s signal-gaming
+claim, which is the one skill whose contribution the control could most easily reproduce from a
+`curl` it would have run anyway; `architecture-evaluation` and `buy-vs-build` were never exercised
+against a target with a stated quality requirement, which is the condition their own bodies say
+they need. A tie at n=1 is weak evidence of no difference. It is strong enough to say the suite has
+not yet shown its four skills earn their place, and to say where to look next: a target with a
+stated SLO, and a budget ceiling the treatment can actually finish inside.

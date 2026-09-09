@@ -1,0 +1,44 @@
+skill: dependency-adoption
+
+# One candidate package, library, Action or plugin. Computes the answer from public APIs and
+# returns adopt · adopt-with-guard · avoid, naming the layer that produced it.
+should_trigger:
+  - prompt: "Is `fast-glob` worth taking on as a dependency, or should we write the 30 lines ourselves?"
+    why: "One candidate package, and the ask is whether to depend on it — the ladder plus the computed layer."
+  - prompt: "¿Conviene depender de esta librería de validación? Necesito números de mantenimiento, no impresiones."
+    why: "Explicitly asks for computed maintenance signals over an assertion — the core of this skill."
+  - prompt: "This GitHub Action has one maintainer and no release in two years. Should we keep using it?"
+    why: "A GitHub Action is in scope, and both facts map to threshold rows: maintainers < 2 and last release > 2 years."
+  - prompt: "Antes de agregar este paquete al manifiesto, verifica su mantenimiento y su factor de bus."
+    why: "Bus factor is this skill's named computation; the object is a single package before adoption."
+  - prompt: "Someone wants this npm package because it has 40k stars. Is that a good enough reason?"
+    why: "The gameable-signal rule fires: it must say why the signal is weak and substitute dependent_repos_count."
+  - prompt: "Evalúa si podemos adoptar este plugin de Claude Code sin correr riesgos de seguridad de la cadena de suministro."
+    why: "A plugin is an in-scope object, and supply-chain risk is the red-flag list, not our own threat surface."
+
+should_not_trigger:
+  - prompt: "We shortlisted three date libraries and already checked all three. Which one do we ship?"
+    route_to: "strategy-compare"
+    why: "The candidates are already vetted and the ask is the pick — this skill assesses one candidate, it does not choose among several."
+  - prompt: "Our login endpoint reads a raw session token from the query string. What's the exposure?"
+    route_to: "security"
+    why: "The threat surface of code we wrote, not whether to take on someone else's package."
+  - prompt: "Should we build our own feature-flag system or source one from outside?"
+    route_to: "buy-vs-build"
+    why: "The object is a capability to source, not a named package to assess."
+  - prompt: "What changed in Zod 4's `safeParse` signature? I need the current API."
+    route_to: "docs-seeker"
+    why: "Current docs for a library already in use — no adoption decision is being made."
+  - prompt: "Do we already pull in anything that does retry with backoff?"
+    route_to: "scout"
+    why: "An inventory of what this repo already installs is recon; this skill starts once a candidate is named."
+
+capability:
+  - scenario: "A developer asks whether to add a small, popular npm package that has a single maintainer."
+    must_include:
+      - "Runs the ladder first and says whether the standard library or 20-50 inline lines would remove the dependency."
+      - "Calls packages.ecosyste.ms and quotes the returned values next to the thresholds they were compared against."
+      - "Reports the single maintainer as a bus-factor row and names which definition produced the number."
+      - "Refuses a star count as a reason, explains that it is gameable, and substitutes dependent_repos_count."
+      - "Reports any signal the API did not return as SKIP rather than treating the absence as a pass."
+      - "Ends on adopt, adopt-with-guard or avoid, names the layer that produced it, and states what would overturn it."
