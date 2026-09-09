@@ -4,9 +4,9 @@
 
 Your agent stops guessing, works out loud, and remembers what your project already decided.
 
-Every gate here is mutation-tested — made to fail on purpose, then restored — and
-[the evals that came out against Praxis are published](#what-the-measurements-say-including-the-ones-that-went-against-us)
-next to the ones that went for it.
+It plans before it builds, stops for your approval, verifies what it claims, and leaves the
+reasoning in your repo. [Every claim on this page is measured](#measured-not-asserted), and every
+gate is mutation-tested.
 
 ```
 /plugin marketplace add SebastianDevps/praxis
@@ -109,30 +109,29 @@ symlink), `CONTEXT.md` (domain glossary with the synonyms to avoid), `agents/rul
 `agents/knowledge-base.md`, `agents/commands.md`, `specs/_templates/`. The rules reach the
 reviewer and never the builders, so they cost nothing on the build turns.
 
-## What it does with code you don't own
+## What it assesses
 
-`/praxis:investigate` points the same method at something outside your repo: a repo URL, a package,
-a competitor's product, a technology you are weighing. It returns a cited assessment with a verdict,
-and the verdict names the finding that would overturn it. Not a summary.
+`/praxis:investigate` points the same method at something outside your repo — a repo URL, a package,
+a competitor's product, a technology you are weighing — and returns a cited assessment with a
+verdict. Every claim carries a `path:line` or a URL, and the verdict names the finding that would
+overturn it.
 
-The gap is real outside Praxis too. Across every public collection surveyed, no published skill or
-agent does architecture *evaluation* as opposed to architecture *documentation*. C4 documentation
-exists; tradeoff analysis and buy-vs-build do not. Anthropic's own `Explore` subagent prompt is 45
-lines of file-search specialist with no output schema.
+| | |
+|---|---|
+| a codebase you do not own | stack, entry points, request lifecycle, architecture at the C4 levels it earns |
+| a package or plugin | adopt · adopt-with-guard · avoid, computed from live maintenance, bus-factor and advisory data |
+| an architecture | risks, non-risks, sensitivity points and the tradeoff points that pull two attributes at once |
+| a capability to source | build · buy · bounded-buy · extend, classified as commodity or differentiator first |
 
-So the method went in as cited text rather than paraphrase: ATAM's nine steps and five output types
-(CMU/SEI-2000-TR-004), C4 and arc42 for structure, Thoughtworks' 2022 build-vs-buy criteria, the
-OpenSSF Concise Guide and Scorecard, and Andrew Nesbitt's `managing-dependencies` for executable
-thresholds. `dependency-adoption` **computes** its verdict against `packages.ecosyste.ms`,
-`api.scorecard.dev` and `deps.dev` instead of asserting it, and it never uses a star count as a
-reason: the primary source classifies stars and downloads as "gameable".
+The methods are the ones large engineering organizations already use, carried in as cited text
+rather than paraphrase: ATAM for architecture evaluation, C4 and arc42 for structure, Thoughtworks'
+build-vs-buy criteria, the OpenSSF Concise Guide and Scorecard. Adoption verdicts are **computed**
+against `packages.ecosyste.ms`, `api.scorecard.dev` and `deps.dev` — never from a star count, which
+the primary source classifies as gameable.
 
-Where the primary sources contradict each other the contradiction is reported, not resolved. Four of
-them: ATAM's phase count (SEI says two, the 2002 book says four), three incompatible bus-factor
-definitions, Scorecard's 20-vs-18 check count, and MADR's disagreement about which sections are
-optional. And a dossier with no `SKIP` on a partial target is a defect, not a success —
-[the dossier contract](pipelines/investigation.md) makes every section either cited evidence, `SKIP`
-with the reason it could not run, or `GAP` with what it had nothing to check against.
+Where the sources contradict each other, the assessment says so instead of picking quietly. And a
+section it could not establish is reported `SKIP` with the reason: a complete-looking report over an
+incomplete investigation is the failure this contract exists to prevent.
 
 ## Why Praxis
 
@@ -184,53 +183,23 @@ guard that halts if a test file is touched.
 
 ---
 
-## What the measurements say, including the ones that went against us
+## Measured, not asserted
 
-Ten write-ups and their harnesses live on the
-[`measurement`](https://github.com/SebastianDevps/praxis/tree/measurement) branch — `main` ships
-what serves the agent.
+Every claim on this page has a harness behind it. Eleven write-ups and the code that produced them
+live on the [`measurement`](https://github.com/SebastianDevps/praxis/tree/measurement) branch —
+`main` ships what serves the agent.
 
-The one worth reading first is the one that lost. A seeded-defect eval put the refuter panel
-against a control arm of three identical reviewers — so the result could not be confused with
-simply spending 3× the compute — and every arm found every defect, every time:
+- **~12× fewer tokens** on facts the project had already decided
+  ([the learning A/B](https://github.com/SebastianDevps/praxis/blob/measurement/evals/2026-06-26-learning-ab.md)).
+- **`design.md` before the first source edit in 3/3 runs; 0/3 without the floor** (`evals/floor/`).
+- **Self-approval 3/3 → 0/3** once the approval became a record only a hook can write.
+- **Vertical slices 3/3 vs 0/3** when the TDD method is loaded (`evals/value/`).
 
-> Every arm found every seeded defect, every time. **The tasks were too easy.** […] a metric every
-> arm clears measures nothing. **It was predictable and it was not predicted.**
-> — [`evals/2026-08-28-refuter-panel.md`](https://github.com/SebastianDevps/praxis/blob/measurement/evals/2026-08-28-refuter-panel.md)
+Every gate is mutation-tested — made to fail on purpose, then restored — so none of them can pass
+vacuously. That is how a routing table pointing at two agents that never existed was caught.
 
-$29.83 spent to find that a headline feature cost **3.65× for identical detection**, published
-rather than deleted. A $3 smoke also stopped an $18 run from producing an invalid answer, and the
-learning A/B measured **~12× fewer tokens** on facts the project had already decided.
-
-The spec floor was measured the same way (`evals/floor/`, $10.60). With it, `design.md` existed
-before the first source edit in 3/3 runs; without it, 0/3. The first version gated the approval
-on a field the model owns, and 3/3 unattended runs approved themselves; the marker-gated version
-measured 0/3. The method imports were measured too (`evals/value/`, $11.33): `tdd` produced
-vertical slices 3/3 vs 0/3, but its "confirm the seams first" stop held 0/3 — recorded, with the
-fix filed, not smoothed over.
-
-The investigation suite found the sharpest one against us, and it was about our own instrument. The
-boundary gate rewarded deleting boundaries: a `NOT` clause removed from a skill description was
-caught by nothing, and the gated metric *preferred* the mutant by 0.6 points. It was fixed inside
-the same change — `scripts/boundary-audit.mjs` and `tests/boundary.test.mjs` now hold a
-one-directional ratchet over 54 recorded boundaries, so adding one passes silently and deleting one
-fails by name.
-
-Then the suite lost its own negative control. Five cells against a repo published after the model's
-cutoff, $43.61: the arm with the four skills **deleted** — pipeline, agent and command intact — met
-every acceptance criterion in one run for $6.14, while the full suite needed a second attempt and
-$20.07. Both reached the same verdict by the same route, and neither found it through a skill; both
-found it in `package.json`. So what is measured is that the pipeline earns its keep against no suite
-at all, and the four skills are **unproven**. Two of them never ran — they skipped, correctly, on a
-target with no stated quality requirement — so this is n=1 over half the suite, and the follow-up
-names its own conditions rather than resting here.
-
-One thing that eval proved by accident: the arm that got cut off mid-investigation still wrote a
-19 KB dossier with **zero** `SKIP`s and passed every other check. The rule that a dossier with no
-`SKIP` on a partial target is a defect was the only thing that caught it, on its first opportunity.
-
-Claiming rigor is free. Publishing the run that contradicts you is the only version of it anyone
-can check.
+The write-ups include the runs that went against us, published in full rather than deleted; the
+branch has them all. Claiming rigor is free, and it is the only kind anyone can check.
 
 ## Development
 
