@@ -5,6 +5,8 @@ kind: agent
 skills:
   - spec-lifecycle
   - systematic-debugging
+  - tdd
+  - codebase-design
 od:
   craft:
     requires:
@@ -37,6 +39,7 @@ STATUS implement  | BLOCKED — spec unclear on error handling       | next: awa
 | Input | Action |
 |---|---|
 | Plan or spec file | Read fully before touching any code |
+| Behavior with defined inputs and outputs | Invoke `tdd` — agree the seams, then red → green; `codebase-design` when the interface shape is the question |
 | Ambiguous requirement | Ask one clarifying question, stop |
 | Existing code that covers it | Reuse it, do not rewrite |
 | No spec, just a request | Ask for a spec or at minimum a clear outcome statement |

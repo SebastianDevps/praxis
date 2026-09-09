@@ -28,6 +28,7 @@ const isSymlink = (p) => lstatSync(p).isSymbolicLink();
 const SCAFFOLD = [
   "AGENTS.md",
   "CLAUDE.md",
+  "CONTEXT.md",
   "agents/README.md",
   "agents/rules/_sections.md",
   "agents/rules/_template.md",
@@ -52,6 +53,22 @@ test("first run creates the whole scaffold in an empty directory", () => {
   // actually emits them, so pin it here.
   assert.ok(createLines(out).length >= SCAFFOLD.length - 1, `first run emitted too few create lines:\n${out}`);
   assert.match(out, /^create AGENTS\.md$/m);
+  assert.match(out, /^create CONTEXT\.md$/m);
+});
+
+test("the scaffold carries the glossary and the capabilities index, not just the file names", () => {
+  // SCAFFOLD pins that CONTEXT.md exists; an empty file would pass it. Pin the two things the
+  // model is told to fill from the repo: the Avoid lists and the capabilities table.
+  const project = freshProject();
+  init(project);
+  const context = readFileSync(join(project, "CONTEXT.md"), "utf8");
+  assert.match(context, /^Avoid: /m, "CONTEXT.md has no Avoid list");
+  assert.doesNotMatch(context, /^\s*(import|export|function|class) /m, "CONTEXT.md carries code");
+  const agents = readFileSync(join(project, "AGENTS.md"), "utf8");
+  assert.match(agents, /^## Capabilities$/m, "AGENTS.md has no Capabilities section");
+  assert.match(agents, /Before writing new glue/, "AGENTS.md lost the check-first rule");
+  assert.match(agents, /proceed silently/, "AGENTS.md lost the missing-doc rule");
+  assert.match(agents, /Contradicts ADR-NNN/, "AGENTS.md lost the ADR-conflict rule");
 });
 
 test("CLAUDE.md resolves to AGENTS.md and .claude/rules to agents/rules", () => {
@@ -92,6 +109,19 @@ test("a pre-existing AGENTS.md with custom content is untouched", () => {
   assert.doesNotMatch(out, /^create AGENTS\.md$/m);
   // The siblings are still created — "keep" is per entry, not all-or-nothing.
   assert.ok(existsSync(join(project, "agents/commands.md")));
+});
+
+test("a pre-existing CONTEXT.md with custom content is untouched", () => {
+  // The glossary is the file a team writes by hand over months; it is the worst one to
+  // overwrite. Mutation-tested: make the CONTEXT.md copy unconditional and this fails.
+  const project = freshProject();
+  const custom = "# Ours\n\n**Order**:\nA confirmed request to buy.\nAvoid: purchase\n";
+  writeFileSync(join(project, "CONTEXT.md"), custom);
+  const out = init(project);
+  assert.equal(readFileSync(join(project, "CONTEXT.md"), "utf8"), custom, "init overwrote the user's CONTEXT.md");
+  assert.match(out, /^keep CONTEXT\.md$/m);
+  assert.doesNotMatch(out, /^create CONTEXT\.md$/m);
+  assert.ok(existsSync(join(project, "AGENTS.md")), "siblings were not created");
 });
 
 test("a pre-existing real .claude/rules directory is kept, not replaced by a symlink", () => {

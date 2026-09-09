@@ -1,0 +1,40 @@
+skill: codebase-design
+
+should_trigger:
+  - prompt: "Where should the seam go between the billing module and the payment gateway?"
+    why: "Seam placement is a design decision the vocabulary exists for."
+  - prompt: "Is this module deep enough, or is the interface as complex as the implementation?"
+    why: "Depth of a module measured against its interface."
+  - prompt: "Design the interface for the new cache module — I want a small surface with a lot behind it."
+    why: "Interface design for a deep module."
+  - prompt: "Does extracting this helper into its own module pass the deletion test, or is it a pass-through?"
+    why: "The deletion test is one of the four principles."
+  - prompt: "We keep saying component, service, and boundary — what is the right vocabulary for this module design?"
+    why: "The glossary and its Avoid lists are the skill."
+  - prompt: "¿Dónde va el seam de este módulo y qué tan profunda debería ser su interfaz?"
+    why: "Seam and depth of a module, in Spanish."
+
+should_not_trigger:
+  - prompt: "Redis or Postgres for session storage — which approach should we pick?"
+    route_to: "strategy-compare"
+    why: "Scoring approaches already on the table, not the shape of a module."
+  - prompt: "Build the pricing page with a hero section and three tiers."
+    route_to: "frontend-design"
+    why: "The visual layer of a page, not a module's interface."
+  - prompt: "Build the rate limiter test-first: failing test, then the code."
+    route_to: "tdd"
+    why: "A behavior to build red → green; the interface is not in question."
+  - prompt: "What should we test for this feature? Give me a test plan."
+    route_to: "test-coverage-plan"
+    why: "Choosing what to cover, not designing a module."
+  - prompt: "What does this repo already have for caching before I add anything?"
+    route_to: "scout"
+    why: "Recon of prior art, not a design decision."
+
+capability:
+  - scenario: "Asked whether a proposed extraction is worth it, with two callers shown."
+    must_include:
+      - "Applies the DELETION TEST by name and states whether complexity vanishes or reappears across callers."
+      - "Uses module, interface, and seam — not component, service, or boundary."
+      - "Names the second adapter before endorsing a new seam, or says the seam is hypothetical."
+      - "Reads no files and proposes no refactor beyond the extraction asked about."

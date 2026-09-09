@@ -57,6 +57,52 @@ the ledger exists for.
 `files:` and `verify:` are not optional. A task with no named verification cannot be finished by an
 agent, because nothing can decide that it is done.
 
+## A task is a vertical slice
+
+A task is **a narrow but COMPLETE path through every layer, demoable or verifiable on its own,
+sized to fit in a single fresh context window**. Vertical, not a horizontal slice of one layer:
+"the schema" is not a task, "a user can save a draft" is. Any prefactoring that makes the slice
+easy is its own task, sequenced first.
+
+The size rule is falsifiable, and it is the only sizing rule. If sessions on your tasks routinely
+degrade before the work is done, the tasks are too big — split them. If each session spends most
+of its context on setup before doing five minutes of work, they are too small — merge them.
+
+**Wide refactors are the exception.** One mechanical change whose blast radius fans across the
+codebase — rename a column, retype a shared symbol — breaks every call site at once, so no
+vertical slice lands green. Sequence it as **expand–contract**: one task that *expands* (add the
+new form beside the old, nothing breaks); then *migrate* the call sites in batches sized by blast
+radius (per package, per directory), each batch its own task blocked by the expand, green batch to
+batch because the old form still exists; finally one task that *contracts* (delete the old form),
+blocked by every migrate batch.
+
+## `verify:` — the observation that would show it false
+
+The `verify:` line is the task's acceptance, and it is written as a falsifier: the observation
+that would show the task is *not* done. "Tests pass" is not that observation; "`npm test auth`
+exits 0, and it exited 1 before the route existed" is. A `verify:` that could not have failed
+yesterday proves nothing today.
+
+Three kinds of verification exist, and a `verify:` line names one of them. What the assertion
+*does* decides the kind, never where it runs — an LLM judge in CI is a review, not a check.
+
+| kind | what it is | `verify:` looks like |
+|---|---|---|
+| **automated check** | deterministic, pass/fail, no judgement: tests, typecheck, lint, build. The signal an agent self-corrects from alone. A flaky check is a broken check, not a non-check. | `npm test auth` |
+| **automated review** | an agent that did not write the code forms a judgement on the diff — fresh context, often a different model or prompt. Non-deterministic: it can miss and it can over-flag; a filter before a human, not a gate that replaces one. | `reviewer on src/auth/**` |
+| **human review** | a person reads the diff and judges it. **Reading the diff counts; reading the summary does not** — the summary is written by the party being reviewed. Reserved for what only a person can judge: is this the right change, should it exist at all. | `human: diff of src/auth/**` |
+
+The four states apply to each kind, and `GAP` is the one that differs:
+
+| state | automated check | automated review | human review |
+|---|---|---|---|
+| `PASS` | exit 0 | the reviewer read the diff and reports no findings, in those words | the person read the diff and accepted it |
+| `FAIL` | non-zero exit | findings | rejected |
+| `SKIP` | the runner could not start — missing tool, missing target | no diff, or no reviewer could run | nobody read it |
+| `GAP` | it ran and asserted nothing — zero tests matched, an assertion-free test, a linter with no rules | the Spec axis with no `design.md` to judge against (a missing `agents/rules/` is not a GAP: the Standards axis runs on the Fowler floor and says so) | the summary was read, not the diff |
+
+A `GAP` never sets the failure flag; it reports, and someone decides. Silence is not a state.
+
 ---
 
 ## `phase:` — where the task sits in the cycle
@@ -157,3 +203,8 @@ repo knows how to run, which is how `define` and `ship` stayed unclaimed after t
 Each of those describes its own job and links here for the shape. If you find yourself writing a
 second definition of a phase, a state, or a ledger filename, that is the drift this file exists to
 stop.
+
+The slice, the size rule, expand–contract and the three kinds of verification are adapted from
+[mattpocock/skills](https://github.com/mattpocock/skills) `to-tickets` and the
+[dictionary of AI coding](https://github.com/mattpocock/dictionary-of-ai-coding) entries *Ticket*,
+*Automated check*, *Automated review* and *Human review*.

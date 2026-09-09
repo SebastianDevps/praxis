@@ -334,6 +334,81 @@ test("the skill pointer path rejects a traversing agent_type", () => {
   assert.doesNotMatch(ctx, /Skills declared for/);
 });
 
+// ── The project's rules reach the reviewer, and nobody else ───────────────────────────────────
+//
+// ADR-002 (specs/mattpocock-imports): `agents/rules/*.md` and `CONSTRAINTS.md` are enforced in
+// review, not paid for on every build turn. Both directions are asserted, because the cheap
+// mistake is injecting for every agent — the reviewer test would still pass and the builders
+// would silently carry the rules. Mutated before trusting: make the hook inject unconditionally
+// and the engineer test below fails; restore the `reviewer` check and it passes.
+
+import { spawnSync } from "node:child_process";
+
+function rulesRepo({ rules = true, constraints = true } = {}) {
+  const repo = mkdtempSync(join(tmpdir(), "praxis-rules-"));
+  if (rules) {
+    mkdirSync(join(repo, "agents/rules"), { recursive: true });
+    writeFileSync(
+      join(repo, "agents/rules/quality-x.md"),
+      "---\ntitle: Quality X\nimpact: HIGH\n---\n\n## Quality X\n\nRULE-BODY-SENTINEL: never inject this line.\n",
+    );
+    // The scaffold's own files live beside the rules and are not rules.
+    writeFileSync(join(repo, "agents/rules/_sections.md"), "# Sections\n");
+  }
+  if (constraints) writeFileSync(join(repo, "CONSTRAINTS.md"), "# Quality bar\n\nCONSTRAINTS-BODY-SENTINEL\n");
+  const dispatch = (agent) =>
+    spawnSync("bash", [join(ROOT, "hooks", "subagent-start")], {
+      env: { ...CLEAN, CLAUDE_PLUGIN_ROOT: ROOT, CLAUDE_PROJECT_DIR: repo },
+      input: JSON.stringify({ agent_type: agent }),
+      encoding: "utf8",
+      timeout: 10_000,
+    });
+  return { repo, dispatch };
+}
+
+test("the project's rules reach the reviewer as pointers — path and title, never the body", () => {
+  const { dispatch } = rulesRepo();
+  const out = dispatch("praxis:reviewer");
+  const ctx = context(out.stdout);
+  const section = ctx.split(/^# Project standards for/m)[1];
+  assert.ok(section, "reviewer received no project-standards section");
+  assert.match(section, /`agents\/rules\/quality-x\.md` — Quality X/);
+  assert.match(section, /`CONSTRAINTS\.md` — Quality bar/);
+  assert.doesNotMatch(section, /_sections\.md/, "the scaffold's own file is not a rule");
+  for (const leak of ["RULE-BODY-SENTINEL", "CONSTRAINTS-BODY-SENTINEL"]) {
+    assert.ok(!ctx.includes(leak), `a body leaked into the dispatch: ${leak}`);
+  }
+  assert.equal(out.stderr, "", "a clean resolution says nothing on stderr");
+  // The bare name, as a host without the plugin namespace sends it.
+  assert.match(context(dispatch("reviewer").stdout), /agents\/rules\/quality-x\.md/);
+});
+
+test("the project's rules never reach a builder", () => {
+  const { dispatch } = rulesRepo();
+  for (const builder of ["engineer", "praxis:engineer", "backend", "design", "platform", "orchestrator"]) {
+    const ctx = context(dispatch(builder).stdout);
+    assert.doesNotMatch(ctx, /Project standards for/, `${builder} received the rules section`);
+    assert.doesNotMatch(ctx, /quality-x\.md/, `${builder} received a rule pointer`);
+    // The pointer form, not the bare filename: `platform` declares `quality-bar`, whose
+    // description legitimately names CONSTRAINTS.md as the file it writes.
+    assert.doesNotMatch(ctx, /`CONSTRAINTS\.md` — Quality bar/, `${builder} received the constraints pointer`);
+  }
+});
+
+test("a project with no rules injects nothing into the reviewer, and raises no error", () => {
+  const { dispatch } = rulesRepo({ rules: false, constraints: false });
+  const out = dispatch("praxis:reviewer");
+  assert.equal(out.status, 0);
+  assert.equal(out.stderr, "", "a project that documents nothing is a valid state, not an error");
+  const ctx = context(out.stdout);
+  assert.doesNotMatch(ctx, /Project standards for/, "no rules means no empty section");
+  assert.match(ctx, /ladder/, "the contract still arrives");
+
+  // CONSTRAINTS.md alone is still a standard the reviewer reads.
+  const only = rulesRepo({ rules: false, constraints: true });
+  assert.match(context(only.dispatch("praxis:reviewer").stdout), /`CONSTRAINTS\.md` — Quality bar/);
+});
+
 // ── subagent-stop: the memory write path ──────────────────────────────────────────────────────
 //
 // The hook is deliberately INERT in a project with no `.praxis/` directory. That is the property

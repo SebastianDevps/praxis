@@ -1,6 +1,6 @@
 ---
 title: Stop Session Scope
-stage: implemented  # new → designed → planned → implemented → shipped
+stage: shipped      # new → designed → planned → implemented → shipped
 owner: Sebastian
 ---
 
@@ -38,3 +38,6 @@ owner: Sebastian
   `hooks/stop` (installed 0.6.0 copy) blocked again on the same five untracked docs — the false positive
   this change fixes, reproduced once more with the ledger clean. Working tree: only `?? docs/*`, `?? untitled.md`.
   Expected until 0.6.1 is installed. GAP for the installed copy; PASS for the working-tree hook (T02).
+- Shipped as 0.6.1: PR #11 merged 2026-09-09T14:28:14Z (ab586ec), changelog heading via PR #12 (f2923f7),
+  tag v0.6.1 → f2923f7, CI on main success. The installed 0.6.0 copy blocked this turn too (third time,
+  same untracked docs); gone once 0.6.1 is installed.

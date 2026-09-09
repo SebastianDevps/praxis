@@ -152,3 +152,59 @@ appears in the string" is not "the write targets that location."
 Three gates added on 2026-08-28 were mutation-tested both ways: dead `route_to`, a skill below the
 case minimum, and a silently-empty triggers parser. The third existed because the parser was
 written against the wrong indentation, matched nothing, and produced plausible numbers anyway.
+
+---
+
+## 4. Written for the agent that runs it
+
+The description decides whether a skill fires (§1). The body decides what happens once it has.
+Both are documents an agent consumes, and the same levers make each one predictable: the agent
+takes the same *process* every run, which is the only determinism prose can buy.
+
+**Two loads, one budget each.** *Context load* is what sits in the window every turn whether or
+not it fires — a description, an `AGENTS.md` line, a craft. *Cognitive load* is what the person has
+to remember exists. Material behind a pointer escapes the first at the price of the pointer's own
+line; material with no pointer rides entirely on the second. Spend cognitive load where human
+judgement matters and remove it where it does not — it is the price of agency, not a leak.
+
+**The information ladder.** Every piece of a document sits on one of three rungs, ranked by how
+immediately the agent needs it: an **in-file step** (what it does, in order), **in-file reference**
+(consulted on demand — a flat peer-set of rules is a fine shape, not a smell), or a **disclosed
+reference** (a separate file behind a pointer, loaded only when the pointer fires). Push too little
+down and the top bloats; push too much and the agent cannot find what it needs. The test is
+branching: **inline what every branch needs, push behind a pointer what only some branches reach.**
+It is the same ladder the host implements as Level 1 → 2 → 3 ([context delivery](context-delivery.md)).
+
+**Completion criteria.** Every step ends on the condition that tells the agent it is done. Two
+properties make it a lever. *Clarity*: can the agent tell done from not-done? "Understanding
+reached" invites stopping early; sharpen the bound before hiding the later steps. *Demand*: how
+much it requires — "every modified model accounted for" forces legwork where "produce a change
+list" does not. The strongest criteria are both checkable and exhaustive.
+
+**Leading words.** A compact concept the model already holds — *seam*, *tracer bullet*, *red* —
+repeated as a token rather than a sentence, anchors a whole region of behaviour in the fewest
+tokens and recruits priors a coined word cannot. Hunt for restatements that collapse into one:
+"fast, deterministic, low-overhead" → *tight*; "a loop you believe in" → *red*, which turns a fuzzy
+gate into a binary observable. A word too weak to beat the default (*be thorough*) is a no-op; the
+fix is a stronger word (*relentless*), not a different technique.
+
+**Six ways a document goes bad**, each with its cure:
+
+| Failure | Cure |
+|---|---|
+| **Sprawl** — too long even when every line is live | the ladder: disclose reference, split by branch or sequence |
+| **Negation** — "don't X" makes X *more* available, not less | prompt the positive: state the target behaviour so the banned one is never spoken; a prohibition earns its place only as a hard guardrail, and even then paired with the positive |
+| **Duplication** — one meaning in two places | a single source of truth per meaning, so changing it is a one-place edit |
+| **Cache** — a restated `package.json` script, config value, or `--help` that goes stale | cache what the agent cannot find by looking: the unwritten convention, the reason behind a choice, the gotcha no config confesses |
+| **Sediment** — stale layers that settle because adding feels safe and removing feels risky | check every line for relevance; shorter documents stay relevant longer |
+| **No-ops** — an instruction the model obeys by default, paying load to say nothing | the test is model-relative, not reader-relative: two people who disagree about a no-op disagree about the default, so settle it by running the document; when a sentence fails, delete the whole sentence |
+
+**Every skill carries `## It's working if`.** A few bullets naming what the person sees when the
+skill is doing its job — observable effects in their own work or in the trace in front of them,
+checkable without opening `SKILL.md`. "The document gets shorter as it gets better" passes; a rule
+from the body restated under this heading does not. `skills/scout/SKILL.md` carries the shape;
+`templates/skill.md` carries the slot. `scripts/validate-resources.mjs` does not check for the
+section yet — that gate is its own spec.
+
+Adapted from `writing-for-agents` (`SKILL.md`, `SKILL-MECHANICS.md`) and `.agents/writing-docs.md`
+in [`mattpocock/skills`](https://github.com/mattpocock/skills).

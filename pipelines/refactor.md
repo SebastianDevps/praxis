@@ -19,7 +19,7 @@ od:
 
 - **assess** — `researcher`/`reviewer`; maps the full scope and identifies the smell, coupling, or pattern gap driving the change.
 - **plan** — orchestrator defines ordered, behavior-preserving steps, each small enough to keep tests green.
-- **refactor** — `engineer`; executes steps incrementally, running tests between each to confirm no regression.
+- **refactor** — `engineer`; each step small enough that the program always works, with tests green and a commit between steps — and what to refactor comes from the `reviewer`'s Standards findings (ADR-003 in `specs/mattpocock-imports/decisions.md`: refactor is a review finding, applied as its own task).
 - **verify** — `reviewer` + tests; confirms behavior is unchanged and coverage has not decreased.
 
 ## Artifacts
@@ -34,3 +34,5 @@ Every phase writes into `specs/<change>/`. The mode decides which files are mand
 | verify | `implementation.md` — verify evidence: PASS · FAIL · SKIP · GAP |
 
 The orchestrator renders a **Run Card** per phase (spec · phase · approach · research · verify; their meaning is in `docs/task-model.md`) — every run is inspectable.
+
+> The step size is Fowler's ("make each refactoring step as small as possible, so that you can always see the program working"), via `request-refactor-plan` in mattpocock/ralph-workshop.

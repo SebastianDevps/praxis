@@ -1,5 +1,5 @@
 ---
-description: Scaffold the project side of the spec-driven workflow — AGENTS.md, agents/rules, knowledge base, commands, spec templates. Creates only what is missing; never overwrites.
+description: Scaffold the project side of the spec-driven workflow — AGENTS.md, CONTEXT.md, agents/rules, knowledge base, commands, spec templates. Creates only what is missing; never overwrites.
 ---
 
 # /praxis:init — project scaffold
@@ -31,7 +31,10 @@ The scaffold is skeleton; the facts come from the repo, not from memory.
    Only commands that exist; run each once and keep the ones that work. Delete empty sections.
 3. `agents/knowledge-base.md` — domain facts the code does not state: what the main entities
    are, where the schema lives, which files are generated, how local development is seeded.
-4. If `.claude/rules` already existed as a real directory, it was left alone: say so, and
+4. `CONTEXT.md` — the glossary from the repo's real vocabulary (README, domain types, entity
+   names), one line per term with its `Avoid` list; and the **Capabilities** table in
+   `AGENTS.md` from the code: the modules other code calls, what each exports, its smoke command.
+5. If `.claude/rules` already existed as a real directory, it was left alone: say so, and
    offer to move its files into `agents/rules/` so there is one source.
 
 Do not invent rules. `agents/rules/` starts with `_sections.md` and `_template.md` only; a rule

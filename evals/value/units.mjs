@@ -200,3 +200,248 @@ export const designSystemBrutalist = {
     };
   },
 };
+
+// ── tdd / red-first — scored from the STREAM, not the prose ───────────────────────────────────
+// Both skills make claims about ORDER: seams confirmed before a test file exists; a red command
+// before a hypothesis; a failing test before the implementation. Order is not in the final text,
+// it is in the sequence of tool calls, so these scorers parse the stream-json the harness keeps
+// in runs/. `score(text, dir)` keeps the harness contract by locating its own stream: run.mjs
+// writes `runs/<id>-{treatment,control}.jsonl` before it scores, and the arm is the file whose
+// assistant text equals `text`. `scoreEvents` is exported so a saved stream can be re-scored
+// without a re-run.
+//
+// Both units run in acceptEdits: a stop-before-writing criterion that cannot be failed because
+// plan mode forbids writing is a GAP, not a PASS. The spec floor (hooks/pre-tool-use) would deny
+// the first source write in a spec-less fixture and force both arms into the same ritual, so the
+// driver sets PRAXIS_FLOOR=off for these cells — the floor is measured by evals/floor, not here.
+// `-p` auto-denies Bash, so the fixture allows node/npm through `.claude/settings.local.json` —
+// measured 2026-09-09: the same rules in `.claude/settings.json` were not honoured (1 denial vs 0).
+import { existsSync } from "node:fs";
+
+const RUNS = new URL("./runs/", import.meta.url).pathname;
+
+export const parseStream = (raw) => {
+  const events = [];
+  const results = new Map();
+  let meta = {};
+  for (const line of raw.split("\n")) {
+    if (!line.startsWith("{")) continue;
+    let r; try { r = JSON.parse(line); } catch { continue; }
+    if (r.type === "system" && r.subtype === "init") meta = { cwd: r.cwd, model: r.model };
+    if (r.type === "assistant") for (const b of r.message?.content ?? []) {
+      if (b.type === "text") events.push({ kind: "text", text: b.text });
+      if (b.type === "tool_use") events.push({ kind: "tool", id: b.id, name: b.name, input: b.input ?? {} });
+    }
+    if (r.type === "user" && Array.isArray(r.message?.content)) for (const b of r.message.content) {
+      if (b.type === "tool_result") {
+        const c = Array.isArray(b.content) ? b.content.map((x) => x.text ?? "").join("\n") : String(b.content ?? "");
+        results.set(b.tool_use_id, { text: c, error: !!b.is_error });
+      }
+    }
+    if (r.type === "result") meta.cost = r.total_cost_usd ?? 0;
+  }
+  for (const e of events) if (e.kind === "tool") e.result = results.get(e.id) ?? null;
+  return { events, meta, text: events.filter((e) => e.kind === "text").map((e) => e.text).join("\n") };
+};
+
+const streamFor = (id, text) => {
+  for (const arm of ["treatment", "control"]) {
+    const p = join(RUNS, `${id}-${arm}.jsonl`);
+    if (!existsSync(p)) continue;
+    const s = parseStream(readFileSync(p, "utf8"));
+    if (s.text === text) return s;
+  }
+  return null;
+};
+
+const WRITE_TOOLS = new Set(["Write", "Edit", "MultiEdit"]);
+const IS_TEST_PATH = (p) => /(^|\/)tests?\/|\.test\.[cm]?js$|\.spec\.[cm]?js$/.test(p);
+const IS_SRC_PATH = (p) => /(^|\/)src\//.test(p) && !IS_TEST_PATH(p);
+const RUNS_TESTS = (cmd) => /\bnode\s+--test\b|\bnpm\s+(run\s+)?test\b|\bnode\s+(-e|--eval)\b|\bnode\s+\S+\.[cm]?js\b|\bnpx\b/.test(cmd);
+// Red is a FAILED assertion or a load failure, never a summary line. The first version matched
+// `fail\s*\d`, which `# fail 0` satisfies, so a green baseline run scored as the red command and
+// every green-after-fix run scored as still red.
+const RED_OUTPUT = (out) => /\bnot ok\b|# fail [1-9]\d*|AssertionError|ERR_ASSERTION|does not provide an export|Missing expected|\bexpected:|expected \d+, got \d+/i.test(out);
+const GREEN_OUTPUT = (out) => /# fail 0\b|# pass [1-9]\d*/.test(out) && !RED_OUTPUT(out);
+
+// Every file a tool call touches; a Bash heredoc or redirect is a write too.
+const touched = (e) => {
+  if (WRITE_TOOLS.has(e.name)) return [e.input.file_path ?? ""];
+  if (e.name === "Bash") {
+    const cmd = e.input.command ?? "";
+    return [...cmd.matchAll(/(?:>{1,2}|tee(?:\s+-a)?)\s*['"]?([\w./-]+\.[cm]?js)/g)].map((m) => m[1]);
+  }
+  return [];
+};
+
+const indexOf = (events, pred) => events.findIndex(pred);
+const textBefore = (events, idx) => events.slice(0, idx < 0 ? events.length : idx)
+  .filter((e) => e.kind === "text").map((e) => e.text).join("\n");
+const textAfter = (events, idx) => idx < 0 ? "" : events.slice(idx + 1)
+  .filter((e) => e.kind === "text").map((e) => e.text).join("\n");
+const lastText = (events) => [...events].reverse().find((e) => e.kind === "text")?.text ?? "";
+
+const CART_SRC = (totalLine) => `// A cart: items with a price and a quantity.
+export function createCart() {
+  return { items: [] };
+}
+
+export function addItem(cart, { sku, price, quantity = 1 }) {
+  cart.items.push({ sku, price, quantity });
+  return cart;
+}
+
+export function total(cart) {
+  return cart.items.reduce((sum, item) => ${totalLine}, 0);
+}
+`;
+
+const CART_TEST = `import { test } from "node:test";
+import assert from "node:assert/strict";
+import { createCart, addItem, total } from "../src/cart.js";
+
+test("total of one item at quantity one is its price", () => {
+  const cart = addItem(createCart(), { sku: "apple", price: 3, quantity: 1 });
+  assert.equal(total(cart), 3);
+});
+`;
+
+const cartFixture = (totalLine) => ({
+  "package.json": JSON.stringify({ name: "cart-fixture", version: "0.0.0", type: "module", scripts: { test: "node --test" } }, null, 2) + "\n",
+  "README.md": "Node 22, no dependencies. Tests: `npm test` (node --test, files under test/).\n",
+  "src/cart.js": CART_SRC(totalLine),
+  "test/cart.test.js": CART_TEST,
+  ".claude/settings.local.json": JSON.stringify({ permissions: { allow: ["Bash(node:*)", "Bash(npm:*)", "Bash(npx:*)"] } }, null, 2) + "\n",
+});
+
+// ── tdd ───────────────────────────────────────────────────────────────────────────────────────
+// The task is fully specified on purpose: an underspecified one lets BOTH arms stop to ask what a
+// discount is (the kernel says clarify, don't guess), and that stop would be read as the skill's.
+// The only thing left to confirm is the seam, which is the skill's claim.
+const DISCOUNT_TASK = "Add an `applyDiscount(cart, code)` capability to the cart in src/cart.js, with tests. " +
+  "Rules: code `SAVE10` takes 10% off the total, `FLAT5` takes 5 off the total but never below 0, " +
+  "any other code throws an Error. The existing addItem/total API must keep working.";
+
+export const scoreTddEvents = (events) => {
+  const firstTest = indexOf(events, (e) => e.kind === "tool" && touched(e).some(IS_TEST_PATH));
+  const firstImpl = indexOf(events, (e) => e.kind === "tool" && touched(e).some(IS_SRC_PATH));
+  const before = textBefore(events, firstTest);
+  const final = lastText(events);
+  const testEditsBeforeImpl = events.slice(0, firstImpl < 0 ? events.length : firstImpl)
+    .filter((e) => e.kind === "tool" && touched(e).some(IS_TEST_PATH));
+  // Count TESTS, not writes: one Write carrying eleven `test(` blocks is the horizontal slice the
+  // skill forbids, and a per-write count reported it as 1.
+  const countTests = (s) => ((s ?? "").match(/\btest\(/g) ?? []).length;
+  const testsBeforeImpl = testEditsBeforeImpl.reduce((n, e) => n + countTests(e.input.content ?? e.input.new_string) - countTests(e.input.old_string), 0);
+  const runs = events.filter((e) => e.kind === "tool" && e.name === "Bash" && RUNS_TESTS(e.input.command ?? ""));
+  const redRun = runs.find((r) => events.indexOf(r) > firstTest && (firstImpl < 0 || events.indexOf(r) < firstImpl) && RED_OUTPUT(r.result?.text ?? ""));
+  const lastImpl = events.reduce((m, e, i) => (e.kind === "tool" && touched(e).some(IS_SRC_PATH) ? i : m), -1);
+  // A red cycle is a red run whose nearest preceding write was a test file. A red that follows a
+  // source write is a mutation check (both arms do those), not a slice.
+  const redCycles = runs.filter((r) => RED_OUTPUT(r.result?.text ?? "")).filter((r) => {
+    const prev = events.slice(0, events.indexOf(r)).reverse().find((e) => e.kind === "tool" && touched(e).some((p) => IS_TEST_PATH(p) || IS_SRC_PATH(p)));
+    return prev && touched(prev).some(IS_TEST_PATH) && !touched(prev).some(IS_SRC_PATH);
+  }).length;
+  return {
+    redCycles,
+    namesSeam: /\bseams?\b/i.test(before) && /applyDiscount/.test(before),
+    asksConfirm: /\?/.test(final) && /confirm|agree|proceed|should (we|i)|do you want|okay|ok to|which of|go ahead/i.test(final),
+    testFileWritten: firstTest >= 0,
+    stoppedBeforeTest: firstTest < 0 && /\?/.test(final) && /confirm|agree|proceed|should (we|i)|do you want|okay|ok to|which of|go ahead/i.test(final),
+    // Red before green, first slice: the first test write precedes the first src write, and a
+    // test run went red in between. Unobservable when the arm stopped → null, reported as GAP.
+    redFirstOrder: firstTest < 0 ? null : firstImpl < 0 ? true : firstTest < firstImpl,
+    sawRed: firstTest < 0 ? null : !!redRun,
+    statedRedFirst: /(failing test|red)[^.]{0,80}(first|before)|write the test first|test-first|red\s*(→|->|then)\s*green/i.test(before + final),
+    testWritesBeforeImpl: testEditsBeforeImpl.length,
+    testsBeforeImpl,
+    // ADR-003: the skill removed refactor from the loop; a refactor step after the first test is
+    // the model putting it back.
+    // Inside the loop means between the first test write and the last source write; the final
+    // report is outside it, and "refactoring belongs to review, not inside the loop" is not a
+    // refactor step — the first version flagged exactly that sentence.
+    refactorInLoop: firstTest >= 0 && events.slice(firstTest + 1, lastImpl + 1)
+      .some((e) => e.kind === "text" && e.text.split(/(?<=[.!?])\s+|\n+/)
+        .some((s) => /\brefactor(ing|ed)?\b/i.test(s) && !/\b(no|not|never|belongs to review|instead|left|without)\b/i.test(s))),
+    testRuns: runs.filter((r) => !r.result?.error).length,
+    testRunsDenied: runs.filter((r) => r.result?.error).length,
+    edits: events.filter((e) => e.kind === "tool" && touched(e).length).flatMap((e) => touched(e).map((p) => p.replace(/^.*\/fixture-[^/]+\//, ""))),
+  };
+};
+
+export const tdd = {
+  id: "tdd",
+  skill: "tdd",
+  mode: "acceptEdits",
+  files: cartFixture("sum + item.price * item.quantity"),
+  task: DISCOUNT_TASK,
+  score: (text) => {
+    const s = streamFor("tdd", text);
+    if (!s) return { stream: "unavailable", namesSeam: /\bseams?\b/i.test(text) && /applyDiscount/.test(text) };
+    const r = scoreTddEvents(s.events);
+    return { ...r, pass: r.namesSeam && r.stoppedBeforeTest, model: s.meta.model };
+  },
+};
+
+// ── red-first ─────────────────────────────────────────────────────────────────────────────────
+// The planted bug: total() drops the quantity. The one existing test uses quantity 1, so the
+// suite is green on arrival and the model has to BUILD the red command; reading src/cart.js and
+// spotting the bug is the exact anti-pattern the skill names.
+// A hypothesis names a MECHANISM. Two defects in the first version, both found by reading the
+// streams: bare `bug is` matched "Bug is small and self-contained" (a sizing remark) and failed
+// two treatment cells; and `ignores quantity` missed "ignores `quantity`" — a backtick between the
+// words — so a control cell that stated the cause before any test run scored as a PASS.
+const HYPOTHESIS = /\b(root cause|cause|culprit)\b[^.\n]{0,24}(\bis\b|\bwas\b|\blies\b|:)|\bthe bug is (in|that)\b|\bbecause\b|\bignor(es|ing|ed)\W{0,3}(the |item\.)?\W{0,3}quantity\b|\b(never|not|doesn't|does not|isn't|without)\W{0,3}(multipl\w+|read\w*|account\w*|us\w+)\b[^.\n]{0,24}quantity|\bquantity\W{0,3}(is |being |was )?(never |not )?(ignored|multiplied|dropped|read)\b/i;
+const sentenceAt = (text, at) => text.split(/(?<=[.!?])\s+|\n+/).find((s) => {
+  const i = text.indexOf(s); return i <= at && at < i + s.length;
+})?.trim().slice(0, 200) ?? null;
+
+export const scoreRedFirstEvents = (events) => {
+  const isRun = (e) => e.kind === "tool" && e.name === "Bash" && RUNS_TESTS(e.input.command ?? "");
+  const firstRun = indexOf(events, isRun);
+  const firstRed = indexOf(events, (e) => isRun(e) && RED_OUTPUT(e.result?.text ?? "") && !e.result?.error);
+  const firstFix = indexOf(events, (e) => e.kind === "tool" && touched(e).some(IS_SRC_PATH));
+  const firstTestWrite = indexOf(events, (e) => e.kind === "tool" && touched(e).some(IS_TEST_PATH));
+  const firstRead = indexOf(events, (e) => e.kind === "tool" && e.name === "Read" && /src\/cart\.js$/.test(e.input.file_path ?? ""));
+  let firstHypothesis = -1, hypothesisSentence = null;
+  events.forEach((e, i) => {
+    if (firstHypothesis >= 0 || e.kind !== "text") return;
+    const m = e.text.match(HYPOTHESIS);
+    if (!m) return;
+    firstHypothesis = i;
+    hypothesisSentence = sentenceAt(e.text, m.index ?? 0);
+  });
+  const ranked = Math.max(0, ...events.filter((e) => e.kind === "text" && /hypothes/i.test(e.text))
+    .map((e) => (e.text.match(/^\s*(\d+[.)]|H\d|[-*])\s+\S/gm) ?? []).length));
+  const greenAfterFix = firstFix >= 0 && events.slice(firstFix + 1).some((e) => isRun(e) && GREEN_OUTPUT(e.result?.text ?? ""));
+  const precedes = (a, b) => a >= 0 && (b < 0 || a < b);
+  return {
+    redCommand: firstRed >= 0,
+    redBeforeHypothesis: precedes(firstRed, firstHypothesis),
+    redBeforeFix: precedes(firstRed, firstFix),
+    readSourceBeforeRed: firstRead >= 0 && (firstRed < 0 || firstRead < firstRed),
+    hypothesisSentence,
+    rankedHypotheses: ranked,
+    regressionTestBeforeFix: precedes(firstTestWrite, firstFix),
+    regressionTestProposed: /regression test/i.test(textBefore(events, firstFix)),
+    fixed: firstFix >= 0,
+    greenAfterFix,
+    // Probes are tags written into code; the cleanup grep the skill asks for also says DEBUG-.
+    debugProbes: events.filter((e) => e.kind === "tool" && WRITE_TOOLS.has(e.name) && touched(e).some((p) => IS_SRC_PATH(p) || IS_TEST_PATH(p)) && /DEBUG-/.test(e.input.content ?? e.input.new_string ?? "")).length,
+    runs: events.filter(isRun).map((e) => (e.input.command ?? "").slice(0, 80)),
+  };
+};
+
+export const redFirst = {
+  id: "red-first",
+  skill: "systematic-debugging",
+  mode: "acceptEdits",
+  files: cartFixture("sum + item.price"),
+  task: "Bug report: total() returns the wrong number when an item has quantity > 1. Fix it.",
+  score: (text) => {
+    const s = streamFor("red-first", text);
+    if (!s) return { stream: "unavailable", hypothesisSentence: text.match(HYPOTHESIS)?.[0] ?? null };
+    const r = scoreRedFirstEvents(s.events);
+    return { ...r, pass: r.redCommand && r.redBeforeHypothesis && r.redBeforeFix, model: s.meta.model };
+  },
+};

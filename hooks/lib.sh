@@ -244,6 +244,50 @@ EOF
   printf '%s' "$out"
 }
 
+# The project's documented standard, as Level-1 pointers for the reviewer.
+#
+#   praxis_project_rules <project root>
+#
+# One line per `agents/rules/*.md` — path plus its title — and one for
+# `CONSTRAINTS.md` when present. Never the bodies: the same doctrine as
+# praxis_agent_skills (docs/context-delivery.md); the reviewer reads the rule it
+# needs. Files starting with `_` are the scaffold's own (`_sections.md`,
+# `_template.md`), not rules. Empty output means the project documents nothing,
+# which is a valid state, not an error: the Standards axis then runs on the
+# Fowler floor alone and says so.
+#
+# ADR-002 (specs/mattpocock-imports): these reach `reviewer` and no builder. The
+# caller decides who; this function only resolves what.
+praxis_project_rules() {
+  local root="$1" f title out=""
+  [ -n "$root" ] && [ -d "$root" ] || return 0
+  for f in "${root}"/agents/rules/*.md; do
+    [ -f "$f" ] || continue
+    case "${f##*/}" in _*) continue ;; esac
+    title=$(praxis_doc_title "$f")
+    out="${out}- \`agents/rules/${f##*/}\`${title:+ — ${title}}
+"
+  done
+  if [ -f "${root}/CONSTRAINTS.md" ]; then
+    title=$(praxis_doc_title "${root}/CONSTRAINTS.md")
+    out="${out}- \`CONSTRAINTS.md\`${title:+ — ${title}}
+"
+  fi
+  printf '%s' "$out"
+}
+
+# A document's title line: `title:` in its frontmatter, else its first `#`
+# heading, else nothing. Quotes around a frontmatter value are stripped.
+praxis_doc_title() {
+  [ -f "$1" ] || return 0
+  awk '
+    NR == 1 && /^---[ \t]*$/ { fm = 1; next }
+    fm && /^---[ \t]*$/       { fm = 0; next }
+    fm && /^title:/ { sub(/^title:[ \t]*/, ""); gsub(/^["'"'"']|["'"'"']$/, ""); print; exit }
+    !fm && /^#[ \t]+/ { sub(/^#[ \t]+/, ""); print; exit }
+  ' "$1"
+}
+
 # --- Spec folders ------------------------------------------------------------
 #
 # The per-change record lives in the USER's repository: `specs/<change>/`, one

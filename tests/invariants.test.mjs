@@ -313,3 +313,60 @@ test("every referenced template exists on disk", () => {
     assert.ok(existsSync(join(ROOT, p)), `${p} is cited by a skill and does not exist`);
   }
 });
+
+// ── the Matt Pocock imports (specs/mattpocock-imports) ────────────────────────────────────────
+// Three phrases carry a method the rest of the repo now leans on. Each is a canary in the sense
+// of the header comment: reword it and the test fails, which is the reminder that the ledger, the
+// bug pipeline and the value evals all quote it.
+
+// The gate the whole debugging skill exists for. The default a bug report invites is to read code
+// and guess; the sentence is what forbids that. `evals/value` unit `red-first` measures whether it
+// holds in practice — this pins that the text still claims it.
+test("systematic-debugging keeps the red-command gate", () => {
+  assert.match(read("skills/systematic-debugging/SKILL.md"), /No red-capable command, no hypothesis/);
+});
+
+// docs/task-model.md owns the definition of a task; writing-plans applies it. Both quote the slice
+// sentence, and they must quote the SAME sentence — a reword in one is a second definition, the
+// drift the task-model tests above exist to stop. The sentence is extracted from the canon and
+// looked up literally in the consumer, so the gate fires on either side drifting.
+test("writing-plans and task-model agree on what a task is, word for word", () => {
+  const canon = read("docs/task-model.md");
+  const slice = canon.match(/a narrow but COMPLETE path through every layer[^*]*?context window/);
+  assert.ok(slice, "task-model no longer states the vertical-slice sentence");
+  assert.ok(
+    read("skills/writing-plans/SKILL.md").includes(slice[0]),
+    `writing-plans does not carry the canon's slice sentence verbatim: "${slice[0]}"`,
+  );
+});
+
+// The three kinds of verification are the vocabulary a `verify:` line is written in, and the
+// four states mean something different for each. Losing a kind silently collapses "the reviewer
+// read the summary" into "a person reviewed it".
+test("task-model names the three kinds of verification", () => {
+  const canon = read("docs/task-model.md");
+  for (const kind of ["automated check", "automated review", "human review"]) {
+    assert.match(canon, new RegExp(`\\*\\*${kind}\\*\\*`, "i"), `task-model no longer defines "${kind}"`);
+  }
+  assert.match(canon, /Reading the diff counts; reading the summary does not/, "human review lost its one load-bearing rule");
+});
+
+// ── the reviewer's two axes (specs/mattpocock-imports, ADR-004) ─────────────────────────────
+// The header note above says the reviewer's review axes are deliberately not pinned because they
+// are additive. These two rules are not: drop either and a known-bad pattern comes back rather
+// than a nuance being lost. A merged verdict lets one axis mask the other — code that follows
+// every standard and implements the wrong thing reads as "mostly fine". And a Spec axis that
+// infers requirements from the diff when `design.md` is missing passes by construction: the
+// check that cannot fail dressed as a PASS, which the four-state rule exists to name as GAP.
+test("reviewer keeps the two axes separate — never merged or reranked", () => {
+  const src = read("agents/reviewer.md");
+  assert.match(src, /never merged or reranked across axes/, "the no-reranking rule is gone");
+  assert.match(src, /## Standards/, "the Standards section header is gone");
+  assert.match(src, /## Spec/, "the Spec section header is gone");
+});
+
+test("reviewer reports GAP on a missing design.md and never infers requirements from the code", () => {
+  const src = read("agents/reviewer.md");
+  assert.match(src, /No `design\.md` → the Spec axis reports `GAP`/, "the GAP-on-missing-design rule is gone");
+  assert.match(src, /never infers requirements from the code/, "the axis may read the diff as its own spec again");
+});
