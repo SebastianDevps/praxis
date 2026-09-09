@@ -1,6 +1,6 @@
 ---
 title: Investigation Suite
-stage: implemented  # new → designed → planned → implemented → shipped
+stage: shipped  # new → designed → planned → implemented → shipped
 owner: Sebastian
 ---
 
@@ -423,3 +423,12 @@ Waves: {T01, T02, T03, T04} parallel (disjoint dirs) → {T05, T06} parallel →
   `node scripts/routing-audit.mjs` → `PASS`, EN rank-1 69.6% (floor 65), collision 0.32, claim max 250 — PASS
   `node scripts/boundary-audit.mjs` → `7` — PASS
   ADR-009 confirmation: `rg -n 'no network' README.md AGENTS.md .claude-plugin/*.json` → empty — PASS
+- Shipped. `gh pr create` → PR #14; CI run 34408380542 → `completed success` in 18s;
+  `gh pr merge 14 --merge` → verified with `gh pr view 14` → `state MERGED`, `mergedAt
+  2026-09-09T21:43:40Z`, `mergeCommit 04f5357`; local `main` synced to the same commit.
+  Checked before merging rather than trusting the word "merged": the first `gh pr view` returned
+  `state OPEN`, `mergedAt null`, so the report was an instruction, not a fact.
+  Left undone on purpose, and named so it is not lost: no version was cut — the CHANGELOG entry
+  sits under `[Unreleased]` per this repo's convention, where the bump is a separate `chore(release)`
+  commit across all four manifests. And the ADR-008 follow-up eval is not scheduled; until it runs,
+  the four skills stay recorded as unproven.
