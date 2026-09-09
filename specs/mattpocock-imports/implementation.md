@@ -94,3 +94,9 @@ Waves: {T01, T02, T03, T04, T05, T07} parallel (disjoint files; invariants.test.
   `mergeCommit 4489fd8`; `git push origin v0.7.0` → `[new tag]`; local `main` fast-forwarded to `4489fd8`.
   Note for the record: `git checkout main` refused (pre-existing untracked docs), so the fast-forward ran from the
   feature branch — the branch and `main` are the same commit, but the checkout never happened.
+- No GitHub Release object was created: `gh release list` → empty, this repo has only ever shipped tags.
+- `hooks/stop` fired a third time, after the ledger update was already committed. Cause confirmed, not guessed:
+  `git status --short` → only the seven pre-existing untracked `docs/` paths; `ls .praxis/session-started` → no such
+  file. Without the marker the 0.6.1 hook still scores the whole tree, so committing the ledger clears it from the
+  working tree and the hook then sees "source changed, ledger did not". This is exactly the false positive
+  `specs/stop-session-scope/` was written to fix; it will stop firing in the next session, which will write the marker.
