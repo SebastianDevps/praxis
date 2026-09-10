@@ -15,6 +15,7 @@ od:
       - anti-slop
       - a11y-baseline
       - motion-discipline
+      - comment-discipline
 ---
 
 ## Persona

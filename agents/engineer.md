@@ -12,6 +12,7 @@ od:
     requires:
       - minimalism
       - evidence-discipline
+      - comment-discipline
 ---
 
 ## Persona

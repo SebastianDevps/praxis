@@ -75,6 +75,7 @@ the craft arrives as context, nothing gates the agent's actions. See `crafts/` f
 | `a11y-baseline` | Semantic HTML, keyboard nav, ARIA roles, contrast ≥ 4.5:1 where applicable. |
 | `motion-discipline` | Motion serves meaning. Respect `prefers-reduced-motion`. No decorative animation. |
 | `orchestration` | Delegate substantial work, fan out disjoint tasks, keep orchestrator context thin, render Run Cards. |
+| `comment-discipline` | Comments carry the why, the contract, the non-obvious. Four patterns denied on added lines by `pre-tool-use`; language convention outranks sparseness. |
 
 ---
 

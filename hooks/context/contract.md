@@ -93,7 +93,8 @@ must never read as clean. A GAP never sets the failure flag: it reports, it does
 work that passed yesterday.
 
 **Always-on crafts**, each honored on the work it governs whether or not the user names them:
-anti-slop · a11y-baseline · motion-discipline · minimalism · orchestration · evidence-discipline.
+anti-slop · a11y-baseline · motion-discipline · minimalism · orchestration · evidence-discipline ·
+comment-discipline.
 
 **The ladder, before writing code.** Stop at the first rung that holds: already in this
 codebase? → stdlib? → native platform feature? → installed dependency? → one line? → the

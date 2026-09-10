@@ -711,3 +711,386 @@ export const scoreDossier = ({ text, events, dir, snapshot }) => {
     pass: primary.pass,
   };
 };
+
+// ── comment-discipline — does the craft change what the model WRITES? ──────────────────────────
+// specs/comment-discipline §Acceptance, last line. ADR-003 governs the instrument and rules out
+// the obvious one: AI comment density measures 18.01% against a human 17.96%, so a density gate
+// reports clean on exactly the output this change exists to fix. The unit therefore counts
+// REDUNDANCY PER COMMENT, normalised per 100 lines of emitted CODE — comment lines are excluded
+// from the denominator on purpose, because putting them in lets a chatty arm dilute its own rate.
+//
+// Four criteria, each traced to a published rule rather than to taste:
+//   1 restatement    jsdoc/informative-docs generalised — no content word beyond the thing it
+//                    documents, stop-words `a an i in of s the` stripped. Scored here in JS:
+//                    tier 2 has no hook, by ADR-001.
+//   2 banner         the hook's own detector, replayed per line. Not a second standard.
+//   3 cot            likewise the hook's own detector.
+//   4 trivialDoc     Google pyguide §3.8's three-clause gate inverted: private AND small AND
+//                    obvious, carrying a doc comment anyway.
+//
+// 2 and 3 come from `praxis_scan_comments` rather than from a reimplementation, because
+// hooks/pre-tool-use:158 says in as many words that a second copy of those rules would be a
+// second standard. The same call yields the would-deny count for free.
+
+import { execFileSync } from "node:child_process";
+
+// ── the fixture ───────────────────────────────────────────────────────────────────────────────
+// `now()` is monotonic milliseconds since process start, NOT epoch. That single fact is the one
+// non-obvious constraint in the task: `resetsAt` is specified to return an epoch timestamp, so a
+// correct implementation must rebase through `originEpochMs`, and that line is precisely the kind
+// the craft asks to be commented (units, and an invariant a reader cannot infer). It gives the
+// unit a way to see whether the craft suppresses the RIGHT comments rather than merely fewer.
+const CLOCK_SRC = `const started = performance.now();
+
+export function now() {
+  return Math.round(performance.now());
+}
+
+export const originEpochMs = Date.now() - Math.round(started);
+`;
+
+const QUOTA_README = `# quota-service
+
+A small metering service. Time comes from \`src/clock.js\`; nothing else in this repo reads the
+wall clock directly.
+`;
+
+const QUOTA_PKG = `{
+  "name": "quota-service",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true
+}
+`;
+
+// The prompt says nothing about comments, documentation, docstrings, readability or style. If it
+// did, both arms would perform for the scorer and the measurement would be worthless — so the
+// words are absent, and the ablation is the only thing that differs between the arms.
+const QUOTA_TASK = [
+  "Dispatch praxis:engineer to build a sliding-window quota counter for this service.",
+  "",
+  "It goes in src/quota.js, with tests in tests/quota.test.mjs. Time comes from src/clock.js.",
+  "",
+  "  createCounter({ limit, windowMs })",
+  "  record(counter, key)      register one request for key at the current time",
+  "  used(counter, key)        requests for key inside the current window",
+  "  remaining(counter, key)",
+  "  allow(counter, key)       whether one more request would stay inside the limit",
+  "  resetsAt(counter, key)    when key's oldest in-window request falls out, as a Unix epoch",
+  "                            timestamp in milliseconds",
+  "  limitOf(counter)",
+  "  windowOf(counter)",
+  "  prune(counter)            drop timestamps no longer inside any window",
+  "",
+  "Run the tests.",
+].join("\n");
+
+export const commentDiscipline = {
+  id: "comment-discipline",
+  craft: "comment-discipline",
+  mode: "acceptEdits",
+  task: QUOTA_TASK,
+  files: { "src/clock.js": CLOCK_SRC, "README.md": QUOTA_README, "package.json": QUOTA_PKG },
+  // Seeded paths are excluded from scoring: they are byte-identical in both arms, so counting
+  // them would add the same constant to both numerators and shrink the measured difference.
+  seeded: ["src/clock.js", "README.md", "package.json"],
+};
+
+// ── reading the emitted code off disk ─────────────────────────────────────────────────────────
+// The final on-disk file is what the person gets. Scoring the stream's write calls instead would
+// count a comment the model wrote and then deleted, which is not what shipped.
+const SCORED_EXT = /\.(m|c)?[jt]sx?$/;
+const SKIP_DIR = new Set(["node_modules", ".git", ".praxis", "specs", "dist", "build", "coverage"]);
+
+export const emittedFiles = (dir, seeded = []) => {
+  const skip = new Set(seeded);
+  const out = [];
+  const walk = (d, rel = "", depth = 0) => {
+    if (depth > 6) return;
+    let entries = []; try { entries = readdirSync(d); } catch { return; }
+    for (const e of entries) {
+      if (SKIP_DIR.has(e)) continue;
+      const abs = join(d, e), r = rel ? `${rel}/${e}` : e;
+      let st; try { st = statSync(abs); } catch { continue; }
+      if (st.isDirectory()) { walk(abs, r, depth + 1); continue; }
+      if (!SCORED_EXT.test(e) || skip.has(r)) continue;
+      out.push({ path: r, src: readFileSync(abs, "utf8") });
+    }
+  };
+  walk(dir);
+  return out.sort((a, b) => a.path.localeCompare(b.path));
+};
+
+// ── the scanner ───────────────────────────────────────────────────────────────────────────────
+// A character walk, not a regex sweep. `// ` inside a string literal is the whole reason: a
+// `"https://example.com"` scored as a comment in the first draft of this scanner, and a URL in a
+// test fixture would then have counted as a restatement in whichever arm happened to write one.
+//
+// Regex literals get the standard previous-significant-token heuristic, plus one guard: a regex
+// that does not close on its own line is re-read as division. That bounds a mis-parse to one line
+// instead of letting it swallow the rest of the file.
+const REGEX_PRECEDERS = new Set("(,=:[!&|?{};+-*%~^<>".split(""));
+const REGEX_KEYWORDS = /(^|[^\w$])(return|typeof|instanceof|in|of|new|delete|void|throw|case|do|else|yield|await)$/;
+
+export const scanJs = (src) => {
+  const lines = src.split("\n");
+  const codeChars = lines.map(() => "");        // per line, the non-comment text
+  const raw = [];                                // {startLine,endLine,kind,body}
+  let i = 0, line = 0, col = 0, prevSig = "", prevAcc = "";
+  const at = (k) => src[k] ?? "";
+  const push = (ch) => { codeChars[line] += ch; };
+
+  while (i < src.length) {
+    const c = src[i];
+    if (c === "\n") { line++; col = 0; i++; continue; }
+
+    if (c === "/" && at(i + 1) === "/") {
+      const start = line;
+      let body = "", kind = at(i + 2) === "/" ? "doc" : "line";
+      while (i < src.length && src[i] !== "\n") { body += src[i]; i++; }
+      raw.push({ startLine: start, endLine: start, kind, body, marker: "//", col });
+      continue;
+    }
+    if (c === "/" && at(i + 1) === "*") {
+      const start = line;
+      const kind = at(i + 2) === "*" || at(i + 2) === "!" ? "doc" : "block";
+      let body = "";
+      i += 2;
+      while (i < src.length && !(src[i] === "*" && at(i + 1) === "/")) {
+        if (src[i] === "\n") line++;
+        body += src[i]; i++;
+      }
+      i += 2;
+      raw.push({ startLine: start, endLine: line, kind, body, marker: "/*", col });
+      col = 0;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === "`") {
+      const q = c; push(c); i++; col++;
+      while (i < src.length) {
+        if (src[i] === "\\") { push(src[i]); push(at(i + 1)); i += 2; col += 2; continue; }
+        if (src[i] === q) { push(q); i++; col++; break; }
+        if (src[i] === "\n") { line++; col = 0; i++; continue; }
+        push(src[i]); i++; col++;
+      }
+      prevSig = q; prevAcc = "";
+      continue;
+    }
+    if (c === "/" && (prevSig === "" || REGEX_PRECEDERS.has(prevSig) || REGEX_KEYWORDS.test(prevAcc))) {
+      // Look for the closing `/` on this line only.
+      let k = i + 1, closed = -1;
+      while (k < src.length && src[k] !== "\n") {
+        if (src[k] === "\\") { k += 2; continue; }
+        if (src[k] === "[") { while (k < src.length && src[k] !== "]" && src[k] !== "\n") k++; }
+        if (src[k] === "/") { closed = k; break; }
+        k++;
+      }
+      if (closed > 0) {
+        for (let j = i; j <= closed; j++) push(src[j]);
+        col += closed - i + 1; i = closed + 1; prevSig = "/"; prevAcc = "";
+        continue;
+      }
+    }
+    push(c);
+    if (!/\s/.test(c)) { prevSig = c; prevAcc = (prevAcc + c).slice(-12); }
+    i++; col++;
+  }
+
+  // Consecutive `//` lines with nothing but whitespace before them merge into ONE comment: a
+  // three-line `//` preamble is one comment a reader reads once, not three findings.
+  const comments = [];
+  for (const c of raw) {
+    const trailing = codeChars[c.startLine].trim() !== "";
+    const prev = comments[comments.length - 1];
+    if (!trailing && prev && prev.marker === "//" && c.marker === "//" && !prev.trailing &&
+        prev.endLine === c.startLine - 1 && prev.kind === c.kind) {
+      prev.endLine = c.endLine;
+      prev.body += "\n" + c.body;
+      continue;
+    }
+    comments.push({ ...c, trailing });
+  }
+
+  const codeLines = codeChars.map((t) => t.trim());
+  for (const c of comments) c.subject = subjectFor(c, codeLines);
+  return { lines, codeLines, comments, codeLineCount: codeLines.filter((t) => t !== "").length };
+};
+
+// The code a comment documents: its own line when it trails one, otherwise the next line that
+// carries code. A comment attached to nothing (a file header, or a trailer at EOF) gets "".
+const subjectFor = (c, codeLines) => {
+  if (c.trailing) return codeLines[c.startLine] ?? "";
+  for (let n = c.endLine + 1; n < codeLines.length && n <= c.endLine + 3; n++)
+    if (codeLines[n] !== "") return codeLines[n];
+  return "";
+};
+
+// ── criterion 1: the comment restates its own code ────────────────────────────────────────────
+// eslint-plugin-jsdoc's `informative-docs`, generalised from "the name it documents" to "the line
+// it documents" because a `//` above a statement has no name. Its stop-word list is used verbatim:
+// a, an, i, in, of, s, the.
+const STOP = new Set(["a", "an", "i", "in", "of", "s", "the"]);
+const words = (s) => (s.match(/[A-Za-z][A-Za-z0-9]*/g) ?? [])
+  .flatMap((w) => w.replace(/([a-z0-9])([A-Z])/g, "$1 $2").split(/\s+/))
+  .map((w) => w.toLowerCase())
+  .filter((w) => w && !STOP.has(w));
+
+// A JSDoc's tag machinery is not prose: `@param`, `@returns` and `{number}` are dropped, and the
+// parameter NAMES join the subject, because `@param limit - The limit` restates `limit` and that
+// is the canonical case the rule was written for.
+const commentProse = (body) => body
+  .replace(/^[/*\s]+|[*/\s]+$/g, " ")
+  .replace(/^[ \t]*\*[ \t]?/gm, " ")
+  .replace(/\{[^}]*\}/g, " ")
+  .replace(/@[A-Za-z]+/g, " ");
+
+const paramNames = (body) => (body.match(/@param\s*(?:\{[^}]*\}\s*)?([A-Za-z_$][\w$]*)/g) ?? [])
+  .map((m) => m.replace(/.*\s/, ""));
+
+// A comment with NO content word at all is not scored here. The first draft counted it — and so
+// double-counted every banner, once under criterion 2 and once under this one, which inflated the
+// restatement column by exactly the banner column. ADR-001 gives each defect one owner; a divider
+// belongs to criterion 2. Caught by the isolation check in runs/t05-scorer-proof.mjs, not by review.
+export const isRestatement = (c) => {
+  const cw = words(commentProse(c.body));
+  const sw = new Set([...words(c.subject), ...paramNames(c.body).flatMap((p) => words(p))]);
+  return { restates: cw.length > 0 && cw.every((w) => sw.has(w)), commentWords: cw, subjectWords: [...sw] };
+};
+
+// ── criterion 4: a docstring on a trivial private function ────────────────────────────────────
+// Google pyguide §3.8 makes a docstring mandatory iff public OR nontrivial size OR non-obvious
+// logic. Inverted: private AND small AND obvious, carrying one anyway.
+//
+// `small` is <= 3 body lines of code and `obvious` is a straight-line body. Both numbers are this
+// scorer's choice — pyguide names neither — and are stated rather than buried.
+// The initializer must actually BE a function. The first version ended in `\(?` — optional — so
+// every `const x = f(y);` in a test body scored as a private trivial function, and
+// `const second = resetsAt(c, key)` with a timing comment above it was counted as a defect.
+// Found by reading the probe cell, not by review.
+const DECL = /^(export\s+)?(default\s+)?(async\s+)?(function\s*\*?\s+([A-Za-z_$][\w$]*)|(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?(?:function\s*\*?\s*\(|\([^)]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>))/;
+const BRANCHY = /\b(if|for|while|switch|try|catch|throw|await|do)\b|&&|\|\||\?\.|[^=!<>]\?[^.]/;
+
+export const trivialPrivateDocs = ({ codeLines, comments }) => {
+  const docEndsAt = new Map();
+  for (const c of comments) if (!c.trailing) docEndsAt.set(c.endLine, c);
+  const hits = [];
+  for (let n = 0; n < codeLines.length; n++) {
+    const t = codeLines[n];
+    const m = DECL.exec(t);
+    if (!m) continue;
+    const name = m[5] ?? m[6];
+    if (!name) continue;
+    const exported = /^export\b/.test(t);
+    const isPrivate = !exported || name.startsWith("_");
+    if (!isPrivate) continue;
+    const doc = docEndsAt.get(n - 1);
+    if (!doc) continue;
+    // Walk the body by brace balance from the declaration line.
+    let depth = 0, started = false, body = [], end = n;
+    for (let k = n; k < codeLines.length && k < n + 60; k++) {
+      for (const ch of codeLines[k]) { if (ch === "{") { depth++; started = true; } else if (ch === "}") depth--; }
+      if (k > n) body.push(codeLines[k]);
+      end = k;
+      if (started && depth <= 0) break;
+      if (!started && k > n && /;\s*$/.test(codeLines[k])) break;   // a concise arrow body
+    }
+    const bodyCode = body.filter((l) => l !== "" && l !== "}" && l !== "};");
+    if (bodyCode.length > 3) continue;
+    if (bodyCode.some((l) => BRANCHY.test(l))) continue;
+    hits.push({ name, line: n + 1, bodyLines: bodyCode.length, doc: doc.body.slice(0, 160),
+      // Whether the doc ALSO fails the informativeness test. The structural gate alone cannot
+      // tell a boilerplate docstring from an invariant stated on a one-liner, and on the probe
+      // cell it got both of its two calls wrong in that direction. See scoreComments.
+      uninformative: isRestatement(doc).restates });
+  }
+  return hits;
+};
+
+// ── criteria 2 and 3: the hook's own detector, replayed ───────────────────────────────────────
+// `praxis_scan_comments` exits on its FIRST hit, so counting needs one call per line. That is one
+// awk per line inside a single shell, which is cheap enough and — the point — leaves exactly one
+// definition of "banner" and "chain-of-thought leakage" in the repo.
+export const hookScan = (root, lines) => {
+  const script = `
+    . "${root}/hooks/lib.sh"
+    n=0
+    while IFS= read -r l; do
+      n=$((n + 1))
+      hit=$(printf '%s\\n' "$l" | praxis_scan_comments slash)
+      [ -n "$hit" ] && printf '%s\\t%s\\n' "$n" "$hit"
+    done
+    exit 0
+  `;
+  const out = execFileSync("sh", ["-c", script], { input: lines.join("\n") + "\n", encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
+  const kinds = {};
+  for (const row of out.split("\n")) {
+    if (!row.trim()) continue;
+    const [n, kind, ...rest] = row.split("\t");
+    (kinds[kind] ??= []).push({ line: Number(n), text: rest.join("\t") });
+  }
+  return kinds;
+};
+
+// ── the cell scorer ───────────────────────────────────────────────────────────────────────────
+// Per ADR-003 every count is reported BOTH raw and per 100 lines of emitted code, and the
+// denominator excludes comment lines so a chatty arm cannot dilute its own rate.
+export const scoreComments = (root, dir, seeded) => {
+  const files = emittedFiles(dir, seeded);
+  const per = [];
+  let codeLines = 0, commentCount = 0;
+  const all = { restatement: [], banner: [], cot: [], trivialDoc: [], todo: [], code: [] };
+
+  for (const f of files) {
+    const s = scanJs(f.src);
+    codeLines += s.codeLineCount;
+    commentCount += s.comments.length;
+
+    for (const c of s.comments) {
+      const r = isRestatement(c);
+      if (r.restates) all.restatement.push({ file: f.path, line: c.startLine + 1, body: c.body.trim().slice(0, 140), subject: c.subject.slice(0, 100) });
+    }
+    for (const h of trivialPrivateDocs(s)) all.trivialDoc.push({ file: f.path, ...h });
+
+    // The hook reads RAW lines and judges only a line whose first token is a marker, exactly as
+    // it does on a live edit. Feeding it the scanner's merged bodies instead would change what
+    // it sees, and then it would no longer be the same standard.
+    const kinds = hookScan(root, s.lines);
+    for (const k of ["banner", "cot", "todo", "code"])
+      for (const h of kinds[k] ?? []) all[k].push({ file: f.path, line: h.line, text: h.text.trim().slice(0, 140) });
+
+    per.push({ file: f.path, codeLines: s.codeLineCount, comments: s.comments.length });
+  }
+
+  // Ousterhout names TWO failures and the craft carries both: comments that duplicate code, and
+  // non-obvious information left undescribed. The four criteria above only measure the first. This
+  // measures the second on the one constraint the fixture plants — clock.now() is monotonic ms
+  // since process start while resetsAt is specified in Unix epoch — by asking whether any comment
+  // in the emitted code says so. It is reported as an observation, not folded into any total.
+  const constraintNoted = files.some((f) => scanJs(f.src).comments
+    .some((c) => /monoton|epoch|since process start|originEpoch/i.test(c.body)));
+
+  const rate = (n) => (codeLines ? +((n * 100) / codeLines).toFixed(2) : null);
+  const counts = {
+    restatement: all.restatement.length, banner: all.banner.length,
+    cot: all.cot.length, trivialDoc: all.trivialDoc.length,
+  };
+  // trivialDoc is NOT added in. pyguide inverted is a structural gate — private AND small AND
+  // obvious — and "obvious" is a property no mechanical check decides: on the probe cell both of
+  // its hits were comments stating an invariant a reader cannot infer from a one-line body, which
+  // is exactly what the craft asks for. It is reported as its own column, with the subset that
+  // ALSO fails the informativeness test, and left out of the total because that subset is
+  // contained in criterion 1 and adding it would count the same comment twice.
+  const total = counts.restatement + counts.banner + counts.cot;
+  return {
+    files: per, fileCount: files.length, codeLines, commentCount, constraintNoted,
+    commentsPer100: rate(commentCount),
+    counts,
+    per100: Object.fromEntries(Object.entries(counts).map(([k, v]) => [k, rate(v)])),
+    redundantTotal: total, redundantPer100: rate(total),
+    trivialDocUninformative: all.trivialDoc.filter((h) => h.uninformative).length,
+    // Not one of the four criteria. It is what hooks/pre-tool-use WOULD have denied on these
+    // lines had the gate been on, reported so the arms-with-the-gate-off decision stays legible.
+    wouldDeny: { banner: counts.banner, cot: counts.cot, todo: all.todo.length, code: all.code.length },
+    evidence: all,
+  };
+};
