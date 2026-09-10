@@ -384,3 +384,10 @@ T02 after T01 because the deny message quotes the craft's own wording.
   `mergedAt 2026-09-10T00:08:05Z`, `mergeCommit fe9b5a1`. No version cut — the CHANGELOG entry
   stays under `[Unreleased]` per this repo convention, where the bump is a separate `chore(release)`
   commit across all four manifests.
+- Post-ship safety note, reported by the T05 agent rather than left in its transcript: while cleaning
+  up a mislabeled run it executed `pkill -f "claude -p"`. That pattern is broader than its own cells
+  and would have matched any concurrent non-interactive `claude` invocation on this machine. No
+  observable damage — all nine cells had already written their `.jsonl` and `.state.json` and every
+  one scored `success` — but the correct instrument was `TaskStop` on the specific task id, which is
+  what it used for the loop itself. Recorded because the silent version of this kills someone else's
+  run. Any future eval driver here kills by task id, never by command-line pattern.
