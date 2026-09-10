@@ -1,6 +1,6 @@
 ---
 title: Comment Discipline
-stage: implemented  # new → designed → planned → implemented → shipped
+stage: shipped  # new → designed → planned → implemented → shipped
 owner: Sebastian
 ---
 
@@ -379,3 +379,8 @@ T02 after T01 because the deny message quotes the craft's own wording.
 - ADR-007 accepted by the owner: the craft ships unmeasured, the hook ships proven, and the README
   carries no number because there is none. The 4,685-byte-per-dispatch cost stays named in the ADR
   rather than fading after the ship.
+- Shipped. `gh pr create` → PR #15; CI run 34419924774 → `conclusion: success`;
+  `gh pr merge 15 --merge` → verified with `gh pr view 15` → `state MERGED`,
+  `mergedAt 2026-09-10T00:08:05Z`, `mergeCommit fe9b5a1`. No version cut — the CHANGELOG entry
+  stays under `[Unreleased]` per this repo convention, where the bump is a separate `chore(release)`
+  commit across all four manifests.
