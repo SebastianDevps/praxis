@@ -463,7 +463,48 @@ export const redFirst = {
 // express. The driver in `runs/t09-driver.mjs` owns the arms and calls the scorers below; the
 // fixture, the task and the scoring live here with the other units.
 
+const INVESTIGATION_README = `# checkout-api
+
+TypeScript service on Node 22. Fastify HTTP layer, Postgres via a thin query module.
+Every request body and every outbound webhook payload is validated with \`zod\` at runtime —
+roughly 60 schemas, the hot ones on the checkout path.
+
+Runtime validation shows up in our p99. We are looking at build-time schema compilation.
+
+The candidate's source is cloned read-only at ./target for inspection.
+`;
+
+// RESULTS.md §"Negatives and setup facts, named" reports that Bash was denied throughout every
+// arm despite this list: it does not cover a compound command opening with a variable assignment
+// or a `cd target && …`. The list is reproduced as the run had it, not as it should have been —
+// widening it would change the condition the published numbers were measured under.
+const INVESTIGATION_ALLOW = [
+  "Bash(git:*)", "Bash(curl:*)", "Bash(jq:*)", "Bash(node:*)", "Bash(npm:*)", "Bash(npx:*)",
+  "Bash(rg:*)", "Bash(fd:*)", "Bash(ls:*)", "Bash(cat:*)", "Bash(bat:*)", "Bash(head:*)",
+  "Bash(tail:*)", "Bash(wc:*)", "Bash(find:*)", "Bash(grep:*)", "Bash(sed:*)", "Bash(awk:*)",
+  "Bash(sort:*)", "Bash(uniq:*)", "Bash(du:*)", "Bash(tree:*)", "Bash(eza:*)", "Bash(echo:*)",
+  "WebSearch",
+  ...["packages.ecosyste.ms", "repos.ecosyste.ms", "api.deps.dev", "api.scorecard.dev",
+    "api.securityscorecards.dev", "api.github.com", "registry.npmjs.org", "github.com",
+    "raw.githubusercontent.com", "www.npmjs.com", "best.openssf.org"].map((d) => `WebFetch(domain:${d})`),
+];
+
 export const INVESTIGATION_SUITE = {
+  id: "investigation-suite",
+  mode: "acceptEdits",
+  // The literal ask of the recorded run. `promptFor` prefixes `/praxis:investigate ` in the two
+  // command arms and passes this through bare in the third, which is why the string carries no
+  // command of its own — every `runs/investigation-*.state.json` prompt is one of those two forms.
+  ask: "We are considering `zod-compiler` (https://github.com/gajus/zod-compiler, npm `zod-compiler`) as a build-time dependency for our checkout-api service, to replace runtime zod validation on the hot path. Its source is cloned at ./target. Should we adopt it?",
+  target: {
+    repo: "https://github.com/gajus/zod-compiler",
+    pkg: "zod-compiler",
+    commit: "32d255b2c01a28d15fdc04cc3a550a86a24ad626",
+  },
+  files: {
+    "README.md": INVESTIGATION_README,
+    ".claude/settings.local.json": JSON.stringify({ permissions: { allow: INVESTIGATION_ALLOW } }, null, 2) + "\n",
+  },
   skills: ["project-teardown", "dependency-adoption", "architecture-evaluation", "buy-vs-build"],
   extra: ["agents/analyst.md", "pipelines/investigation.md", "commands/investigate.md"],
 };
@@ -1093,4 +1134,401 @@ export const scoreComments = (root, dir, seeded) => {
     wouldDeny: { banner: counts.banner, cot: counts.cot, todo: all.todo.length, code: all.code.length },
     evidence: all,
   };
+};
+
+// ── comment-discipline, re-measured under iteration ────────────────────────────────────────────
+// ADR-007 of specs/comment-discipline/ recorded a GAP: nine cells, three arms, 2,102 lines, zero
+// defects everywhere. The cause was diagnosed rather than guessed — `node --test` was DENIED 22–36
+// times per cell in all nine, so no arm ever iterated against a failing test, and iteration is the
+// channel claude-code#65961 reports the defect accumulating in ("interactive sessions with repeated
+// edits to the same file").
+//
+// This unit changes the CONDITION and nothing else. The four criteria, the scanner and
+// `scoreComments` above are reused untouched; `runs/t05-scorer-proof.mjs` re-proves them in both
+// directions before a cell is bought.
+//
+// WHAT IS DIFFERENT from `commentDiscipline`, and why each part is here:
+//   - Both suites are SEEDED and already written, and neither module exists. The task is red before
+//     the first keystroke.
+//   - The clock is deterministic — `now()` moves only when a caller advances it — so the boundary
+//     and epoch assertions are exact rather than tolerant, and a cell cannot go green by luck.
+//   - The driver permits `Bash(node:*)`, which is the whole point. `evals/floor/run.mjs:31` set the
+//     precedent: Bash is the one tool that needs an allowlist under `-p`.
+//
+// THE PERFORMANCE TEST IS THE LOAD-BEARING PART, and it was added after a first probe cell
+// ($3.39, discarded) showed the builder writing a functionally correct module on its FIRST run and
+// never iterating against a failure of its own. A suite the model can satisfy by reading it does
+// not sample the condition ADR-007 named. So the suite now carries a budget that a natural first
+// implementation misses: at 500,000 records with interleaved reads, measured on this machine,
+//
+//     pointer that only moves forward     12 ms      (correct)
+//     prefix walk from index 0         4,187 ms      (what the probe cell actually wrote)
+//     filter the whole bucket         28,317 ms      (the naive shape)
+//
+// The budget is 1,500 ms. A correct implementation clears it by two orders of magnitude, so the
+// test is decisive rather than flaky, and the probe cell's own emitted code fails it — which is
+// how the red is known to be reachable rather than hoped for. Fixing it means restructuring code
+// that is already green, which is exactly "repeated edits to the same file".
+//
+// The planted constraint from the first run survives: `now()` is monotonic milliseconds since
+// process start, `resetsAt` is specified in Unix epoch milliseconds, and a correct implementation
+// must rebase through `originEpochMs`. That is the one comment the craft asks FOR, so the unit can
+// still see whether the craft suppresses the right comments rather than merely fewer.
+//
+// Proven in four directions before any cell was bought: no modules → both imports unresolvable;
+// a first-match-wins policy → 5 of 11 red; the probe cell's own quota module → red on the budget
+// and green on the other 31; correct modules → 32 of 32 green.
+const ITER_CLOCK_SRC = `let elapsed = Math.round(performance.now());
+
+export function now() {
+  return elapsed;
+}
+
+export function advance(ms) {
+  elapsed += ms;
+}
+
+export const originEpochMs = Date.now() - elapsed;
+`;
+
+const ITER_README = `# quota-service
+
+A small metering service. Time comes from \`src/clock.js\`; nothing else in this repo reads the wall
+clock directly. \`now()\` counts milliseconds since this process started and only moves when a caller
+advances it, which is how the suite controls time.
+
+The service meters a large number of keys and is on the request path, so \`used\` and \`allow\` are
+called far more often than anything else.
+`;
+
+const ITER_PKG = `{
+  "name": "quota-service",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true
+}
+`;
+
+const ITER_QUOTA_TESTS = `import { test } from "node:test";
+import assert from "node:assert/strict";
+import { now, advance, originEpochMs } from "../src/clock.js";
+import {
+  createCounter, record, used, remaining, allow,
+  resetsAt, limitOf, windowOf, prune, keys,
+} from "../src/quota.js";
+
+const WINDOW = 60_000;
+const fresh = (limit = 3, windowMs = WINDOW) => createCounter({ limit, windowMs });
+
+test("createCounter reports back the limit and the window", () => {
+  const c = fresh(5, 1000);
+  assert.equal(limitOf(c), 5);
+  assert.equal(windowOf(c), 1000);
+});
+
+test("an unknown key has used 0, full remaining, and is allowed", () => {
+  const c = fresh();
+  assert.equal(used(c, "nobody"), 0);
+  assert.equal(remaining(c, "nobody"), 3);
+  assert.equal(allow(c, "nobody"), true);
+});
+
+test("record moves used and remaining together", () => {
+  const c = fresh();
+  record(c, "a");
+  assert.equal(used(c, "a"), 1);
+  assert.equal(remaining(c, "a"), 2);
+  record(c, "a");
+  assert.equal(used(c, "a"), 2);
+  assert.equal(remaining(c, "a"), 1);
+});
+
+test("keys are independent of one another", () => {
+  const c = fresh();
+  record(c, "a");
+  record(c, "a");
+  record(c, "b");
+  assert.equal(used(c, "a"), 2);
+  assert.equal(used(c, "b"), 1);
+});
+
+test("allow is a predicate and does not consume anything", () => {
+  const c = fresh();
+  record(c, "a");
+  for (let i = 0; i < 50; i++) allow(c, "a");
+  assert.equal(used(c, "a"), 1);
+});
+
+test("allow is false once the key sits at the limit and true one below it", () => {
+  const c = fresh(2);
+  record(c, "a");
+  assert.equal(allow(c, "a"), true);
+  record(c, "a");
+  assert.equal(allow(c, "a"), false);
+});
+
+test("record keeps counting past the limit; remaining stops at zero", () => {
+  const c = fresh(2);
+  record(c, "a");
+  record(c, "a");
+  record(c, "a");
+  record(c, "a");
+  assert.equal(used(c, "a"), 4);
+  assert.equal(remaining(c, "a"), 0);
+  assert.equal(allow(c, "a"), false);
+});
+
+test("a request one millisecond short of the window is still inside it", () => {
+  const c = fresh();
+  record(c, "a");
+  advance(WINDOW - 1);
+  assert.equal(used(c, "a"), 1);
+});
+
+test("a request exactly one window old has already left the window", () => {
+  const c = fresh();
+  record(c, "a");
+  advance(WINDOW);
+  assert.equal(used(c, "a"), 0);
+  assert.equal(remaining(c, "a"), 3);
+});
+
+test("the window slides: capacity returns as the oldest requests age out", () => {
+  const c = fresh(2);
+  record(c, "a");
+  advance(WINDOW / 2);
+  record(c, "a");
+  assert.equal(allow(c, "a"), false);
+  advance(WINDOW / 2);
+  assert.equal(used(c, "a"), 1);
+  assert.equal(allow(c, "a"), true);
+});
+
+test("many requests at the same instant all count", () => {
+  const c = fresh(10);
+  const t = now();
+  for (let i = 0; i < 6; i++) record(c, "a");
+  assert.equal(now(), t);
+  assert.equal(used(c, "a"), 6);
+});
+
+test("resetsAt is a Unix epoch timestamp, not a reading of the process clock", () => {
+  const c = fresh();
+  const at = now();
+  record(c, "a");
+  assert.equal(resetsAt(c, "a"), originEpochMs + at + WINDOW);
+});
+
+test("resetsAt is null for a key that has never been seen", () => {
+  const c = fresh();
+  assert.equal(resetsAt(c, "nobody"), null);
+});
+
+test("resetsAt is null once every request has aged out, never a past timestamp", () => {
+  const c = fresh();
+  record(c, "a");
+  advance(WINDOW);
+  assert.equal(resetsAt(c, "a"), null);
+});
+
+test("resetsAt follows the oldest request still inside the window", () => {
+  const c = fresh();
+  record(c, "a");
+  advance(WINDOW / 2);
+  const second = now();
+  record(c, "a");
+  advance(WINDOW / 2);
+  assert.equal(used(c, "a"), 1);
+  assert.equal(resetsAt(c, "a"), originEpochMs + second + WINDOW);
+});
+
+test("prune reports how many timestamps it dropped", () => {
+  const c = fresh(10);
+  record(c, "a");
+  record(c, "a");
+  record(c, "b");
+  advance(WINDOW);
+  record(c, "b");
+  assert.equal(prune(c), 3);
+});
+
+test("prune leaves requests that are still inside the window", () => {
+  const c = fresh(10);
+  record(c, "a");
+  advance(WINDOW / 2);
+  record(c, "a");
+  assert.equal(prune(c), 0);
+  assert.equal(used(c, "a"), 2);
+});
+
+test("keys lists what the counter is tracking", () => {
+  const c = fresh();
+  record(c, "a");
+  record(c, "b");
+  assert.deepEqual([...keys(c)].sort(), ["a", "b"]);
+});
+
+test("prune forgets a key entirely once its last request ages out", () => {
+  const c = fresh();
+  record(c, "a");
+  record(c, "b");
+  advance(WINDOW);
+  record(c, "b");
+  prune(c);
+  assert.deepEqual([...keys(c)], ["b"]);
+});
+
+test("two counters over the same keys do not share state", () => {
+  const a = fresh();
+  const b = fresh();
+  record(a, "k");
+  assert.equal(used(a, "k"), 1);
+  assert.equal(used(b, "k"), 0);
+});
+
+test("a hot key stays fast when most of its history has aged out", () => {
+  const c = createCounter({ limit: 1000, windowMs: WINDOW });
+  const RECORDS = 500_000;
+  const startedAt = Date.now();
+  for (let i = 0; i < RECORDS; i++) {
+    record(c, "hot");
+    advance(1);
+    if (i % 8 === 0) used(c, "hot");
+  }
+  const elapsedMs = Date.now() - startedAt;
+  assert.equal(used(c, "hot"), WINDOW - 1);
+  assert.ok(elapsedMs < 1500, RECORDS + " records with interleaved reads took " + elapsedMs + "ms");
+});
+`;
+
+const ITER_POLICY_TESTS = `import { test } from "node:test";
+import assert from "node:assert/strict";
+import { createPolicy, matchRule, counterFor, ruleCount } from "../src/policy.js";
+import { record, used, limitOf, windowOf } from "../src/quota.js";
+
+const RULES = [
+  { pattern: "*", limit: 5, windowMs: 1000 },
+  { pattern: "user:*", limit: 10, windowMs: 2000 },
+  { pattern: "user:admin", limit: 100, windowMs: 3000 },
+  { pattern: "user:ad*", limit: 50, windowMs: 4000 },
+  { pattern: "svc:*", limit: 20, windowMs: 5000 },
+];
+
+test("createPolicy keeps every rule it was given", () => {
+  assert.equal(ruleCount(createPolicy(RULES)), 5);
+});
+
+test("an exact pattern wins over any wildcard that also matches", () => {
+  assert.equal(matchRule(createPolicy(RULES), "user:admin").limit, 100);
+});
+
+test("among wildcards the longest literal prefix wins", () => {
+  assert.equal(matchRule(createPolicy(RULES), "user:adele").limit, 50);
+  assert.equal(matchRule(createPolicy(RULES), "user:bob").limit, 10);
+});
+
+test("the catch-all matches a key nothing else claims", () => {
+  assert.equal(matchRule(createPolicy(RULES), "anything").limit, 5);
+});
+
+test("rules of equal specificity are settled by their order in the list", () => {
+  const p = createPolicy([
+    { pattern: "a:*", limit: 1, windowMs: 100 },
+    { pattern: "b:*", limit: 2, windowMs: 200 },
+    { pattern: "a:*", limit: 3, windowMs: 300 },
+  ]);
+  assert.equal(matchRule(p, "a:x").limit, 1);
+});
+
+test("a policy with no matching rule and no catch-all matches nothing", () => {
+  assert.equal(matchRule(createPolicy([{ pattern: "svc:*", limit: 1, windowMs: 10 }]), "user:bob"), null);
+});
+
+test("a star anywhere but the end is rejected when the policy is built", () => {
+  assert.throws(() => createPolicy([{ pattern: "us*r:bob", limit: 1, windowMs: 10 }]), TypeError);
+  assert.throws(() => createPolicy([{ pattern: "*:bob", limit: 1, windowMs: 10 }]), TypeError);
+});
+
+test("counterFor builds a counter from the matched rule", () => {
+  const c = counterFor(createPolicy(RULES), "svc:mailer");
+  assert.equal(limitOf(c), 20);
+  assert.equal(windowOf(c), 5000);
+});
+
+test("counterFor returns the same counter for the same key, and metering accumulates in it", () => {
+  const p = createPolicy(RULES);
+  const first = counterFor(p, "user:bob");
+  record(first, "user:bob");
+  const second = counterFor(p, "user:bob");
+  assert.equal(second, first);
+  assert.equal(used(second, "user:bob"), 1);
+});
+
+test("two keys under the same rule still meter separately", () => {
+  const p = createPolicy(RULES);
+  const a = counterFor(p, "user:bob");
+  const b = counterFor(p, "user:eve");
+  assert.notEqual(a, b);
+  assert.equal(limitOf(a), limitOf(b));
+});
+
+test("counterFor throws for a key no rule claims", () => {
+  const p = createPolicy([{ pattern: "svc:*", limit: 1, windowMs: 10 }]);
+  assert.throws(() => counterFor(p, "user:bob"), Error);
+});
+`;
+
+// The prompt says nothing about comments, documentation, docstrings, readability or style — the
+// same rule the first run stated and for the same reason: name the scorer's subject and both arms
+// perform for it. What it does say is "keep running it until it is green", because the iteration
+// loop is the condition under measurement and a cell that writes once and stops has not entered it.
+const ITER_TASK = [
+  "Dispatch praxis:engineer to build the two modules this service is missing.",
+  "",
+  "`src/quota.js` and `src/policy.js` do not exist yet. `tests/quota.test.mjs` and",
+  "`tests/policy.test.mjs` are already written and are the specification; they fail today.",
+  "Make the whole suite pass with `node --test tests/*.test.mjs`, and keep running it until it",
+  "is green.",
+  "",
+  "`src/quota.js` — a per-key sliding-window counter:",
+  "",
+  "  createCounter({ limit, windowMs })",
+  "  record(counter, key)      register one request for key at the current time",
+  "  used(counter, key)        requests for key inside the current window",
+  "  remaining(counter, key)",
+  "  allow(counter, key)       whether one more request would stay inside the limit",
+  "  resetsAt(counter, key)    when key's oldest in-window request falls out, as a Unix epoch",
+  "                            timestamp in milliseconds",
+  "  limitOf(counter)",
+  "  windowOf(counter)",
+  "  prune(counter)            drop timestamps no longer inside any window; returns how many went",
+  "  keys(counter)             the keys the counter is currently tracking",
+  "",
+  "`src/policy.js` — which limit governs which key:",
+  "",
+  "  createPolicy(rules)       a rule is { pattern, limit, windowMs }; a pattern is a literal, or",
+  "                            a literal followed by a trailing *",
+  "  ruleCount(policy)",
+  "  matchRule(policy, key)    the rule that governs key, or null",
+  "  counterFor(policy, key)   the counter that meters key under this policy",
+  "",
+  "Time comes from `src/clock.js`. Leave the two test files and `src/clock.js` as they are.",
+].join("\n");
+
+export const commentDisciplineIter = {
+  id: "comment-discipline-iter",
+  craft: "comment-discipline",
+  mode: "acceptEdits",
+  task: ITER_TASK,
+  files: {
+    "src/clock.js": ITER_CLOCK_SRC,
+    "tests/quota.test.mjs": ITER_QUOTA_TESTS,
+    "tests/policy.test.mjs": ITER_POLICY_TESTS,
+    "README.md": ITER_README,
+    "package.json": ITER_PKG,
+  },
+  // Byte-identical in both arms, so scoring them would add the same constant to both numerators
+  // and shrink the measured difference. The seeded suites are also the only files the model is told
+  // not to touch, which keeps the scored corpus entirely its own work.
+  seeded: ["src/clock.js", "tests/quota.test.mjs", "tests/policy.test.mjs", "README.md", "package.json"],
 };

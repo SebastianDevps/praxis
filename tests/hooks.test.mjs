@@ -64,16 +64,16 @@ test("subagent-start strips orchestrator-only sections", () => {
 // two back into one deepEqual; the equality is the trap, not the tidiness.
 test("subagent-start resolves the dispatched agent's declared crafts", () => {
   const design = craftsIn(context(claude("subagent-start", { input: '{"agent_type":"praxis:design"}' })));
-  for (const craft of ["anti-slop", "a11y-baseline", "motion-discipline", "comment-discipline"]) {
+  for (const craft of ["anti-slop", "a11y-baseline", "motion-discipline"]) {
     assert.ok(design.includes(craft), `design lost the ${craft} craft — got ${design}`);
   }
-  assert.equal(design.length, 4, `design's craft count moved — confirm the number: ${design}`);
+  assert.equal(design.length, 3, `design's craft count moved — confirm the number: ${design}`);
 
   const engineer = craftsIn(context(claude("subagent-start", { input: '{"agent_type":"engineer"}' })));
-  for (const craft of ["minimalism", "evidence-discipline", "comment-discipline"]) {
+  for (const craft of ["minimalism", "evidence-discipline"]) {
     assert.ok(engineer.includes(craft), `engineer lost the ${craft} craft — got ${engineer}`);
   }
-  assert.equal(engineer.length, 3, `engineer's craft count moved — confirm the number: ${engineer}`);
+  assert.equal(engineer.length, 2, `engineer's craft count moved — confirm the number: ${engineer}`);
 });
 
 test("an unknown or stock agent still receives the contract", () => {

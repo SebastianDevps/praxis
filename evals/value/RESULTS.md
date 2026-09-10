@@ -631,3 +631,197 @@ non-interactive `-p` build in which the test suite never once ran and no arm eve
 a failure. One task, one language, one model, one channel, n=3. A GAP at n=3 is not evidence of
 absence — it is evidence that this task could not tell the difference, and a task that can must
 put the model through the iteration loop where the defect was reported.
+
+---
+
+# Unit 10 — `comment-discipline` under real iteration, 2026-09-09
+
+Question: ADR-007 of `specs/comment-discipline/` shipped the craft **unmeasured**, and named the
+eval that would settle it — "a long session with `Bash` enabled, the model iterating against
+failing tests, n≥3 per arm, on the channel where #65961 reports the defect". This is that run.
+
+Unit 9's zero was a **GAP**, not a tie, and its cause was diagnosed rather than guessed:
+**`node --test` was denied 22–36 times per cell in all nine**, so no arm ever iterated. This run
+changes that one condition. Everything else Unit 9 decided is kept and re-used: both arms with the
+tier-1 gate off, the task dispatched rather than asked at top level, the same four criteria, the
+same scanner, the same scorers.
+
+claude 2.1.267 · model `claude-opus-5[1m]` · `--permission-mode acceptEdits` **plus an explicit
+`Bash(node:*)` allowlist** · **n=3 per arm, two arms, 6 cells** · **$18.03 for the grid, $21.91 all
+in** (one $3.39 probe cell was discarded, below).
+
+## The condition, and how it is known to have held
+
+`Bash` is allowed through `--allowedTools`, following `evals/floor/run.mjs:31` — Bash is the one
+tool that needs an allowlist under `-p`; edits are covered by `acceptEdits`. The list is identical
+in both arms.
+
+That the suite ran is **read out of each stream, never assumed**. Every `node --test` invocation is
+attributed to the agent that issued it via `parent_tool_use_id`, and classified denied / red /
+green from its own output:
+
+| | Unit 9 (ADR-007) | Unit 10 (this run) |
+|---|---|---|
+| test commands issued | 9 per cell, all arms | 71 executed across 6 cells |
+| **executed** | **0** | **71** |
+| denied | all of them | 10 (see negatives) |
+| builder saw its own red | never | **4 of 6 cells** |
+
+The same instrument, run backwards over Unit 9's saved streams, reports
+`testRunsExecuted: 0, builderIterated: false` for every cell — so the detector can fail, and it
+fires on exactly the run that failed.
+
+## The task, and why the first version of it was thrown away
+
+**A probe cell was bought, read, and discarded — $3.39.** It showed 26 test runs and 9 reds and
+looked like a textbook iteration. Attribution said otherwise: `praxis:engineer` — **1 run, 0 red**.
+Every red belonged to the `refuter-tests` and `refuter-correctness` agents deliberately mutating
+code inside a scratch directory to prove the suite could fail. The builder wrote a correct module on
+its first attempt and never went back. A refuter's red is not the builder fixing its own mistake,
+and the condition ADR-007 named is the builder's.
+
+The cause was the task: 20 tests, one module, a suite the model can satisfy by reading it. **A test
+suite that is fully readable is not a failing test — it is a specification.** So the fixture grew a
+budget a natural first implementation misses. Measured on this machine at 500,000 records with
+interleaved reads:
+
+```
+pointer that only moves forward       12 ms     (correct)
+prefix walk from index 0           4,187 ms     (what the discarded probe actually wrote)
+filter the whole bucket           28,317 ms     (the naive shape)
+```
+
+The budget is **1,500 ms**. A correct implementation clears it by two orders of magnitude, so the
+test is decisive rather than flaky — and **the discarded probe's own emitted code fails it**, which
+is how the red was known to be reachable rather than hoped for. A second module (`src/policy.js` —
+pattern precedence, tie-breaks, validation, per-key memoisation) was added for corpus size.
+
+Proven in four directions before a cell was bought: no modules → both imports unresolvable; a
+first-match-wins policy → 5 of 11 red; the discarded probe's own quota module → red on the budget
+and green on the other 31; correct modules → 32 of 32 green.
+
+**The prompt still says nothing about comments, documentation, docstrings, readability or style.**
+
+## Result
+
+| cell | cost | min | builder iterated | builder runs / red | code lines | comments | c/100 | restates | banner | CoT | trivial doc | redundant/100 | noted the constraint |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| treatment r1 | $5.59 | 16.7 | yes | 10 / 3 | 106 | 5 | 4.72 | 0 | 0 | 0 | 0 | **0.00** | no |
+| treatment r2 | $1.87 | 5.4 | yes | 5 / 1 | 109 | 3 | 2.75 | 0 | 0 | 0 | 1 | **0.00** | no |
+| treatment r3 | $5.21 | 12.9 | yes | 17 / 3 | 109 | 8 | 7.34 | 0 | 0 | 0 | 0 | **0.00** | no |
+| control r1 | $1.70 | 4.6 | yes | 6 / 2 | 109 | 3 | 2.75 | 0 | 0 | 0 | 0 | **0.00** | no |
+| control r2 | $1.70 | 4.8 | no | 7 / 0 | 120 | 7 | 5.83 | 0 | 0 | 0 | 0 | **0.00** | yes |
+| control r3 | $1.97 | 3.8 | no | 6 / 0 | 99 | 8 | 8.08 | 0 | 0 | 0 | 0 | **0.00** | no |
+
+Pooled: treatment **324 code lines / 16 comments**, control **328 / 18**. Redundancy per 100 lines:
+**0.00 · 0.00**. Every cell went green, verified by the driver re-running the suite itself on the
+emitted files rather than trusting the model's report.
+
+**This is a GAP again, and the craft did not beat its control.** Across 652 lines of emitted code
+and 34 comments, in the condition ADR-007 named, all four criteria detected **zero** defects in
+**every** cell of **both** arms. The instrument ran, the builder iterated against its own failing
+tests in four of six cells, and there was still nothing for the craft to remove.
+
+**The difference from Unit 9 is what the GAP now means.** Unit 9's zero could not distinguish "the
+defect is absent" from "this run could not have seen it", because the suite never ran. This one can:
+the suite ran 71 times, the builder went red on its own work and fixed it, and the emitted code was
+still clean. That is a weaker excuse and a stronger negative — but it is still a GAP, not a PASS,
+and it must not be read as one.
+
+### What the arms actually wrote
+
+Both arms failed the same test and fixed it. Treatment r1 and control r1 each went red on
+`not ok — prune reports how many timestamps it dropped`, edited the module, and came back green.
+Control r1's builder: red → one `Edit` → 32/32, then three confirmation runs of the budget test.
+
+Control r3 — **no craft at all** — wrote the most comments in the run, 8 in 99 lines, and every one
+carries something the code does not: the deque invariant, the half-open boundary, the amortisation
+argument, why `remaining` clamps, that `allow` records nothing, why a mis-placed `*` fails at
+construction, how the precedence tie-break settles, and why counters are per key rather than per
+rule. Two of them sit directly above the function they describe and were checked by hand against the
+restatement rule — `// Clamped, because record deliberately counts past the limit.` and
+`// Pure predicate: records nothing.` Neither restates: both name a contract absent from the
+signature. **The scorer's zeros here are correct, not blind.**
+
+The treatment's comments are the same shape — the amortisation invariant, and on
+`prune`, "The whole dead prefix counts: `record`/`used` may already have advanced head past stamps
+that are still physically held" — a comment that documents precisely the bug that cell had just
+fixed.
+
+### The one column that changed direction
+
+`constraintNoted` was **9/9 in Unit 9** and is **1/6 here** — and the one cell that noted it is a
+**control** cell. Unit 9 reported that column as having no discrimination in it; on a harder task it
+acquires some, and what it shows is the craft failing to increase the comment it most wants: the
+planted `originEpochMs` rebase went uncommented in all three treatment cells. At n=3 this is one
+cell of difference and nothing rests on it, but it points the opposite way from the craft's claim
+and is recorded rather than dropped.
+
+### Density is noise here, again, and this is the second local corroboration
+
+Comment volume swung **2.75 to 7.34** per 100 lines inside the treatment arm and **2.75 to 8.08**
+inside the control. Between arms: 4.94 vs 5.49. **The within-arm spread is roughly ten times the
+between-arm difference**, exactly as in Unit 9 and on a different task. ADR-003 refused a density
+threshold on the strength of an external study; two independent runs in this repo now say the same
+thing about this corpus.
+
+## Negatives and setup facts, named
+
+- **The condition held in 4 of 6 cells, not 6.** Control r2 and control r3 got both modules right on
+  the first attempt and never saw a red of their own. The treatment arm sampled the condition 3/3,
+  the control arm 1/3. The comparison is between arms that did not iterate equally, and at n=3 that
+  asymmetry is not something the run can average away.
+- **The corpus is thin: 652 code lines and 34 comments, against Unit 9's 2,102 and 125.** A zero over
+  34 comments is weaker per-observation evidence than a zero over 125, even though the condition is
+  better. This run improves the channel and loses volume; it does not dominate Unit 9 on both axes.
+- **10 test commands were still denied**, out of 81 issued. All were incidental: a shell `for` loop
+  the analyser could not statically read, and two refuter attempts to work under `/tmp`, outside the
+  session's working directory. None was `node` being refused, and the builder's own loop ran in every
+  cell.
+- **One probe cell bought and discarded, $3.39**, for the reason given above. It is kept at
+  `runs/discarded-probe.*` rather than deleted, because the attribution finding that killed it is
+  the most transferable thing in this run.
+- **`trivialDoc` fired once** (treatment r2) and, as in Unit 9, is reported in its own column and
+  left out of the redundancy total. ADR-007 already recorded that this criterion is a GAP on its own
+  terms — "obvious" is not a property a mechanical check decides.
+- **`wouldDeny` came back 0 in all six cells.** With the gate on, the tier-1 hook would have denied
+  nothing here either, in either arm.
+- **Both arms ran with `PRAXIS_FLOOR=off`**, as in Unit 9 and for the same argued reason: the tier-1
+  pass denies banners and CoT leakage regardless of arm, which would clamp two of the four criteria
+  to ~0 on both sides.
+- **The ablation reproduces Unit 9's numbers exactly** — `subagent-start` hands a dispatched
+  `praxis:engineer` 14,237 bytes in the treatment and 9,552 in the control, `craftSection` true in
+  all three treatment cells and false in all three control cells. The craft's cost is unchanged:
+  **4,685 bytes on every builder dispatch**.
+
+## Scorer proof
+
+`runs/t05-scorer-proof.mjs` was re-run before any cell was bought: **19/19**, unchanged and unmodified
+from Unit 9 — fires on a known-bad sample, silent on a known-good one, each criterion drops to 0 when
+only its own lines go while the other three hold, and the two JS-side detectors drop to 0 when
+ablated. The three scorer defects Unit 9 found by reading are already fixed in it and stay fixed.
+
+The **condition** detector added for this run was proved the same way and in both directions: run
+over Unit 9's nine saved streams it reports `testRunsExecuted: 0` and `builderIterated: false`; run
+over this grid it reports 71 executed and four cells iterating. A detector that only ever says "yes"
+would have been the same GAP one level up.
+
+## What it says and does not say
+
+It says: on a two-module build task in JavaScript with a suite that fails first and a performance
+budget that a natural first implementation misses, with `node --test` running 71 times and the
+builder fixing its own red in four of six cells, `claude-opus-5[1m]` produced **zero** restating
+comments, **zero** banners, **zero** chain-of-thought leakage and **zero** boilerplate docstrings —
+with the craft and without it. **The craft was not shown to add anything under the condition its own
+ADR named as the one that would settle it.**
+
+It does not say the craft is worthless, and it does not touch the hook: **T02 proved the hook
+mechanically, in both directions, per pattern**, and that evidence stands. What it does say is that
+ADR-007's "unmeasured, not proven" can no longer be defended on the grounds that the eval was never
+run under the right condition — it has been, at n=3 per arm, and the answer is another zero.
+**ADR-007's disposition is now owed a decision against a real number rather than an unsampled one,
+and the number is 0.00 against 0.00 at a standing cost of 4,685 bytes per builder dispatch.**
+
+What would still change the picture, stated so it is not invented later: a corpus several times this
+size, or an interactive session rather than `-p`, which is the exact channel #65961 names and the one
+thing neither Unit 9 nor Unit 10 has sampled.

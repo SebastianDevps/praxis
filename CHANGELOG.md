@@ -2,6 +2,17 @@
 
 All notable changes to Praxis are documented here. Format follows [Keep a Changelog](https://keepachangelog.com); versions follow [SemVer](https://semver.org).
 
+## [Unreleased]
+
+### Removed
+
+- **The `comment-discipline` craft**, measured twice and paid for on every dispatch that writes code. `evals/value/RESULTS.md` § Unit 9 scored treatment 0.00 · control 0.00 · bare 0.00 over 2,102 lines; § Unit 10 re-ran it under the one condition Unit 9 could not sample — `node --test` permitted, the builder iterating against its own red, 71 test runs against the previous run's 0 — and scored treatment 0.00 · control 0.00 again. One signal moved the wrong way: `constraintNoted`, the comment the craft most wants written, fell from 9/9 to 1/6, and that single cell was a **control** cell. Against 4,685 bytes injected into every builder dispatch, forever. $35.89 across both runs to establish it. `specs/eval-remeasure/` ADR-001 supersedes `specs/comment-discipline/` ADR-007, whose reasoning is kept as written because it was correct on the evidence available then.
+- **What was kept, and why it is not affected.** `hooks/pre-tool-use`'s tier-1 gate stays — proven per pattern in both directions, 22 legitimate comments allowed, 0 false positives across 71 real source files; that evidence never depended on the craft. `skills/codebase-design/references/COMMENTS.md` stays: it loads only when that skill activates, so it carries no standing cost, and it closes a real gap in a skill that imported Ousterhout's module vocabulary and skipped his chapters on comments. The `reviewer` tier-2 bullet stays. Both eval units, both drivers and both write-ups stay — they are the evidence for the removal, and a repository that deletes a measurement once it has acted on it cannot be checked by anyone.
+
+### Fixed
+
+- **A published eval's harness could not re-run it.** `evals/value/runs/t09-driver.mjs` bound `U.investigationSuite`, a name `units.mjs` never exported — `node --check` passes, because the failure is at runtime. The direction was proved rather than guessed: two committed documents place the fixture in the unit, `git log -S` shows no regression, and the driver contradicted itself by reading `U.INVESTIGATION_SUITE` three lines later. The restored fields were recovered from the preserved `state.json` files and fixture directories and verified byte-identical, then the repaired driver reproduced the recorded Unit 8 table exactly, `investigation-results.json` byte-for-byte, without re-running the grid. `tests/eval-drivers.test.mjs` now fails when any driver under `evals/*/runs/` reads a name its module does not export, and reports a named `SKIP` in a fresh clone, where `.gitignore` leaves it nothing to check.
+
 ## [0.8.0] — 2026-09-10
 
 ### Added

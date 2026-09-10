@@ -163,7 +163,7 @@ incomplete investigation is the failure this contract exists to prevent.
 |---|---|---|
 | **44** skills | taste, process, adversarial review, foreign-artifact assessment, per-project memory |
 | **12** agents | design · engineer · backend · platform · security · reviewer · researcher · analyst · orchestrator · a three-lens refuter panel |
-| **7** crafts | always-on disciplines, each injected into the dispatches it governs |
+| **6** crafts | always-on disciplines, each injected into the dispatches it governs |
 | **5** pipelines | named phase sequences, rendered as Run Cards |
 | **10** commands | `/praxis:init` `:approve` `:design` `:feature` `:bug` `:refactor` `:investigate` `:loop` `:learn` `:mode` |
 
