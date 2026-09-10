@@ -52,16 +52,28 @@ test("subagent-start strips orchestrator-only sections", () => {
   assert.match(ctx, /ladder/, "but it keeps the universal discipline");
 });
 
+// Membership plus a separately pinned count — never an exhaustive equality. This trap has now been
+// sprung twice. The first author pinned declaration order; the second sorted the list, which killed
+// the order dependency and left the equality intact, so the next craft added to any of these agents
+// re-armed it. Both times the red said "the wiring is broken" about correct work, which is the
+// failure mode `evidence-discipline` names.
+//
+// Under this shape a new craft fails exactly one assertion — the count — and that red reads as "a
+// craft was added, confirm the number", which is true. The membership loop keeps saying the thing
+// that actually matters: this agent still carries the crafts it must carry. Do not "simplify" the
+// two back into one deepEqual; the equality is the trap, not the tidiness.
 test("subagent-start resolves the dispatched agent's declared crafts", () => {
-  const design = context(claude("subagent-start", { input: '{"agent_type":"praxis:design"}' }));
-  assert.deepEqual(craftsIn(design).sort(), ["a11y-baseline", "anti-slop", "motion-discipline"]);
+  const design = craftsIn(context(claude("subagent-start", { input: '{"agent_type":"praxis:design"}' })));
+  for (const craft of ["anti-slop", "a11y-baseline", "motion-discipline", "comment-discipline"]) {
+    assert.ok(design.includes(craft), `design lost the ${craft} craft — got ${design}`);
+  }
+  assert.equal(design.length, 4, `design's craft count moved — confirm the number: ${design}`);
 
-  // Sorted, like the assertion above it. The unsorted version pinned declaration order, so adding
-  // a craft to the frontmatter failed this test for the wrong reason — a gate firing on correct
-  // work, which is the failure mode `evidence-discipline` names. Verified before updating: the
-  // hook really does emit both crafts (`echo '{"agent_type":"engineer"}' | ./hooks/subagent-start`).
-  const engineer = context(claude("subagent-start", { input: '{"agent_type":"engineer"}' }));
-  assert.deepEqual(craftsIn(engineer).sort(), ["evidence-discipline", "minimalism"]);
+  const engineer = craftsIn(context(claude("subagent-start", { input: '{"agent_type":"engineer"}' })));
+  for (const craft of ["minimalism", "evidence-discipline", "comment-discipline"]) {
+    assert.ok(engineer.includes(craft), `engineer lost the ${craft} craft — got ${engineer}`);
+  }
+  assert.equal(engineer.length, 3, `engineer's craft count moved — confirm the number: ${engineer}`);
 });
 
 test("an unknown or stock agent still receives the contract", () => {
@@ -72,7 +84,7 @@ test("an unknown or stock agent still receives the contract", () => {
 
 test("a host-supplied agent_type cannot traverse out of agents/", () => {
   // "../agents/design" is the discriminating payload: without the guard it
-  // resolves to a real file and yields three crafts, so a vacuous test would
+  // resolves to a real file and yields that agent's crafts, so a vacuous test would
   // pass here. Paths that simply do not exist prove nothing.
   for (const evil of ["../agents/design", "../../etc/passwd", "agents/../design", ".."]) {
     const ctx = context(claude("subagent-start", { input: JSON.stringify({ agent_type: evil }) }));
@@ -98,7 +110,11 @@ test("a bad matcher regex fails open, quietly", () => {
     env: { PRAXIS_SUBAGENT_MATCHER: "[" },
     input: '{"agent_type":"praxis:design"}',
   });
-  assert.deepEqual(craftsIn(context(out)).length, 3, "an unusable regex must not drop the method");
+  // Membership, not a count: this test's subject is fail-open, not the craft list. A skipped
+  // injection yields an empty array and goes red, which is the whole discrimination it needs —
+  // and it stops a craft added to `design` from failing a test that is not about `design`.
+  const crafts = craftsIn(context(out));
+  assert.ok(crafts.includes("anti-slop"), `an unusable regex must not drop the method — got ${crafts}`);
 });
 
 test("a stalled payload fails open instead of hanging the spawn", () => {
@@ -876,4 +892,274 @@ test("subagent-stop falls back to PROGRESS.md where the folder model is not adop
   hook("subagent-stop", { agent_type: "engineer" });
   const row = JSON.parse(fsRead(join(repo, ".praxis/memory/sessions.jsonl"), "utf8").trim());
   assert.equal(row.tasks, "done=1 blocked=0 pending=2");
+});
+
+// ── Tier-1 comment discipline: the first content pass in the plugin ──────────────────────────
+//
+// specs/comment-discipline, ADR-001/ADR-002. Two gates, and the second matters more than the
+// first: a floor that denies a Go doc comment, a rustdoc example or an owned TODO blocks
+// correct work, which is worse than no floor at all. Per `evidence-discipline` every detector
+// was mutated in both directions — remove it and the matching test goes red, restore it and it
+// goes green — and the eight outputs are pasted in specs/comment-discipline/implementation.md
+// under T02.
+
+// A change whose design is written and approved, so the spec floor is silent and the only
+// thing that can speak is the comment pass.
+function commentRepo() {
+  const fixture = floorRepo({ mode: "full" });
+  fixture.write("specs/x/design.md", "# x\n");
+  fixture.write("specs/x/implementation.md", ledger("planned"));
+  fixture.approve("x");
+  return fixture;
+}
+
+const wrote = (repo, rel, content) => ({ tool_name: "Write", tool_input: { file_path: join(repo, rel), content } });
+const edited = (repo, rel, old_string, new_string) =>
+  ({ tool_name: "Edit", tool_input: { file_path: join(repo, rel), old_string, new_string } });
+
+test("the content extractor survives a body that praxis_json_string truncates", () => {
+  // The discriminating payload. praxis_json_string's sed body is "key"…"\([^"]*\)", so it
+  // stops at the first escaped quote — here the value would end at `const s = ` and the
+  // banner two lines later would never be read. Without a real extractor this whole
+  // section is vacuous, so it is proved before anything is asserted on top of it.
+  const { repo, hook } = commentRepo();
+  const content = 'const s = "a \\"quoted\\" string";\nconst t = 2;\n// ==========================\n';
+  const out = hook("pre-tool-use", wrote(repo, "src/a.js", content));
+  assert.equal(decision(out), "deny", "a multi-line body carrying an escaped quote must still be scanned");
+  assert.match(reason(out), /Banner and divider/);
+});
+
+test("tier 1 denies commented-out code, and the reason names the exact line", () => {
+  const { repo, hook } = commentRepo();
+  const lines = [
+    "// const total = compute(x);",
+    "// doThing();",
+    "// if (ready) {",
+    "// return null;",
+    "// import { parse } from \"./parse\";",
+    "// }",
+    "// <div className=\"row\">",
+  ];
+  for (const line of lines) {
+    const out = hook("pre-tool-use", wrote(repo, "src/a.js", `const ok = 1;\n${line}\nconst also = 2;\n`));
+    assert.equal(decision(out), "deny", `not denied: ${line}`);
+    assert.match(reason(out), /Commented-out code — git holds the history\./);
+    assert.ok(reason(out).includes(line), `the reason must quote the offending line: ${line}`);
+  }
+});
+
+test("tier 1 denies banner and divider comments, and the reason names the exact line", () => {
+  const { repo, hook } = commentRepo();
+  const cases = [
+    ["src/a.js", "// ============================="],
+    ["src/a.js", "/* ----------------------- */"],
+    ["src/a.py", "# -----------------------------"],
+    ["src/a.js", " * ****************************"],
+    ["src/a.sql", "-- ============================"],
+  ];
+  for (const [file, line] of cases) {
+    const out = hook("pre-tool-use", wrote(repo, file, `x\n${line}\ny\n`));
+    assert.equal(decision(out), "deny", `not denied: ${line}`);
+    assert.match(reason(out), /Banner and divider comments/);
+    assert.ok(reason(out).includes(line.trim()), `the reason must quote the offending line: ${line}`);
+  }
+});
+
+test("tier 1 denies chain-of-thought leakage, and the reason names the exact line", () => {
+  const { repo, hook } = commentRepo();
+  const lines = [
+    "// Step 1: build the lookup map",
+    "// Now let's wire the reducer",
+    "// As requested, the retry is capped at three",
+    "// Per your request, the cache is off by default",
+    "// I'll come back to the streaming path",
+    "// Let's keep the two paths separate for now",
+    "// This is the shape the user asked for",
+  ];
+  for (const line of lines) {
+    const out = hook("pre-tool-use", wrote(repo, "src/a.js", `const ok = 1;\n${line}\n`));
+    assert.equal(decision(out), "deny", `not denied: ${line}`);
+    assert.match(reason(out), /Chain-of-thought leakage/);
+    assert.ok(reason(out).includes(line), `the reason must quote the offending line: ${line}`);
+  }
+});
+
+test("tier 1 denies a TODO with no owner and no tracker, and names the accepted forms", () => {
+  const { repo, hook } = commentRepo();
+  for (const [file, line] of [["src/a.js", "// TODO: fix this later"], ["src/a.py", "# TODO: handle the empty case"]]) {
+    const out = hook("pre-tool-use", wrote(repo, file, `x\n${line}\n`));
+    assert.equal(decision(out), "deny", `not denied: ${line}`);
+    assert.match(reason(out), /A `TODO` with no owner and no tracker/);
+    assert.match(reason(out), /TODO\(username\)/, "the deny must name the owner form");
+    assert.match(reason(out), /crbug\.com/, "and the tracker form");
+    assert.ok(reason(out).includes(line), `the reason must quote the offending line: ${line}`);
+  }
+});
+
+// The gate that matters more than the four above. Every line here is mandated or endorsed by
+// somebody's published guidance — Go's doc comment rule, Rust C-EXAMPLE, Google's own named
+// exception to why-not-what, Google C++ and Google Python on TODO — so a deny on any of them
+// is Praxis breaking a language's own rules (ADR-005).
+test("the false-positive gate: legitimate comments are allowed, every one of them", () => {
+  const { repo, hook } = commentRepo();
+  const allowed = [
+    // A Go exported doc comment necessarily echoes the identifier — go.dev/doc/comment.
+    ["src/cfg.go", "// Parse returns the parsed configuration.\nfunc Parse() {}\n"],
+    // A Rust public item carries a compiling example — C-EXAMPLE. Its body IS code.
+    ["src/lib.rs", "/// Adds two numbers.\n///\n/// # Examples\n///\n/// ```\n/// let sum = add(1, 2);\n/// assert_eq!(sum, 3);\n/// ```\npub fn add(a: i32, b: i32) -> i32 { a + b }\n"],
+    // Google's named exception: regexes and complex algorithms benefit from what-comments.
+    ["src/re.js", "// Matches /^(\\d{3})-(\\d{4})$/ — the legacy phone format kept for imports.\nconst RE = /x/;\n"],
+    ["src/sort.js", "// Insertion sort beats quicksort below ~12 elements: no partition overhead.\nfunction s() {}\n"],
+    // The two TODO forms the craft cites.
+    ["src/a.js", "// TODO(alice): switch to the streaming parser.\n"],
+    ["src/a.py", "# TODO: crbug.com/192795 - Investigate cpufreq optimizations.\n"],
+    ["src/a.js", "// TODO: see #1234 for the migration plan.\n"],
+    // Prose that happens to contain the word "step".
+    ["src/a.js", "// Each step of the pipeline is idempotent, so a retry is safe.\n"],
+    ["src/a.py", "# Step through the list backwards; the tail is the newest entry.\n"],
+    ["src/a.js", "// Step 2 of the handshake is the challenge.\n"],
+    // Four chain-of-thought branches were cut for these, and each line is why.
+    ["src/a.js", "// First, normalise the input; the parser assumes NFC.\n"],
+    ["src/a.js", "// Now we hold the lock, so the read is safe.\n"],
+    ["src/a.js", "// Here is why the offset is 1-based: the protocol counts from one.\n"],
+    ["src/a.js", "// We have seen this fail on ARM when the buffer is unaligned.\n"],
+    ["src/a.js", "// Immutable by construction: every setter returns a copy.\n"],
+    // A URL inside a comment, containing // and --.
+    ["src/a.js", "// See https://example.com/spec#a--b for why the offset is 1-based.\n"],
+    ["src/a.sql", "-- See https://example.com/a--b for the rationale behind this index.\n"],
+    // Prose that reads like code to a naive matcher.
+    ["src/a.js", "// baseUrl = the API root; every request is resolved against it.\n"],
+    ["src/a.py", "# Returns the user, if any. Callers must handle None.\n"],
+    ["src/a.js", "// private helper: used only by parse()\n"],
+    ["src/a.js", "// const is preferred here because the binding never moves.\n"],
+    ["src/a.js", "// n=1 per arm is a screening pass, not a proof.\n"],
+    // A numpy-style docstring underline is not a SQL comment.
+    ["src/a.py", '"""Parameters\n----------\nx : int\n"""\n'],
+  ];
+  for (const [file, content] of allowed) {
+    const out = hook("pre-tool-use", wrote(repo, file, content));
+    assert.equal(decision(out), "allow", `false positive on ${file}: ${content.split("\n")[0]}\n${out}`);
+  }
+});
+
+test("a tier-1 pattern already in the file is never the reason a write is refused", () => {
+  const { repo, hook } = commentRepo();
+  // old_string carries all four patterns; new_string adds a line and keeps them.
+  const old_string = [
+    "// =============================",
+    "// Step 1: the original narration",
+    "// TODO: left by whoever wrote this",
+    "// legacy = compute(old);",
+    "run();",
+  ].join("\n");
+  const new_string = `${old_string}\nrunAgain();`;
+  assert.equal(decision(hook("pre-tool-use", edited(repo, "src/a.js", old_string, new_string))), "allow");
+
+  // Re-indenting an existing comment does not turn it into an added line either.
+  const indented = old_string.split("\n").map((l) => `  ${l}`).join("\n");
+  assert.equal(decision(hook("pre-tool-use", edited(repo, "src/a.js", old_string, indented))), "allow");
+
+  // But the same edit that ALSO adds one is denied — otherwise this test proves nothing.
+  const withNew = `${old_string}\n// ##############################`;
+  const out = hook("pre-tool-use", edited(repo, "src/a.js", old_string, withNew));
+  assert.equal(decision(out), "deny");
+  assert.match(reason(out), /Banner and divider/);
+});
+
+test("MultiEdit pools every old_string before deciding what this edit adds", () => {
+  const { repo, hook } = commentRepo();
+  const payload = (edits) => ({ tool_name: "MultiEdit", tool_input: { file_path: join(repo, "src/a.js"), edits } });
+  assert.equal(
+    decision(hook("pre-tool-use", payload([
+      { old_string: "// TODO: from before\na();", new_string: "// TODO: from before\na();\nb();" },
+      { old_string: "c();", new_string: "c();\nd();" },
+    ]))),
+    "allow",
+    "a pre-existing pattern carried through every entry stays allowed",
+  );
+  const out = hook("pre-tool-use", payload([
+    { old_string: "a();", new_string: "a();\nb();" },
+    { old_string: "c();", new_string: "c();\n// Now let's add the cache" },
+  ]));
+  assert.equal(decision(out), "deny", "a pattern added by the second entry is still caught");
+  assert.match(reason(out), /Chain-of-thought leakage/);
+});
+
+test("the carve-outs are mechanical: generated, lockfiles, minified, prose", () => {
+  const { repo, hook } = commentRepo();
+  const banner = "// =============================";
+  const skipped = [
+    ["node_modules/pkg/index.js", banner],
+    ["dist/bundle.js", banner],
+    ["build/out.js", banner],
+    ["vendor/lib.js", banner],
+    [".next/static/a.js", banner],
+    ["src/app.min.js", banner],
+    ["package-lock.json", banner],
+    ["yarn.lock", banner],
+    ["go.sum", banner],
+    ["README.md", "# -----------------------------"],
+    ["docs/notes.txt", banner],
+  ];
+  for (const [file, line] of skipped) {
+    assert.equal(decision(hook("pre-tool-use", wrote(repo, file, `x\n${line}\n`))), "allow", `not carved out: ${file}`);
+  }
+  // The @generated marker, wherever it sits in the content.
+  assert.equal(
+    decision(hook("pre-tool-use", wrote(repo, "src/schema.js", `// @generated by protoc\n${banner}\n`))),
+    "allow",
+  );
+  // And the control: the same line in a plain source file is denied.
+  assert.equal(decision(hook("pre-tool-use", wrote(repo, "src/plain.js", `x\n${banner}\n`))), "deny");
+});
+
+test("PRAXIS_COMMENTS=off lifts the comment pass alone; PRAXIS_FLOOR=off lifts both", () => {
+  const { repo, hook } = commentRepo();
+  const payload = wrote(repo, "src/a.js", "x\n// =============================\n");
+  assert.equal(decision(hook("pre-tool-use", payload)), "deny", "the control");
+  assert.equal(decision(hook("pre-tool-use", payload, { PRAXIS_COMMENTS: "off" })), "allow");
+  assert.equal(decision(hook("pre-tool-use", payload, { PRAXIS_FLOOR: "off" })), "allow");
+
+  // The narrow override really is narrow: with the comment pass off, the spec floor still bites.
+  const bare = floorRepo({ mode: "full" });
+  const out = bare.hook("pre-tool-use", wrote(bare.repo, "src/a.js", "x\n"), { PRAXIS_COMMENTS: "off" });
+  assert.equal(decision(out), "deny");
+  assert.match(reason(out), /design\.md/);
+});
+
+test("the comment pass fails open on anything it cannot read", () => {
+  const { repo, hook } = commentRepo();
+  const banner = "// =============================";
+  // A tool that carries no readable content, a body with no comment at all, an empty edit.
+  assert.equal(decision(hook("pre-tool-use", { tool_name: "NotebookEdit", tool_input: { file_path: join(repo, "src/a.ipynb"), new_source: banner } })), "allow");
+  assert.equal(decision(hook("pre-tool-use", wrote(repo, "src/a.js", "const a = 1;\n"))), "allow");
+  assert.equal(decision(hook("pre-tool-use", edited(repo, "src/a.js", "", ""))), "allow");
+  assert.equal(decision(hook("pre-tool-use", wrote(repo, "src/a.js", ""))), "allow");
+  // A minified line: 600 characters with a banner buried in it is data, not prose.
+  assert.equal(decision(hook("pre-tool-use", wrote(repo, "src/a.js", `${banner}${"x".repeat(600)}\n`))), "allow");
+});
+
+test("the comment pass reads a Codex apply_patch, where added lines are marked", () => {
+  const { repo, hook, write } = commentRepo();
+  write(".praxis/approved/x", "");
+  const patch = "*** Begin Patch\n*** Update File: src/a.js\n@@\n a();\n+// Step 3: reset the cursor\n*** End Patch";
+  const env = { PLUGIN_ROOT: ROOT, PLUGIN_DATA: codexData(repo) };
+  const out = hook("pre-tool-use", { tool_name: "apply_patch", cwd: repo, tool_input: { command: patch } }, env);
+  assert.equal(decision(out), "deny");
+  assert.match(reason(out), /Chain-of-thought leakage/);
+  // A context line carrying the same pattern is not an added line.
+  const context = "*** Begin Patch\n*** Update File: src/a.js\n@@\n // Step 3: reset the cursor\n+a();\n*** End Patch";
+  assert.equal(decision(hook("pre-tool-use", { tool_name: "apply_patch", cwd: repo, tool_input: { command: context } }, env)), "allow");
+});
+
+test("the decoded body is byte-exact: backslashes survive, lines stay separate", () => {
+  // Two real defects found here, both in restoring a parked backslash: gsub doubled it,
+  // and split/join joined the value's lines with it (BWK awk splits on newline whatever
+  // separator it is handed). Either one corrupts the line the deny is about to quote, so
+  // the repro is the test: a multi-line body whose offending line carries backslashes.
+  const { repo, hook } = commentRepo();
+  const line = String.raw`// Now let's write to C:\temp\out\\shared`;
+  const out = hook("pre-tool-use", wrote(repo, "src/a.js", `const a = 1;\nconst b = 2;\n${line}\n`));
+  assert.equal(decision(out), "deny");
+  assert.ok(reason(out).includes(line), `the quoted line was corrupted in decoding:\n${reason(out)}`);
 });

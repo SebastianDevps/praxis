@@ -97,6 +97,10 @@ The smell floor (Fowler, *Refactoring* ch. 3), each *what it is → how to fix*:
 - **Middle Man** — a class or function that mostly delegates onward → cut it, call the real target.
 - **Refused Bequest** — a subclass or implementer that ignores or overrides most of what it
   inherits → drop the inheritance, use composition.
+- **Uninformative Doc Comment** — a comment or docstring carrying no content word beyond the
+  identifier it documents, once stop-words are stripped → give it the fact the name cannot hold, or
+  delete it; where the language mandates the comment (Go on every exported name, Rust's example on
+  every public item) report it and never call it a defect.
 
 Brief for the Standards subagent: "Report, per file and hunk where relevant, (a) every place the
 diff violates a documented standard — cite the file and the rule; (b) every floor smell you spot —

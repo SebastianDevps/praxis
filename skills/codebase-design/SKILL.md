@@ -76,6 +76,8 @@ dependencies instead of creating them; return results instead of producing side 
   dependencies, seam discipline, and replace-don't-layer testing.
 - `references/DESIGN-IT-TWICE.md` — dispatch parallel specialists to design the interface in
   radically different ways, then compare on depth, locality, and seam placement.
+- `references/COMMENTS.md` — what a comment must add beyond the code, interface documentation kept
+  clear of implementation, and the comment you cannot write as a finding about the design.
 
 ## It's working if
 

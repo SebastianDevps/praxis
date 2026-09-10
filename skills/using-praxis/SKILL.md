@@ -114,5 +114,5 @@ model cannot write — and `hooks/stop` blocks once until `implementation.md` re
 Skills activate by their `description` — invoke the matching one rather than working from training
 memory; it carries the non-obvious delta, which is the whole point of Praxis. **Crafts**
 (`anti-slop`, `a11y-baseline`, `motion-discipline`, `minimalism`, `orchestration`,
-`evidence-discipline`) are always-on for the work each governs
+`evidence-discipline`, `comment-discipline`) are always-on for the work each governs
 taste disciplines every output honors, whether or not the user names them.

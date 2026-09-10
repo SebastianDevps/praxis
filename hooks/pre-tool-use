@@ -38,8 +38,23 @@
 # `<active>` is `.praxis/active-change` when present, else the most recently modified
 # ledger.
 #
-# Escape hatch: PRAXIS_FLOOR=off allows everything. That is the only override — there is
-# no phrase, flag file or prompt that lifts the floor from inside a session.
+# A second gate rides on the same event: the tier-1 comment pass (specs/comment-discipline,
+# ADR-001/ADR-002). It reads the content the edit carries — `tool_input.content` for Write,
+# `old_string`/`new_string` for Edit, `edits[]` for MultiEdit, the `+` lines of a Codex
+# patch — and denies four patterns that need no judgment to recognise: commented-out code,
+# banner and divider comments, chain-of-thought leakage, and a `TODO` with no owner and no
+# tracker. Deny is proportionate only because the fix is one keystroke (ADR-002).
+#
+# Two rules outrank detection there. Only lines this edit ADDS are inspected, so a comment
+# already in the person's file is never the reason a write is refused. And the
+# false-positive gate outranks the detection gate: a Go exported doc comment, a rustdoc
+# example, a regex explanation and an owned TODO are all mandated by somebody's published
+# guidance (ADR-005), so every detector is anchored and loosened until they pass.
+#
+# Escape hatches: PRAXIS_FLOOR=off allows everything, floor and comment pass together.
+# PRAXIS_COMMENTS=off lifts the comment pass alone and leaves the spec floor standing.
+# Those are the only two overrides — there is no phrase, flag file or prompt that lifts
+# either from inside a session.
 #
 # Fail-open on anything unexpected (no payload, unreadable path, a host that speaks a
 # different dialect): the floor is about ceremony, not safety, so a hook defect must cost
@@ -117,6 +132,48 @@ case "$target" in
     decide deny "PRAXIS floor: ${target} is the approval record. It is written by the person — by approving the first source edit when the floor asks, or by running /praxis:approve ${name} — never by the model. Do not create or edit it."
     ;;
 esac
+
+# Tier-1 comment discipline. It runs before the mode case because it judges the CONTENT of
+# this edit, which is true or false independently of what `specs/` holds — one call site
+# instead of one at each of the floor's allow points. Everything it can fail to understand
+# (a tool it does not read, a path it cannot classify, an unparseable body) returns silently
+# and the floor decides on its own.
+comment_gate() {
+  [ "${PRAXIS_COMMENTS:-}" = off ] && return 0
+
+  local group added found kind line label
+  group="$(praxis_comment_group "$target")"
+  [ "$group" = skip ] && return 0
+
+  added="$(praxis_added_lines "$payload" "$tool")"
+  [ -n "$added" ] || return 0
+  case "$added" in *"@generated"*) return 0 ;; esac
+
+  found="$(printf '%s\n' "$added" | praxis_scan_comments "$group")"
+  [ -n "$found" ] || return 0
+  kind="${found%%$'\t'*}"
+  line="${found#*$'\t'}"
+
+  # The craft's own wording, verbatim: a second vocabulary for the same four patterns
+  # would be a second standard. crafts/comment-discipline/comment-discipline.md.
+  case "$kind" in
+    code)   label="Commented-out code — git holds the history." ;;
+    banner) label="Banner and divider comments — \`// =====\`, \`/* ---- */\`." ;;
+    cot)    label="Chain-of-thought leakage — \`// Step 1:\`, \`// Now let's\`, \`// As requested\`, and anything else referring to the conversation instead of to the code." ;;
+    todo)   label="A \`TODO\` with no owner and no tracker. What earns one carries either: \`// TODO(username): Describe what needs to be done.\` (Google C++) or \`# TODO: crbug.com/192795 - Investigate cpufreq optimizations.\` (Google Python)." ;;
+    *)      return 0 ;;
+  esac
+
+  decide deny "PRAXIS comment discipline: this edit adds a line to ${target} that carries a tier-1 pattern.
+
+    ${line}
+
+${label}
+The fix in every case is to delete the line. Re-send the edit without it; every other line in this edit is fine.
+Only lines this edit adds are read — a comment already in the file is never the reason.
+Override: PRAXIS_COMMENTS=off lifts this check alone; PRAXIS_FLOOR=off lifts the whole floor (env, session-wide)."
+}
+comment_gate
 
 # Same trailer on every deny: what is free, and the only way out.
 trailer="Writes under specs/, .praxis/, agents/ are always allowed. Override: PRAXIS_FLOOR=off (env, session-wide)."

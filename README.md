@@ -109,6 +109,19 @@ symlink), `CONTEXT.md` (domain glossary with the synonyms to avoid), `agents/rul
 `agents/knowledge-base.md`, `agents/commands.md`, `specs/_templates/`. The rules reach the
 reviewer and never the builders, so they cost nothing on the build turns.
 
+## Comments a senior would keep
+
+Praxis's builders comment the way a senior does: sparse, and only where the code cannot say it
+itself. Four patterns never reach your files, because a hook reads what is being written and
+refuses them — commented-out code, banner and divider comments, chain-of-thought leaked from the
+session, and a `TODO` with nobody's name on it.
+
+It inspects added lines only: a comment already in your file is never touched. Language convention
+wins where a language has one — Go's doc comment on every exported name and Rust's example on
+every public item are respected, not flagged. The method is Ousterhout, Fowler, Google's
+engineering practices and the Linux kernel style guide, carried in as cited text.
+`PRAXIS_COMMENTS=off` turns it off, and the README says so instead of hiding it.
+
 ## What it assesses
 
 `/praxis:investigate` points the same method at something outside your repo — a repo URL, a package,
@@ -150,7 +163,7 @@ incomplete investigation is the failure this contract exists to prevent.
 |---|---|---|
 | **44** skills | taste, process, adversarial review, foreign-artifact assessment, per-project memory |
 | **12** agents | design · engineer · backend · platform · security · reviewer · researcher · analyst · orchestrator · a three-lens refuter panel |
-| **6** crafts | always-on disciplines, each injected into the dispatches it governs |
+| **7** crafts | always-on disciplines, each injected into the dispatches it governs |
 | **5** pipelines | named phase sequences, rendered as Run Cards |
 | **10** commands | `/praxis:init` `:approve` `:design` `:feature` `:bug` `:refactor` `:investigate` `:loop` `:learn` `:mode` |
 

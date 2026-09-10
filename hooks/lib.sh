@@ -458,3 +458,277 @@ praxis_ledger_stage() {
     fm && /^stage:/ { sub(/^stage:[ \t]*/, ""); sub(/[ \t]*#.*$/, ""); sub(/[ \t]+$/, ""); print; exit }
   ' "$1"
 }
+
+# --- Content pass: tier-1 comment discipline ---------------------------------
+#
+# specs/comment-discipline, ADR-001/ADR-002. Praxis had never read what was being
+# written — `praxis_edit_paths` above takes `file_path` and nothing else. These four
+# helpers are the first content pass in the plugin, and everything about them is
+# shaped by one rule: only lines this edit ADDS are inspected. A floor that denies
+# because of a comment already in the person's file is worse than no floor.
+
+# Every value of a string-valued JSON field, decoded, one per line.
+#
+# `praxis_json_string` above cannot do this and must not be used for it: its sed
+# body is `"key"[[:space:]]*:[[:space:]]*"\([^"]*\)"`, which stops at the first
+# `\"` inside the value — so `const s = "quoted";` truncates the file body at the
+# opening quote of the literal — and its leading `.*` is greedy, so on MultiEdit it
+# returns the LAST `new_string` rather than all of them. Both are fine for the short
+# values it was written for (`tool_name`, `file_path`) and fatal for a file body.
+# Tested: tests/hooks.test.mjs, "the content extractor survives a body that
+# praxis_json_string truncates".
+praxis_json_strings() {
+  printf '%s' "$1" | awk -v KEY="$2" '
+    # Escaped backslashes and escaped quotes are parked on two control characters
+    # FIRST, in one linear gsub each. After that the closing quote of a value is
+    # simply the next `"`, found by one index() — no per-escape rescan. The obvious
+    # version (walk to each `"`, count the backslashes before it) is quadratic in the
+    # size of the body: measured at 1.0s on a 190KB write, 0.10s here.
+    BEGIN { S1 = sprintf("%c", 1); S2 = sprintf("%c", 2); BS = sprintf("%c", 92) }
+    # Restoring a literal backslash is where portability bites twice. gsub is out:
+    # awks disagree on how many backslashes a replacement needs, and this one doubled
+    # them. split/join is out too: BWK awk 20200816 splits on a newline as well as on
+    # the separator it was given, so a two-line value came back joined by backslashes.
+    # index() walks the string with no interpretation at all, which is the only
+    # behaviour all three agree on.
+    function unpark(v,   i, out) {
+      out = ""
+      while ((i = index(v, S1)) > 0) { out = out substr(v, 1, i - 1) BS; v = substr(v, i + 1) }
+      return out v
+    }
+    { P = P $0 "\n" }
+    END {
+      gsub(/\\\\/, S1, P)
+      gsub(/\\"/, S2, P)
+      key = "\"" KEY "\""; kl = length(key)
+      while ((i = index(P, key)) > 0) {
+        rest = substr(P, i + kl)
+        if (match(rest, /^[ \t\r\n]*:[ \t\r\n]*"/)) {
+          tail = substr(rest, RLENGTH + 1)
+          q = index(tail, "\"")
+          if (q > 0) {
+            v = substr(tail, 1, q - 1)
+            gsub(/\\n/, "\n", v)
+            gsub(/\\t/, "\t", v)
+            gsub(/\\r/, "", v)
+            gsub(/\\b/, " ", v)
+            gsub(/\\f/, " ", v)
+            gsub(/\\u[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]/, "?", v)
+            gsub(/\\\//, "/", v)
+            gsub(S2, "\"", v)
+            print unpark(v)
+            P = substr(tail, q + 1)
+            continue
+          }
+        }
+        P = rest
+      }
+    }
+  '
+}
+
+# The lines an edit ADDS, one per line.
+#
+#   praxis_added_lines <payload> <tool_name>
+#
+# Write        every line of tool_input.content
+# Edit         lines of new_string absent from old_string
+# MultiEdit    the same, with every edits[] entry pooled: a line already present in
+#              ANY old_string counts as pre-existing. Deliberately permissive —
+#              constraint A pushes every ambiguity toward allow.
+# apply_patch  the `+` lines of the Codex patch, which mark additions explicitly.
+# Comparison is on the whitespace-trimmed line, so re-indenting an existing comment
+# does not turn it into an added one.
+praxis_added_lines() {
+  case "$2" in
+    Write)
+      praxis_json_strings "$1" content
+      ;;
+    Edit|MultiEdit)
+      { praxis_json_strings "$1" old_string; printf '\034\n'; praxis_json_strings "$1" new_string; } | awk '
+        function trim(s) { sub(/^[ \t\r]+/, "", s); sub(/[ \t\r]+$/, "", s); return s }
+        !split_seen && $0 == "\034" { split_seen = 1; next }
+        !split_seen                 { old[trim($0)] = 1; next }
+        !(trim($0) in old)          { print }
+      '
+      ;;
+    apply_patch)
+      praxis_json_strings "$1" command | awk '/^\+/ && !/^\+\+\+/ { print substr($0, 2) }'
+      ;;
+  esac
+}
+
+# Which comment syntax a path uses: hash | dash | semi | slash | skip.
+#
+# Keyed to the extension rather than to a union of every marker, because the union
+# is where the false positives live: `--` is a comment in SQL and an underline in a
+# numpy docstring, `#` is a comment in Python and a preprocessor directive in C.
+# `skip` covers the mechanical carve-outs — generated trees, lockfiles, minified
+# bundles — and prose formats, whose headings and horizontal rules are the shapes
+# the banner detector looks for.
+praxis_comment_group() {
+  local p="$1" base ext
+  base="${1##*/}"
+  case "$base" in
+    *.min.js|*.min.mjs|*.min.css) printf 'skip'; return 0 ;;
+    package-lock.json|yarn.lock|pnpm-lock.yaml|Cargo.lock|poetry.lock|Gemfile.lock|composer.lock|go.sum|uv.lock|bun.lockb|*.lock)
+      printf 'skip'; return 0 ;;
+  esac
+  case "/${p}/" in
+    */node_modules/*|*/dist/*|*/build/*|*/vendor/*|*/.next/*|*/target/*|*/out/*|*/generated/*|*/__generated__/*)
+      printf 'skip'; return 0 ;;
+  esac
+  ext=""
+  case "$base" in *.*) ext="$(printf '%s' "${base##*.}" | tr 'A-Z' 'a-z')" ;; esac
+  case "$ext" in
+    md|markdown|mdx|txt|rst|adoc|json|jsonc|csv|tsv|svg|xml|html|htm|lock|snap|patch|diff) printf 'skip' ;;
+    py|pyi|rb|sh|bash|zsh|fish|pl|pm|r|jl|nim|cr|ex|exs|yml|yaml|toml|tf|tfvars|cfg|ini|conf|mk|awk|ps1|cmake|gemspec|rake)
+      printf 'hash' ;;
+    sql|lua|hs|elm|ada|adb|ads|vhd|vhdl) printf 'dash' ;;
+    lisp|clj|cljs|cljc|el|scm|ss|rkt|asm) printf 'semi' ;;
+    "") case "$base" in
+          Makefile|makefile|GNUmakefile|Dockerfile|Containerfile|Rakefile|Gemfile|Jenkinsfile|Procfile|Brewfile|.envrc) printf 'hash' ;;
+          *) printf 'skip' ;;
+        esac ;;
+    *) printf 'slash' ;;
+  esac
+}
+
+# Scan added lines (stdin) for the four tier-1 patterns. Prints `<kind>\t<line>` for
+# the first offender and nothing at all when the lines are clean.
+#
+#   praxis_scan_comments <group>
+#
+# Only a line whose FIRST token is a comment marker is inspected. A trailing comment
+# is a documented false negative: finding one means deciding whether `//` sits inside
+# a string literal, and getting that wrong denies a line of correct code — the exact
+# trade constraint B settles.
+#
+# Doc-comment markers (`///`, `//!`, `/**`, `/*!`, `#'`) are skipped entirely: ADR-005
+# puts public and exported surfaces outside tier 1, and a rustdoc example is REQUIRED
+# by C-EXAMPLE to contain compiling code that a commented-out-code detector would
+# otherwise flag.
+praxis_scan_comments() {
+  awk -v GROUP="$1" '
+    BEGIN { SQ = sprintf("%c", 39) }
+    function trim(s) { sub(/^[ \t\r]+/, "", s); sub(/[ \t\r]+$/, "", s); return s }
+    function hit(kind, line) { printf "%s\t%s\n", kind, line; exit }
+
+    # A comment body that parses as code. Every shape is anchored to the WHOLE body:
+    # commented-out code is a whole line of code, and the anchor is what keeps prose
+    # that merely mentions `return` or `(` out of it.
+    function code(c,   rhs) {
+      if (c ~ /^[{}()\[\];,]+$/) return 1
+      if (c ~ /^(if|for|while|switch|catch|foreach|elif|else if)[ \t]*\(/ && c ~ /\)/) return 1
+      if (c ~ /^(return|throw|yield|raise|del|delete|assert)([ \t][^ \t].*)?;[ \t]*$/) return 1
+      if (c ~ /^(return|break|continue|pass)[ \t]*;?[ \t]*$/) return 1
+      if (c ~ /^(function|def|class|struct|interface|enum|const|let|var|public|private|protected|static|func|fn|type|impl|namespace)[ \t]+[A-Za-z_$]/ &&
+          (c ~ /[;{][ \t]*$/ || c ~ /:[ \t]*$/ || c ~ /=/)) return 1
+      if (c ~ /^import[ \t]+[^ \t]+[ \t]*;?[ \t]*$/) return 1
+      if (c ~ /^import[ \t]*\{.*\}[ \t]*from[ \t]/) return 1
+      if (c ~ /^import[ \t]+[A-Za-z_$][A-Za-z0-9_$]*[ \t]+from[ \t]/) return 1
+      if (c ~ /^from[ \t]+[^ \t]+[ \t]+import[ \t]+/) return 1
+      if (c ~ /^(use|require|include)[ \t]+[^ \t]+[ \t]*;[ \t]*$/) return 1
+      if (c ~ /^[A-Za-z_$][A-Za-z0-9_$.]*\([^()]*\)[ \t]*;?[ \t]*$/) return 1
+      if (c ~ /^<\/?[A-Za-z][^<>]*>[ \t]*$/) return 1
+      # An assignment counts only when its right-hand side is code-shaped. Prose that
+      # documents a field reads the same to the left of the `=`: `baseUrl = the API
+      # root` must stay allowed, `total = 0` must not.
+      if (c ~ /^[A-Za-z_$][A-Za-z0-9_$.\[\]]*[ \t]*(=|\+=|-=|\*=|\/=|:=|<-)[ \t]*[^ \t=]/ && c !~ /^[^=]*==/) {
+        rhs = c
+        sub(/^[A-Za-z_$][A-Za-z0-9_$.\[\]]*[ \t]*(=|\+=|-=|\*=|\/=|:=|<-)[ \t]*/, "", rhs)
+        # Each shape is anchored to the END of the right-hand side too. Without that,
+        # prose that opens with a literal reads as code: `n=1 per arm is a screening
+        # pass` was the one false positive found by a sweep of the sources in this repo.
+        if (rhs ~ /^[-+]?[0-9][0-9_.eExXa-fA-F]*[ \t]*;?[ \t]*$/) return 1
+        if (rhs ~ /^["]/ || substr(rhs, 1, 1) == SQ || substr(rhs, 1, 1) == "`") return 1
+        if (rhs ~ /^(true|false|null|nil|None|True|False|undefined)[ \t]*;?[ \t]*$/) return 1
+        if (rhs ~ /[A-Za-z_$][A-Za-z0-9_$.]*\([^()]*\)[ \t]*;?[ \t]*$/) return 1
+        if (rhs ~ /;[ \t]*$/) return 1
+        if (rhs !~ /[ \t]/) return 1
+      }
+      return 0
+    }
+
+    {
+      raw = $0
+      if (length(raw) > 500) next            # a minified or data line, not prose
+      t = trim(raw)
+      if (t == "") next
+
+      marker = ""
+      if (GROUP == "hash") {
+        if (substr(t, 1, 2) == "#!" || substr(t, 1, 2) == "#" SQ) next
+        if (substr(t, 1, 1) == "#") { marker = "#"; body = substr(t, 2) }
+      } else if (GROUP == "dash") {
+        if (substr(t, 1, 3) == "---") next
+        if (substr(t, 1, 2) == "--") { marker = "--"; body = substr(t, 3) }
+      } else if (GROUP == "semi") {
+        if (substr(t, 1, 1) == ";") { marker = ";"; body = substr(t, 2) }
+      } else {
+        if (substr(t, 1, 3) == "///" || substr(t, 1, 3) == "//!") next
+        else if (substr(t, 1, 3) == "/**" || substr(t, 1, 3) == "/*!") next
+        else if (substr(t, 1, 2) == "//")   { marker = "//";   body = substr(t, 3) }
+        else if (substr(t, 1, 2) == "/*")   { marker = "/*";   body = substr(t, 3) }
+        else if (substr(t, 1, 4) == "<!--") { marker = "<!--"; body = substr(t, 5) }
+        else if (substr(t, 1, 2) == "* ")   { marker = "*";    body = substr(t, 2) }
+      }
+      if (marker == "") next
+
+      b = trim(body)
+      sub(/[ \t]*\*\/[ \t]*$/, "", b)
+      sub(/[ \t]*-->[ \t]*$/, "", b)
+      b = trim(b)
+      if (b == "") next
+
+      # Banner and divider comments: a body that is punctuation and nothing else.
+      s = b; gsub(/[ \t]/, "", s)
+      if (length(s) >= 4 && s ~ /^[-=*_~#+.<>\/\\|]+$/) hit("banner", raw)
+
+      # A TODO with no owner and no tracker. The owner form and every shape of
+      # tracker reference the craft cites are exemptions, not matches.
+      if (b ~ /(^|[^A-Za-z0-9_])TODO[ \t]*[:(]/ &&
+          b !~ /TODO[ \t]*\(/ &&
+          b !~ /https?:\/\// &&
+          b !~ /[A-Za-z0-9_-]+\.[A-Za-z][A-Za-z]+\// &&
+          b !~ /#[0-9]/ &&
+          b !~ /[A-Z][A-Z]+-[0-9]/) hit("todo", raw)
+
+      # Chain-of-thought leakage: a comment that narrates the session rather than the
+      # code. Four branches were written and then cut, each by a false positive found in
+      # real prose rather than imagined — this is the detector the acceptance calls the
+      # one that matters, and it was loosened four times rather than have a test edited.
+      #
+      #   `^(first|next|then|finally|lastly),`  cut: `# FIRST, in one linear gsub each`
+      #                                         is a sentence continuing across two
+      #                                         comment lines, in this very file.
+      #   `^now[ \t]+we`                        cut: `// Now we hold the lock, so the
+      #                                         read is safe` narrates the code.
+      #   `^here.?s[ \t]+(the|what|how|why)`    cut: `// Here is why the offset is
+      #                                         1-based` is the why-comment the craft
+      #                                         exists to ask for.
+      #   `i.?ve`, `we.?ve`, `i.?m`             cut: `// We have seen this fail on ARM`
+      #                                         is engineering prose, and `i.?m` also
+      #                                         matched a word opening with `im`.
+      #
+      # `step` additionally requires punctuation after its number, so `// Step 2 of the
+      # handshake is the challenge` survives and `// Step 1: build the map` does not.
+      lb = tolower(b)
+      if (lb ~ /^step[ \t]*[0-9]+[ \t]*[:.)-]/ ||
+          lb ~ /^now[ \t]+(let.?s|i.?ll)[ \t]/ ||
+          lb ~ /^let.?s[ \t]/ ||
+          lb ~ /^as[ \t]+requested([^a-z]|$)/ ||
+          lb ~ /^as[ \t]+(you|we)[ \t]+(asked|requested|discussed|mentioned|wanted)/ ||
+          lb ~ /^per[ \t]+your[ \t]+request/ ||
+          lb ~ /^(i.?ll|we.?ll)[ \t]/ ||
+          lb ~ /the user (asked|wants|requested|said)/ ||
+          lb ~ /(your request|as we discussed|in the chat|per our conversation)/) hit("cot", raw)
+
+      # Commented-out code. A `*` continuation line is exempt because `*p = 0;` is a
+      # pointer store, not a comment; a tagged line is exempt so a TODO is judged once.
+      if (marker == "*") next
+      if (b ~ /^(TODO|FIXME|NOTE|HACK|XXX)([^A-Za-z]|$)/) next
+      if (code(b)) hit("code", raw)
+    }
+  '
+}

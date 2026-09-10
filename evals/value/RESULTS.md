@@ -417,3 +417,217 @@ against a target with a stated quality requirement, which is the condition their
 they need. A tie at n=1 is weak evidence of no difference. It is strong enough to say the suite has
 not yet shown its four skills earn their place, and to say where to look next: a target with a
 stated SLO, and a budget ceiling the treatment can actually finish inside.
+
+# Unit 9 — `comment-discipline`, 2026-09-09
+
+Question: does the `comment-discipline` craft change what the model writes? Everything else in the
+change was already built and green (285/285) — the craft, the tier-1 hook gate, the Ousterhout
+reference, the reviewer line, the wiring into the four builder agents. This is the only part that
+asks whether any of it moves the output.
+
+**The instrument is not density, and ADR-003 is the reason.** The largest empirical study of
+AI-generated code in real repositories measured comment density at **18.01% for AI against 17.96%
+for human** ([arXiv 2603.27130v2](https://arxiv.org/html/2603.27130v2)). A density gate reports
+clean on exactly the output this change exists to fix. So the unit counts **redundancy per
+comment**, normalised per 100 lines of emitted **code** — comment lines are excluded from the
+denominator on purpose, because putting them in lets a chatty arm dilute its own rate.
+
+claude 2.1.267 · model `claude-opus-5[1m]` · `--permission-mode acceptEdits` · **n=3 per arm, three
+arms, 9 cells** · **$12.12 for the grid, $13.98 all in** (one $1.86 cell was thrown away, below).
+
+## The four criteria, each traced to a published rule
+
+| # | criterion | source | scored by |
+|---|---|---|---|
+| 1 | the comment restates its own code | [`jsdoc/informative-docs`](https://github.com/gajus/eslint-plugin-jsdoc/blob/main/docs/rules/informative-docs.md) — no content word beyond the thing it documents, stop-words `a an i in of s the` stripped | this file, in JS |
+| 2 | banner / divider comments | — | **the hook's own detector** |
+| 3 | chain-of-thought leakage | the defect named in [claude-code#65961](https://github.com/anthropics/claude-code/issues/65961) | **the hook's own detector** |
+| 4 | a docstring on a trivial private function | [Google pyguide §3.8](https://google.github.io/styleguide/pyguide.html) inverted: private AND small AND obvious | this file, in JS |
+
+2 and 3 call `praxis_scan_comments` per line rather than reimplementing it, because
+`hooks/pre-tool-use:158` says in as many words that a second copy of those rules would be a second
+standard. The same call yields the would-have-denied count for free.
+
+## The confound, and the decision — stated because picking silently is not defensible
+
+The tier-1 hook gate denies banners and chain-of-thought leakage **regardless of arm**. Leaving it
+on would clamp two of the four counted criteria to ~0 on both sides — blinding the instrument on
+half its surface to measure the thing the other half is for.
+
+**Both arms therefore ran with `PRAXIS_FLOOR=off`,** which lifts the spec floor and the tier-1
+comment pass together. The craft is then the only difference between treatment and control, which
+is the question asked. What it gives up is the user-facing number, and that is recovered as a
+derived one: every emitted line is replayed through the hook's own detector and reported as
+`wouldDeny`. **It came back 0 in all nine cells** — on this task the gate would have denied
+nothing, in any arm. That is a would-have-denied count, not an outcome: a real deny makes the model
+rewrite the line.
+
+## Why the task is dispatched, and why that is load-bearing
+
+A craft body reaches the model through exactly one path: `hooks/subagent-start` resolves
+`od.craft.requires` from the agent file and concatenates the bodies (`hooks/lib.sh:175`). A
+top-level `claude -p` turn gets `contract.md`, which **names** comment-discipline among the
+always-on crafts and carries **none of its text**. A top-level cell would have measured a name-drop
+and reported a guaranteed tie for a mechanical reason. The prompt dispatches `praxis:engineer`,
+which is also how a person gets this craft.
+
+Proved mechanically rather than assumed — `t05-driver.mjs injection` feeds a synthetic
+`{"agent_type":"praxis:engineer"}` to each arm's own hook:
+
+```
+treatment {"bytes":14237,"craftSection":true,"governingRule":true,"mentions":2}
+control   {"bytes":9552,"craftSection":false,"governingRule":false,"mentions":0}
+```
+
+## The arms
+
+| arm | plugin | prompt |
+|---|---|---|
+| `treatment` | full | `Dispatch praxis:engineer to build …` |
+| `control` | minus `crafts/comment-discipline/`, minus the name in `hooks/context/contract.md`, minus the `- comment-discipline` line in all four builder agents | identical |
+| `bare` | **no plugin at all** | `Build …` |
+
+The control drops the craft's **name** as well as its body. Leaving the name behind would make it
+an arm of its own — told that comment-discipline is always-on and given none of it — which is
+neither of the two arms the question asks about. `bare` was added after treatment and control both
+scored zero, for the reason in the next section.
+
+## The task, and why this one
+
+A per-key sliding-window quota counter: `createCounter`, `record`, `used`, `remaining`, `allow`,
+`resetsAt`, `limitOf`, `windowOf`, `prune`, with tests. Eight functions, two trivial accessors, and
+**one genuinely non-obvious constraint planted in the fixture** — `src/clock.js` returns monotonic
+milliseconds since process start, while `resetsAt` is specified to return a Unix epoch timestamp,
+so a correct implementation must rebase through `originEpochMs`. That line is precisely the kind
+the craft asks to be commented (units, and an invariant a reader cannot infer), which gives the
+unit a way to see whether the craft suppresses the *right* comments rather than merely fewer.
+
+**The prompt says nothing about comments, documentation, docstrings, readability or style.** If it
+did, every arm would perform for the scorer and the measurement would be worthless.
+
+## Result
+
+| cell | cost | code lines | comments | c/100 | restates | banner | CoT | trivial doc | redundant/100 | noted the constraint |
+|---|---|---|---|---|---|---|---|---|---|---|
+| treatment r1 | $1.82 | 205 | 8 | 3.90 | 0 | 0 | 0 | 1 | **0.00** | yes |
+| treatment r2 | $1.81 | 281 | 30 | 10.68 | 0 | 0 | 0 | 0 | **0.00** | yes |
+| treatment r3 | $1.78 | 220 | 4 | 1.82 | 0 | 0 | 0 | 0 | **0.00** | yes |
+| control r1 | $1.59 | 221 | 12 | 5.43 | 0 | 0 | 0 | 0 | **0.00** | yes |
+| control r2 | $1.67 | 214 | 24 | 11.21 | 0 | 0 | 0 | 0 | **0.00** | yes |
+| control r3 | $1.56 | 210 | 1 | 0.48 | 0 | 0 | 0 | 0 | **0.00** | yes |
+| bare r1 | $0.62 | 278 | 17 | 6.12 | 0 | 0 | 0 | 1 | **0.00** | yes |
+| bare r2 | $0.49 | 229 | 18 | 7.86 | 0 | 0 | 0 | 0 | **0.00** | yes |
+| bare r3 | $0.78 | 244 | 11 | 4.51 | 0 | 0 | 0 | 0 | **0.00** | yes |
+
+Pooled: treatment 706 code lines / 42 comments · control 645 / 37 · bare 751 / 46. Redundancy per
+100 lines: **0.00 · 0.00 · 0.00**.
+
+**This is a GAP, not a tie, and the distinction is the whole finding.** The craft did not beat its
+control. Neither did the control beat the bare model. Across **2,102 lines of emitted code and 125
+comments in nine cells**, all four criteria detected **zero** defects in **every** cell. The
+instrument ran and had nothing to fail with, which is a GAP in this repo's own vocabulary — and a
+GAP must never be reported as a clean PASS.
+
+**The defect did not reproduce.** Not in the treatment, not in the control, and not in the bare
+model with no plugin loaded at all. On this task, in this language, on this model, through the
+non-interactive `-p` channel, `claude-opus-5[1m]` already writes the comments the craft asks for.
+The bare arm is the one that settles it: without it, a double zero would have been ambiguous
+between *the rest of Praxis already suppresses this* and *there was nothing to suppress*. It is the
+second.
+
+### What the arms actually wrote
+
+Every arm found the planted constraint and commented it — 9/9, including the two sparsest cells in
+the run. Control r3 wrote **one** comment in 210 lines of code, and it was this one:
+
+> `// Timestamps are monotonic clock readings (ms since process start); resetsAt is`
+> `// specified as Unix epoch ms, so add the origin offset to leave monotonic space.`
+
+The bare model, no plugin: `// clock.now() is monotonic since process start, so shift onto the
+epoch.` The treatment: `// Stamps are monotonic ms since process start; the contract is a Unix
+epoch, so shift by the epoch that clock time 0 corresponds to.` Three arms, same judgement.
+
+`limitOf` and `windowOf` — the two trivial accessors planted to bait a docstring — came back bare
+in every cell of every arm.
+
+### Density is noise here, measured in this repo rather than cited
+
+Comment volume swung **1.82 to 10.68** per 100 lines inside the treatment arm and **0.48 to 11.21**
+inside the control. The gap between arms is 5.95 vs 5.74 vs 6.13. **The within-arm spread is an
+order of magnitude larger than the between-arm difference.** ADR-003 refused a density threshold on
+the strength of an external study; this run is local corroboration, and it is worth more than the
+citation because it is this corpus, this model and this channel.
+
+## Negatives and setup facts, named
+
+- **`node --test` was denied in all nine cells, 22–36 times each.** The suite never ran in any arm.
+  The permission layer refuses node execution in this session — for the orchestrator and for the
+  subagent, with and without `dangerouslyDisableSandbox`. Every cell's code is desk-checked, not
+  verified, and the cells say so themselves. Identical across arms, so the comparison holds, but
+  **no arm ever iterated against a failing test**, and iteration is where the reported defect
+  (claude-code#65961) is described as accumulating.
+- **One cell was bought and thrown away, $1.86.** A `set -- $spec` word-split in the run loop
+  produced `arm="treatment 2"`, which `pluginFor` sent down the control branch — a control cell
+  labelled treatment. It was discarded rather than relabelled: a reader should not have to trust a
+  post-hoc correction of which arm a cell ran in.
+- **The bare arm is not a clean ablation of Praxis**, only of the plugin. It also loses the
+  dispatch, the contract and the other two crafts the engineer carries, and it costs a third as
+  much ($1.89 vs $5.41). It answers "does the defect occur at all", which is what it was added for,
+  and nothing narrower.
+- **Criterion 4 is a GAP on its own terms.** Its structural form — private AND small AND obvious —
+  fired twice in this run and was **wrong both times**: on `cutoffOf`, a one-liner whose comment
+  states a half-open-window boundary rule that no reader could infer from `now() - windowMs`. That
+  is the comment the craft exists to ask for. "Obvious" is not a property a mechanical check
+  decides. The column is reported and deliberately left out of the redundancy total.
+- **`constraintNoted` cannot fail either.** 9/9 is a column with no discrimination in it. It is
+  reported as an observation and nothing rests on it.
+- **The craft's cost is real and its measured benefit here is zero.** It adds 4,685 bytes to every
+  builder dispatch — 14,237 against the control's 9,552 — on every build turn, which is the tax
+  ADR-006 accepted in advance. This run did not find anything bought with it.
+- **A pre-existing break in `units.mjs`, not touched.** `investigationSuite` is imported by
+  `runs/t09-driver.mjs` and is not exported (`typeof m.investigationSuite` → `undefined`), so T09's
+  `run` path cannot execute. Its recorded results and streams are unaffected. Reported, not fixed:
+  it is another task's file.
+
+## Scorer defects, three, found by reading rather than by review
+
+The proof (`runs/t05-scorer-proof.mjs`) runs before any cell is bought and checks four things per
+criterion: it fires on a known-bad sample, it stays silent on a known-good one, deleting only that
+defect's lines drops that criterion to 0 while leaving the other three untouched, and — for the two
+criteria this file owns — disabling the detector drops it to 0. **19/19.**
+
+1. **Every banner was counted twice.** A divider has no content word after stop-word stripping, and
+   the restatement rule's `cw.length === 0` clause called that a restatement — so criterion 1's
+   column was inflated by exactly criterion 2's. Caught by the isolation check, not by review:
+   removing the banner lines dropped `restatement` from 2 to 1. ADR-001 gives each defect one
+   owner; a divider belongs to criterion 2.
+2. **`const second = resetsAt(c, key)` was scored as a private trivial function.** The declaration
+   regex ended in `\(?` — optional — so every `const x = f(y)` in a test body matched, and a timing
+   comment above one counted as a docstring on a trivial private function. Found by reading the
+   probe cell's evidence rather than its score. The initializer must now actually be a function.
+3. **Criterion 4 double-counts by construction** once the informativeness condition is applied to
+   it, because that subset is contained in criterion 1. It is now reported as its own column with
+   the overlapping subset named, and excluded from the total.
+
+Defects 1 and 2 were both found **before** the grid was bought — 1 by the proof, 2 by reading the
+probe cell. The probe existed for that purpose, following the precedent Units 6 and 7 set.
+
+## What it says and does not say
+
+It says: on one build task in JavaScript, with a planted non-obvious constraint and two planted
+trivial accessors, `claude-opus-5[1m]` produced **zero** restating comments, **zero** banners,
+**zero** chain-of-thought leakage and **zero** boilerplate docstrings on trivial private functions
+— in the treatment, in the control, and with no plugin loaded at all. The craft was not shown to
+add anything, because there was nothing on this channel for it to remove. It also says the tier-1
+gate would have denied nothing here, and that comment volume varies more between two runs of the
+same arm than between the arms.
+
+It does not say the craft is worthless, and it specifically does not say the hook is. **T02 proved
+the hook mechanically, in both directions, per pattern** — that evidence stands and this run does
+not touch it. What this run establishes is that the *behavioural* claim is unmeasured, and it names
+where to look next rather than leaving it open: the defect in claude-code#65961 is reported against
+**interactive sessions with repeated edits to the same file**, and this run sampled a single
+non-interactive `-p` build in which the test suite never once ran and no arm ever iterated against
+a failure. One task, one language, one model, one channel, n=3. A GAP at n=3 is not evidence of
+absence — it is evidence that this task could not tell the difference, and a task that can must
+put the model through the iteration loop where the defect was reported.

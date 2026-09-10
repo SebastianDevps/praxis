@@ -22,6 +22,7 @@ const SCOPE = {
   minimalism: { alwaysApply: true },
   orchestration: { alwaysApply: true },
   "evidence-discipline": { alwaysApply: true },
+  "comment-discipline": { alwaysApply: true },
   "anti-slop": { globs: WEB_GLOBS },
   "a11y-baseline": { globs: WEB_GLOBS },
   "motion-discipline": { globs: WEB_GLOBS },
