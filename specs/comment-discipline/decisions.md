@@ -131,7 +131,10 @@ existing craft, and the routing audit's EN rank-1 is measured with the file move
 
 ## ADR-007 — The craft ships unpaid, and the eval that would settle it names its own conditions
 
-**Status:** accepted — approved by the owner
+**Status:** SUPERSEDED by `specs/eval-remeasure/` ADR-001. The eval this ADR named was run
+(`RESULTS.md` § Unit 10, $21.91, 71 test runs, the builder iterating against its own red) and
+returned zero again. The craft was removed. The reasoning below is kept as written, because it was
+the right call on the evidence available at the time and the record should show what changed it.
 
 **Context.** T05 ran the craft against a control and against a bare model with no plugin loaded.
 9 cells, 3 arms, 2,102 lines of emitted code, 125 comments, $13.98:
