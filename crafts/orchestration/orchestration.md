@@ -12,6 +12,8 @@ kind: craft
 
 **Parallel fan-out for disjoint work.** Two or more tasks on genuinely independent files/domains → dispatch as multiple Agent calls in one assistant turn. That is what makes it a wave; across sequential turns they serialize and buy nothing. Shared files → sequential. Isolate concurrent writers.
 
+**Stop work by its task id.** A dispatched run, a loop or a background cell is stopped through the id the harness gave it — that reaches exactly the work you started. A command-line pattern reaches every process that matches it, including someone else's run on the same machine.
+
 **Keep orchestrator context thin.** Each delegated unit returns a result the orchestrator synthesizes. The orchestrator does not read all the files — it delegates reading and writing together to the specialist.
 
 **Make every run inspectable.** Render a Run Card after each phase: phase · tools · artifacts · review gate · recovery · cost. No prose summary substitutes for it.

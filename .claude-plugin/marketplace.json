@@ -6,14 +6,14 @@
   },
   "metadata": {
     "description": "Praxis — clarity-first agent framework: opinionated taste, a visible process loop, per-project learning, cross-platform. One floor: every change leaves specs/<change>/.",
-    "version": "0.7.0"
+    "version": "0.8.0"
   },
   "plugins": [
     {
       "name": "praxis",
       "source": "./",
       "description": "Makes the agent work out loud instead of guessing: it researches first, stops for your decision before building, and proves the result with a command you can read. Every quality gate is mutation-tested — the check is made to fail on purpose, then restored — and the evals that did NOT work are published beside the ones that did, including one that found a headline feature costing 3.65x for identical detection. Adds team memory your project commits to git (conventions, decisions, learned procedures on probation until pressure-tested), complementing the host's per-user memory rather than duplicating it. Also assesses what you do NOT own — a repo, a package, an architecture, a capability you must source — and returns a cited dossier with a verdict rather than a summary, where the dependency verdict is computed against public package APIs instead of asserted and a star count is never a reason. Zero dependencies, no daemon, no database, no telemetry; the only network calls are the public APIs that assessment reads. Runs on Claude Code, Codex, Cursor, Gemini CLI and Copilot from one definition. Primes, and holds one floor: every change leaves a specs/<change>/ folder (design, decisions, implementation, future work — the cal.diy convention), scaled by the mode dial; a single approval stop in full mode, then it builds uninterrupted.",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "strict": true
     }
   ]

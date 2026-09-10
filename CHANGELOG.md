@@ -2,7 +2,7 @@
 
 All notable changes to Praxis are documented here. Format follows [Keep a Changelog](https://keepachangelog.com); versions follow [SemVer](https://semver.org).
 
-## [Unreleased]
+## [0.8.0] — 2026-09-10
 
 ### Added
 
