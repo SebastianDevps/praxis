@@ -18,7 +18,9 @@ import { isSpecSide } from "../floor/units.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const ROOT = resolve(HERE, "..", "..");
-export const MATRIZ = join(ROOT, "docs", "eval-data", "matriz.json");
+// PRAXIS_MATRIZ points the comparison at another matrix — the tests use a checked-in subset,
+// since docs/eval-data/ is the owner's working data and is not in the repo.
+export const MATRIZ = process.env.PRAXIS_MATRIZ || join(ROOT, "docs", "eval-data", "matriz.json");
 
 // The fixture feature: a pure function in an existing module, filtering plus escaping, no I/O,
 // no UI, every decision pinned so the spec-writer has nothing material left to ask. The analogue

@@ -22,6 +22,7 @@ import { isSpecSide } from "../evals/floor/units.mjs";
 const ROOT = new URL("..", import.meta.url).pathname;
 const RUN = join(ROOT, "evals", "cycle", "run.mjs");
 const GH = join(ROOT, "evals", "cycle", "bin", "gh");
+const MATRIZ_FIXTURE = join(ROOT, "tests", "fixtures", "matriz-medium-pure.json");
 const NAMES = SCORERS.map(([k]) => k);
 const states = (score) => Object.fromEntries(NAMES.map((k) => [k, score.scorers[k].state]));
 const allAre = (score, state) => NAMES.every((k) => score.scorers[k].state === state);
@@ -29,7 +30,7 @@ const allAre = (score, state) => NAMES.every((k) => score.scorers[k].state === s
 function dryRun(scenario, extra = []) {
   const runs = mkdtempSync(join(tmpdir(), `cycle-test-${scenario}-`));
   const r = spawnSync("node", [RUN, "--dry-run", "--scenario", scenario, ...extra], {
-    cwd: ROOT, env: { ...process.env, CYCLE_RUNS_DIR: runs }, encoding: "utf8", timeout: 180_000,
+    cwd: ROOT, env: { ...process.env, CYCLE_RUNS_DIR: runs, PRAXIS_MATRIZ: MATRIZ_FIXTURE }, encoding: "utf8", timeout: 180_000,
   });
   assert.equal(r.status, 0, r.stderr);
   const runDir = join(runs, readdirSync(runs)[0]);
@@ -299,13 +300,13 @@ test("ship: PASS only when the first pr create follows the decision write; ESCAL
 });
 
 test("compareWithMatriz: GAP without a same-fixture baseline or a known task class, a verdict with both", () => {
-  assert.equal(compareWithMatriz({ taskClass: "medium-pure", cycleTokens: 300_000, baselineTokens: null }).state, "GAP");
-  assert.equal(compareWithMatriz({ taskClass: "invoice-csv", cycleTokens: 300_000, baselineTokens: 200_000 }).state, "GAP");
-  const pass = compareWithMatriz({ taskClass: "medium-pure", cycleTokens: 250_000, baselineTokens: 200_000 });
+  assert.equal(compareWithMatriz({ taskClass: "medium-pure", cycleTokens: 300_000, baselineTokens: null, matrizPath: MATRIZ_FIXTURE }).state, "GAP");
+  assert.equal(compareWithMatriz({ taskClass: "invoice-csv", cycleTokens: 300_000, baselineTokens: 200_000, matrizPath: MATRIZ_FIXTURE }).state, "GAP");
+  const pass = compareWithMatriz({ taskClass: "medium-pure", cycleTokens: 250_000, baselineTokens: 200_000, matrizPath: MATRIZ_FIXTURE });
   assert.equal(pass.state, "PASS");
   assert.equal(pass.ratio, 1.25);
   assert.equal(pass.reference.ratio.toFixed(2), "1.29");
-  assert.equal(compareWithMatriz({ taskClass: "medium-pure", cycleTokens: 400_000, baselineTokens: 200_000 }).state, "FAIL");
+  assert.equal(compareWithMatriz({ taskClass: "medium-pure", cycleTokens: 400_000, baselineTokens: 200_000, matrizPath: MATRIZ_FIXTURE }).state, "FAIL");
   const missing = join(mkdtempSync(join(tmpdir(), "cycle-matriz-")), "none.json");
   assert.equal(compareWithMatriz({ taskClass: "medium-pure", cycleTokens: 1, baselineTokens: 1, matrizPath: missing }).state, "GAP");
   writeFileSync(missing, JSON.stringify({ tasks: ["other"], cells: {} }));

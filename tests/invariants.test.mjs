@@ -380,8 +380,8 @@ test("reviewer keeps the two axes separate — never merged or reranked", () => 
   assert.match(src, /## Spec/, "the Spec section header is gone");
 });
 
-test("reviewer reports GAP on a missing design.md and never infers requirements from the code", () => {
+test("reviewer reports GAP on a missing spec.md and never infers requirements from the code", () => {
   const src = read("agents/reviewer.md");
-  assert.match(src, /No `design\.md` → the Spec axis reports `GAP`/, "the GAP-on-missing-design rule is gone");
+  assert.match(src, /No `spec\.md` \(nor legacy `design\.md`\) → the Spec axis reports `GAP`/, "the GAP-on-missing-spec rule is gone");
   assert.match(src, /never infers requirements from the code/, "the axis may read the diff as its own spec again");
 });

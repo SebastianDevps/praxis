@@ -1,0 +1,9 @@
+{
+  "generated": "2026-09-02T02:36:33.043Z",
+  "note": "Subset of docs/eval-data/matriz.json (medium-pure, praxis-full vs baseline) so the evals/cycle tests run where that file is not checked in.",
+  "tasks": ["medium-pure"],
+  "cells": {
+    "medium-pure|praxis-full": { "task": "medium-pure", "arm": "praxis-full", "n": 2, "tokens_total": { "values": [278486, 198412], "mean": 238449 }, "overhead_ratio_tokens": 1.2853388818663771 },
+    "medium-pure|baseline": { "task": "medium-pure", "arm": "baseline", "n": 2, "tokens_total": { "values": [186992, 184037], "mean": 185514.5 } }
+  }
+}

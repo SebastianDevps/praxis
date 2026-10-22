@@ -2516,7 +2516,15 @@ test("round 3: a Codex patch is classified path by path — one denied path deni
   assert.match(reason(out), /src\/app\.ts/);
 });
 
-test("round 3: a worktree spelled with capitals is still the worktree", () => {
+// Case-folding the worktree path guards a case-insensitive filesystem (macOS, Windows). On a
+// case-sensitive one (Linux CI) .Praxis/Worktrees is another directory, so the case does not apply.
+const caseInsensitiveFs = (() => {
+  const d = mkdtempSync(join(tmpdir(), "praxis-case-"));
+  writeFileSync(join(d, "A"), "");
+  try { return fsExists(join(d, "a")); } finally { rmSync(d, { recursive: true, force: true }); }
+})();
+
+test("round 3: a worktree spelled with capitals is still the worktree", { skip: caseInsensitiveFs ? false : "case-sensitive filesystem: .Praxis/Worktrees is not the worktree here" }, () => {
   const { repo, hook, write, commit } = floorRepo({ mode: "full" });
   write("README.md", "x\n");
   commit();
