@@ -257,13 +257,15 @@ live on the [`measurement`](https://github.com/SebastianDevps/praxis/tree/measur
 - **~12× fewer tokens** on facts the project had already decided
   ([the learning A/B](https://github.com/SebastianDevps/praxis/blob/measurement/evals/2026-06-26-learning-ab.md)).
 - **The spec before the first source edit in 3/3 runs; 0/3 without the floor** (`evals/floor/`,
-  measured on `design.md`, the spec's former name).
+  measured on `design.md`, the former name of `spec.md`).
 - **Self-approval 3/3 → 0/3** once the approval became a record only a hook can write.
 - **Vertical slices 3/3 vs 0/3** when the TDD method is loaded (`evals/value/`).
 - **Fan-out 0/72** before the cycle: parallel review existed in prose and in no transcript
-  (`docs/eval-data/`). The barrier is now a hook decision; the cycle's own numbers — dispatch
-  count, barrier order, round cap, token cost — are `evals/cycle`'s to publish, and until it runs
-  they are design, not measurement.
+  (`docs/eval-data/`). With the cycle, 3/3 live runs spawned nine subagents, wrote every round-1
+  lens file before the builder resumed, stopped at two rounds, and shipped only after
+  `decision.md` (`evals/cycle/RESULTS.md`).
+- **The cost, stated plainly:** the cycle ran at about 19.5x the dollars (65x the tokens) of an
+  unassisted run on the same small task. It is for substantial changes; use `fast` for the rest.
 
 Every gate is mutation-tested — made to fail on purpose, then restored — so none of them can pass
 vacuously. That is how a routing table pointing at two agents that never existed was caught.

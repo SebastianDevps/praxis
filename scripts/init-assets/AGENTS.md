@@ -9,7 +9,7 @@ README, package manifest, top-level layout — not from memory.}
 
 ## Before Starting Work
 
-1. Read `specs/<change>/design.md` — the source of truth for the change you are on.
+1. Read `specs/<change>/spec.md` (legacy name `design.md`) — the source of truth for the change you are on.
    `specs/_templates/` is the shape of a new one.
 2. Read `specs/<change>/implementation.md` — stage, tasks, what is done, what is blocked.
    On resume, read it first.
@@ -53,7 +53,7 @@ Index: `agents/README.md`. Claude Code loads them natively through `.claude/rule
 
 ## Don't
 
-- Don't add behavior that is not in the change's `design.md`; capture it in `future-work.md`.
+- Don't add behavior that is not in the change's `spec.md`; capture it in `future-work.md`.
 - Don't skip a task's `verify:` line.
 - Don't commit secrets, API keys, or `.env` files.
 - {Project-specific don'ts}

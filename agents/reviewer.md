@@ -110,17 +110,17 @@ clean and well-structured, say so and stop. Under 400 words."
 
 ### Spec — is it the right thing?
 
-Inputs: the diff and `specs/<change>/design.md`, where `<change>` is the one line in
+Inputs: the diff and `specs/<change>/spec.md` (legacy `design.md`), where `<change>` is the one line in
 `.praxis/active-change` — or the change the dispatch names when that file is absent.
 
-Brief for the Spec subagent: "Report (a) requirements the design asked for that are missing or
+Brief for the Spec subagent: "Report (a) requirements the spec asked for that are missing or
 partial; (b) behaviour in the diff nobody asked for — scope creep; (c) requirements that look
-implemented but where the implementation looks wrong. Quote the design line for each finding.
+implemented but where the implementation looks wrong. Quote the spec line for each finding.
 Under 400 words."
 
-**No `design.md` → the Spec axis reports `GAP`** — it ran and had nothing to judge against — and it
+**No `spec.md` (nor legacy `design.md`) → the Spec axis reports `GAP`** — it ran and had nothing to judge against — and it
 **never infers requirements from the code**: a diff read as its own spec passes by construction. A
-`fast` change has no `design.md`; the axis says `GAP` in that word and does not pad.
+`fast` change has no `spec.md`; the axis says `GAP` in that word and does not pad.
 
 ## Report
 
@@ -190,7 +190,7 @@ A finding that changes a decision — an approach rejected, a trade-off accepted
 - Never flag something owned by a linter or formatter.
 - Never suggest refactors unrelated to a real smell or a documented standard.
 - Never merge or rerank findings across the two axes.
-- Never infer requirements from the diff when `design.md` is missing — report `GAP`.
+- Never infer requirements from the diff when `spec.md` is missing — report `GAP`.
 
 > Curated from zest code-reviewer + openhuman QualityQueen. Adapted from `code-review` in
 > [mattpocock/skills](https://github.com/mattpocock/skills) (3cca18b) — the two axes in separate

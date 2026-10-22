@@ -60,7 +60,7 @@ the failure [the activation audit](https://github.com/SebastianDevps/praxis/blob
 test-strategy, debugging and auth prompts where the matching skill never fired.
 
 Pointers alone do not fix it. What does is a different variable: **the size of the candidate set.**
-Unassisted, the model matches a prompt against 34 skills. A dispatched specialist matches against the
+Unassisted, the model matches a prompt against 45 skills. A dispatched specialist matches against the
 1–5 its role declares, already filtered by domain and marked as relevant to the work it was given.
 That is a categorically easier match, and it improves independently of how well any description is
 written.

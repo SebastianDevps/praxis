@@ -100,7 +100,7 @@ The four states apply to each kind, and `GAP` is the one that differs:
 | `PASS` | exit 0 | the reviewer read the diff and reports no findings, in those words | the person read the diff and accepted it |
 | `FAIL` | non-zero exit | findings | rejected |
 | `SKIP` | the runner could not start — missing tool, missing target | no diff, or no reviewer could run | nobody read it |
-| `GAP` | it ran and asserted nothing — zero tests matched, an assertion-free test, a linter with no rules | the Spec axis with no `design.md` to judge against (a missing `agents/rules/` is not a GAP: the Standards axis runs on the Fowler floor and says so) | the summary was read, not the diff |
+| `GAP` | it ran and asserted nothing — zero tests matched, an assertion-free test, a linter with no rules | the Spec axis with no `spec.md` (or legacy `design.md`) to judge against (a missing `agents/rules/` is not a GAP: the Standards axis runs on the Fowler floor and says so) | the summary was read, not the diff |
 
 A `GAP` never sets the failure flag; it reports, and someone decides. Silence is not a state.
 
