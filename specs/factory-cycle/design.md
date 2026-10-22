@@ -326,3 +326,8 @@ Ledger, optional section kept by the orchestrator:
 Lens verdict threshold: `CHANGES` only when at least one finding is `blocking` or `important`;
 findings that are all `minor` give `PASS` with the findings listed. The approver applies the same
 threshold when it reads the round.
+
+Accepted from the round-3 builder (beyond the amendments above): `stage: shipped` written to the
+ledger of an open cycle is denied until `.praxis/ship/<c>` exists — without it, writing the stage
+would close the cycle and free the push it gates. `git push --tags` with no refspec is not a push
+of the current branch.

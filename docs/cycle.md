@@ -124,6 +124,8 @@ ship (`git push`, `gh pr create`, `gh api …pulls|merge` about <c>):
 trunk rule: push destination main, master or the ledger's `base:` while ANY change is an open
   cycle → deny "the cycle never pushes trunk"; `--all`, `--mirror`, `--branches` likewise.
   No open cycle → not Praxis's call → allow.
+`stage: shipped` written to the ledger of an open cycle before .praxis/ship/<c> exists → deny
+  (otherwise writing the stage would close the cycle and free the push it was meant to gate).
 builder dispatch (Agent subagent_type ~ builder) or resume (SendMessage to = ledger.builder):
   round = 0                                   → allow
   round = N ≥ 1, review/round-N incomplete     → deny  "barrier: waiting for <missing>"
