@@ -57,7 +57,7 @@ Three builders in parallel on disjoint files, each reading `review/rework-1/{cor
       files:  hooks/context/roles/lens.md, hooks/context/roles/approver.md, agents/refuter-correctness.md, agents/refuter-security.md, agents/refuter-tests.md, agents/lens-ui.md, agents/approver.md, skills/factory/SKILL.md, agents/orchestrator.md, specs/_templates/implementation.md, docs/task-model.md, docs/cycle.md, README.md, CHANGELOG.md, specs/factory-cycle/design.md (appendix only)
       verify: node scripts/validate-resources.mjs · node scripts/routing-audit.mjs · node --test tests/*.test.mjs
 - [ ] R04 · phase: review · state: in_progress · lenses (correctness, security, tests) on `git diff main...feat/factory-cycle`, round 1 after rework; builder resumed on CHANGES; round 2 at most, then approver
-- [ ] T10 · phase: verify · state: pending · Cost arms: one cycle cell with spec-writer and approver on sonnet, one with the lenses on opus, against T06's three cells (lenses already run on sonnet); rows in evals/cycle/RESULTS.md
+- [ ] T10 · phase: verify · state: pending · runs after the PR (the person asked for speed 2026-10-22; measurement, no code depends on it) · · Cost arms: one cycle cell with spec-writer and approver on sonnet, one with the lenses on opus, against T06's three cells (lenses already run on sonnet); rows in evals/cycle/RESULTS.md
       files:  evals/cycle/RESULTS.md, evals/cycle/run.mjs (model-arm flag only)
       verify: RESULTS.md rows with tokens, cost and findings per lens, each PASS · FAIL · SKIP · GAP
 - [ ] S01 · phase: ship · state: pending · approver dispatched from a fresh `claude` process (the role is registered there) → `decision.md` → `git push -u origin feat/factory-cycle` + `gh pr create --base main`
@@ -83,6 +83,7 @@ Three builders in parallel on disjoint files, each reading `review/rework-1/{cor
 - round-3 build (T08, sonnet): 1 agent · 132,867 tokens · 11 tool uses
 - round-3 build (T09, sonnet): 1 agent · 149,902 tokens · 26 tool uses
 - round-3 build (T07, opus): 1 agent · 486,935 tokens · 108 tool uses · 48 min
+- round-1 lenses after rework (sonnet): correctness 192,296 tokens · 47 tool uses; security 251,854 tokens · 37 tool uses; tests: pending
 
 ## Handoffs to later tasks
 - T05: README agent count test expects 16 (`tests/manifest.test.mjs` ×2, `tests/references.test.mjs` ×1) — update the README table and list.

@@ -331,3 +331,29 @@ Accepted from the round-3 builder (beyond the amendments above): `stage: shipped
 ledger of an open cycle is denied until `.praxis/ship/<c>` exists — without it, writing the stage
 would close the cycle and free the push it gates. `git push --tags` with no refspec is not a push
 of the current branch.
+
+### Round-3 amendments, lens round 1 (rework 1 · these override the rules above where they differ)
+
+```
+open cycle of <c>  ⇔  ledger exists AND NOT closed AND (`builder:` non-empty OR specs/<c>/review/
+                       exists OR `round:` ≥ 1). `round: 0` and an empty `builder:` alone — the
+                       template — are not a cycle.
+closed             ⇔  stage: shipped AND .praxis/ship/<c> exists. Without the marker a shipped
+                       ledger is still open; the separate `stage: shipped` write guard is no
+                       longer load-bearing (keep or drop, the predicate decides).
+ship allowed       ⇔  .praxis/ship/<c> AND ( decision.md APPROVE (human)
+                                           OR decision.md APPROVE AND the current round complete
+                                              with every lens PASS — checked at push time )
+what is a ship     only commands that publish: `git push` that updates a branch (not --dry-run/-n,
+                   not a tag refspec — `git show-ref --verify -q refs/tags/<n>` — not a deletion
+                   unless the destination is trunk, which the trunk rule denies); `gh pr create`;
+                   `gh pr merge`; `gh api` with a writing method (-X POST|PUT|PATCH|DELETE, or
+                   -f/-F/--field/--raw-field/--input, which imply POST) on pulls|merges|git/refs;
+                   graphql mutations naming mergePullRequest|createPullRequest. GET reads are free.
+fresh clone        scripts/approve.sh on a change whose decision.md already says APPROVE (the
+                   approver's) re-arms .praxis/ship/<c> and changes nothing else — it never
+                   rewrites an approver APPROVE as APPROVE (human). The ship deny text says so.
+Codex apply_patch  `*** Move to: <path>` targets are edit paths: classified and record-gated like
+                   any Add/Update path; `*** Delete File:` on a ledger, decision.md, lens file or
+                   record is a write to it.
+```
