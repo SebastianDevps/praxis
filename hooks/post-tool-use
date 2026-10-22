@@ -14,23 +14,29 @@
 # existence is the record. An edit inside the builder's worktree (`<root>/.praxis/worktrees/
 # <name>/`) is judged by that checkout, the same re-rooting pre-tool-use applies.
 #
-# The second record rides on the same event. When the edit wrote `specs/<change>/decision.md`
-# for the ACTIVE change — pre-tool-use has already refused every writer but the approver —
-# the file is read back: `verdict: ESCALATE` creates `.praxis/needs-human/<change>`; `APPROVE`
-# or `APPROVE (human)` removes it. The marker is what makes "needs a human" a state the Run
-# Card reports from a file, not from prose, and what `/praxis:approve` and `/praxis:rework`
-# clear. It is written from the file's content in every mode, fast included: the approver's
-# verdict is a fact about the change, not about the dial.
+# The second and third records ride on the same event. When the edit wrote
+# `specs/<change>/decision.md` for the ACTIVE change — pre-tool-use has already refused every
+# writer but the approver — the file is read back:
+#   ESCALATE          creates `.praxis/needs-human/<change>`, removes `.praxis/ship/<change>`
+#   APPROVE           removes needs-human; writes `.praxis/ship/<change>` when the change's
+#                     current round is complete with every lens at PASS (with its attack list),
+#                     removes it otherwise
+#   APPROVE (human)   removes needs-human (scripts/approve.sh writes that verdict and its marker)
+# The needs-human marker is what makes "needs a human" a state the Run Card reports from a
+# file, not from prose, and what `/praxis:approve` and `/praxis:rework` clear. The ship marker
+# is what the ship gate keys on (design.md, Round-3 amendments): decision.md alone is a file
+# Bash can forge, and Bash never reaches this branch. Both are written from the file's content
+# in every mode, fast included: the approver's verdict is a fact about the change, not the dial.
 #
-# The third is the one-shot command token. `user-prompt-submit` mints `.praxis/intent/
+# The fourth is the one-shot command token. `user-prompt-submit` mints `.praxis/intent/
 # <approve|rework>-<change>` from the PERSON's `/praxis:approve <c>` or `/praxis:rework <c>`;
 # `pre-tool-use` lets `scripts/approve.sh <c>` / `scripts/rework.sh <c>` run only while it
-# exists; this hook deletes it once the Bash call that ran the script returns, whatever the
-# script's exit code — one prompt, one run.
+# exists; this hook deletes it once the Bash call that EXECUTED the script returns, whatever
+# the script's exit code — one prompt, one run. Reading the script spends nothing.
 #
 # The first time this creates `.praxis/`, it also writes `.praxis/.gitignore` excluding the
 # per-machine session state (`active-change`, `approved/`, `needs-human/`, `worktrees/`,
-# `intent/`, `session-started`), same rule as the memory store's `sessions.jsonl`.
+# `intent/`, `ship/`, `session-started`), same rule as the memory store's `sessions.jsonl`.
 #
 # LOOSENESS, stated: the hook fires after any edit the host let through. On Claude Code that
 # means the person answered the ask — or an `acceptEdits` permission mode auto-approved it,
@@ -65,81 +71,100 @@ cwd="$(praxis_json_string "$payload" cwd)"
 root="$(praxis_project_root "${CLAUDE_PROJECT_DIR:-${CODEX_PROJECT_DIR:-$cwd}}")"
 [ -n "$root" ] || exit 0
 
-# The command token, consumed after the script ran.
+# The command token, consumed after a Bash call that executed the script (praxis_walk and
+# praxis_exec_script, the same reading pre-tool-use's intent gate uses).
+consume_cb() {
+  local kind token
+  praxis_exec_script
+  case "$(praxis_lower "${exec_script##*/}")" in
+    approve.sh) kind=approve ;;
+    rework.sh)  kind=rework ;;
+    *) return 1 ;;
+  esac
+  praxis_valid_change_name "$exec_arg" || return 1
+  token="$(praxis_intent_token "$root" "$kind" "$exec_arg")"
+  if [ -f "$token" ]; then
+    rm -f "$token" 2>/dev/null || note "cannot consume ${token}"
+    praxis_trace "PostToolUse" "intent ${kind} ${exec_arg} consumed"
+  fi
+  return 1
+}
 if [ "$tool" = Bash ]; then
-  cmd="$(praxis_json_strings "$payload" command)"
-  while IFS= read -r seg; do
-    [ -n "$seg" ] || continue
-    IFS=$'\034' read -r -a argv <<< "$seg"
-    i=0; n=${#argv[@]}
-    while [ "$i" -lt "$n" ]; do
-      case "$(praxis_lower "${argv[$i]}")" in
-        approve.sh|*/approve.sh) kind=approve ;;
-        rework.sh|*/rework.sh)   kind=rework ;;
-        *) i=$((i + 1)); continue ;;
-      esac
-      c="${argv[$((i + 1))]:-}"
-      if praxis_valid_change_name "$c"; then
-        token="$(praxis_intent_token "$root" "$kind" "$c")"
-        [ -f "$token" ] && { rm -f "$token" 2>/dev/null || note "cannot consume ${token}"; praxis_trace "PostToolUse" "intent ${kind} ${c} consumed"; }
-      fi
-      break
-    done
-  done <<EOF
-$(praxis_shell_segments "$cmd")
-EOF
+  praxis_walk "$(praxis_json_strings "$payload" command)" consume_cb 0 "$cwd"
   exit 0
 fi
 
 paths="$(praxis_edit_paths "$payload")"
 [ -n "$paths" ] || exit 0
 
-# An edit in the builder's worktree is that checkout's (same rule as pre-tool-use).
-worktree="$(praxis_worktree_root "$root" "$(praxis_project_targets "$root" "$cwd" "$paths" | head -n 1)")"
-[ -n "$worktree" ] && [ -d "$worktree" ] && root="$worktree"
+# Every path with the checkout that judges it — an edit in the builder's worktree is that
+# checkout's (same rule as pre-tool-use, praxis_path_roots).
+entries="$(praxis_path_roots "$root" "$cwd" "$paths")"
 
-change="$(praxis_active_change "$root")"
-
-# The escalation record, from the decision the approver just wrote.
+# The escalation and ship records, from the decision the approver just wrote.
+#   decision_record <checkout> <change>
 decision_record() {
-  [ -n "$change" ] || return 0
-  local rel hit=0 verdict marker
-  while IFS= read -r rel; do
-    [ "$(praxis_lower "$rel")" = "$(praxis_lower "specs/${change}/decision.md")" ] && hit=1
-  done <<EOF
-$(praxis_project_targets "$root" "$cwd" "$paths")
-EOF
-  [ "$hit" = 1 ] || return 0
-  verdict="$(praxis_decision_verdict "$root" "$change")"
-  marker="$(praxis_needs_human_marker "$root" "$change")"
+  local proot="$1" change="$2" verdict marker ship round
+  verdict="$(praxis_decision_verdict "$proot" "$change")"
+  marker="$(praxis_needs_human_marker "$proot" "$change")"
+  ship="$(praxis_ship_marker "$proot" "$change")"
   case "$verdict" in
     ESCALATE)
-      praxis_ensure_praxis_dir "$root" || note "cannot create ${root}/.praxis"
-      mkdir -p "${root}/.praxis/needs-human" 2>/dev/null || note "cannot create .praxis/needs-human"
+      praxis_ensure_praxis_dir "$proot" || note "cannot create ${proot}/.praxis"
+      mkdir -p "${proot}/.praxis/needs-human" 2>/dev/null || note "cannot create .praxis/needs-human"
       : > "$marker" 2>/dev/null || note "cannot write the needs-human marker for ${change}"
+      rm -f "$ship" 2>/dev/null || note "cannot remove the ship marker for ${change}"
       praxis_trace "PostToolUse" "needs-human ${change}"
       ;;
     APPROVE|"APPROVE (human)")
       [ -f "$marker" ] && { rm -f "$marker" 2>/dev/null || note "cannot remove the needs-human marker for ${change}"; }
+      if [ "$verdict" = APPROVE ]; then
+        round="$(praxis_effective_round "$proot" "$change")"
+        if [ "$round" -gt 0 ] && praxis_round_all_pass "$proot" "$change" "$round"; then
+          praxis_ensure_praxis_dir "${ship%/.praxis/ship/*}" || note "cannot create the .praxis of ${ship}"
+          mkdir -p "${ship%/*}" 2>/dev/null || note "cannot create .praxis/ship"
+          : > "$ship" 2>/dev/null || note "cannot write the ship marker for ${change}"
+        else
+          rm -f "$ship" 2>/dev/null || note "cannot remove the ship marker for ${change}"
+        fi
+      fi
       praxis_trace "PostToolUse" "decision ${verdict} ${change}"
+      ;;
+    *)
+      rm -f "$ship" 2>/dev/null || note "cannot remove the ship marker for ${change}"
       ;;
   esac
 }
-decision_record
 
-target="$(praxis_source_target "$root" "$cwd" "$paths")"
-[ -n "$target" ] || exit 0
-case "$(praxis_lower "$target")" in .praxis/approved/*|.praxis/needs-human/*|.praxis/intent/*) exit 0 ;; esac
+while IFS=$'\t' read -r proot rel; do
+  [ -n "$rel" ] || continue
+  change="$(praxis_active_change "$proot")"
+  [ -n "$change" ] || continue
+  [ "$(praxis_lower "$rel")" = "$(praxis_lower "specs/${change}/decision.md")" ] || continue
+  decision_record "$proot" "$change"
+done <<EOF
+$entries
+EOF
 
 case "$(praxis_mode)" in full|deep) ;; *) exit 0 ;; esac
 
-[ -n "$change" ] || exit 0
-[ -n "$(praxis_spec_file "$root" "$change")" ] || exit 0
-praxis_approved "$root" "$change" && exit 0
-
-praxis_ensure_praxis_dir "$root" || note "cannot create ${root}/.praxis"
-mkdir -p "${root}/.praxis/approved" 2>/dev/null || note "cannot create .praxis/approved"
-: > "$(praxis_approved_marker "$root" "$change")" 2>/dev/null || note "cannot write the marker for ${change}"
-
-praxis_trace "PostToolUse" "approved ${change}"
+# The approval record: each checkout this edit wrote a source path in, once.
+done_roots=$'\n'
+while IFS=$'\t' read -r proot rel; do
+  [ -n "$rel" ] || continue
+  praxis_is_spec_side "$rel" && continue
+  case "$(praxis_lower "$rel")" in .praxis/approved/*|.praxis/needs-human/*|.praxis/intent/*|.praxis/ship/*) continue ;; esac
+  case "$done_roots" in *$'\n'"${proot}"$'\n'*) continue ;; esac
+  done_roots="${done_roots}${proot}"$'\n'
+  change="$(praxis_active_change "$proot")"
+  [ -n "$change" ] || continue
+  [ -n "$(praxis_spec_file "$proot" "$change")" ] || continue
+  praxis_approved "$proot" "$change" && continue
+  praxis_ensure_praxis_dir "$proot" || note "cannot create ${proot}/.praxis"
+  mkdir -p "${proot}/.praxis/approved" 2>/dev/null || note "cannot create .praxis/approved"
+  : > "$(praxis_approved_marker "$proot" "$change")" 2>/dev/null || note "cannot write the marker for ${change}"
+  praxis_trace "PostToolUse" "approved ${change}"
+done <<EOF
+$entries
+EOF
 exit 0

@@ -1,12 +1,20 @@
 #!/usr/bin/env bash
 # PreToolUse hook — the floor of the spec-driven workflow (specs/spec-driven-workflow, ADR-003;
 # approval hardened in specs/hook-owned-approval, ADR-001; the cycle's limits and the record
-# rules added in specs/factory-cycle, hardened by its round-1 review).
+# rules added in specs/factory-cycle, hardened by its round-1 and round-2 reviews under the
+# threat model of its ADR-007).
 #
 # One principle runs through every rule here: deny what the model can write, record what only
 # the person can do. The model writes source, specs, reviews and reports; it cannot answer a
 # permission prompt, type a slash command, or be two roles at once — and those are the three
 # things the records below are keyed on.
+#
+# Threat model (ADR-007): the floor stops a model that DRIFTS — one that reaches for the next
+# command after a deny — not an adversary with a shell. This hook sees one command string and no
+# history, and a shell has unbounded spellings for the same action. So it denies the direct
+# spellings a drifting model produces, lists the rest under OPEN BY DESIGN below, and leaves
+# adversarial resistance to the host's permission rules, which run outside the model on every
+# command (`Bash(*hooks/*)`, `Bash(*.praxis/*)`, `Bash(*decision.md*)`; docs/cycle.md).
 #
 # Praxis primes; it did not gate. The measured evaluation recorded what priming alone buys
 # for the record of a change: 0 Run Cards in 8/8 `full` cells. A prose rule saying "write the
@@ -29,12 +37,14 @@
 # that is the intended outcome: an unattended run must ship the marker, written by a person
 # or by CI.
 #
-# The records nobody but their writer touches (design.md appendix). Paths are classified
-# lower-cased: the default macOS volume is case-insensitive, so `.Praxis/Approved/c` IS the
-# marker. Who is writing comes from the host payload: `agent_id` is present on every hook
-# that fires inside a subagent and absent on the main thread; `agent_type` names the role.
+# The records nobody but their writer touches (design.md appendix and Round-3 amendments).
+# Paths are classified lower-cased: the default macOS volume is case-insensitive, so
+# `.Praxis/Approved/c` IS the marker. Who is writing comes from the host payload: `agent_id` is
+# present on every hook that fires inside a subagent and absent on the main thread;
+# `agent_type` names the role.
 #
-#   .praxis/approved/<c>, .praxis/needs-human/<c>, .praxis/intent/*   never Edit/Write
+#   .praxis/approved/<c>, .praxis/needs-human/<c>, .praxis/intent/*, .praxis/ship/<c>
+#                                  never Edit/Write, never Bash (below)
 #   specs/<c>/decision.md          the approver subagent only; never the main thread; never a
 #                                  verdict of APPROVE (human) — only scripts/approve.sh writes that
 #   specs/<c>/review/round-N/<lens>.md   its lens only (refuter-<lens>, lens-ui for ui.md); the
@@ -43,52 +53,94 @@
 #   specs/<c>/review/round-N/lenses      the main thread only; pinned once the round has a
 #                                  review; must name correctness, security and tests
 #   specs/<c>/implementation.md    the main thread only; `round:` never goes down — rework.sh,
-#                                  run by the person, is the only way down
+#                                  run by the person, is the only way down; `stage: shipped` on
+#                                  an open cycle only once .praxis/ship/<c> exists
 #
-# Three gates ride on tools that carry no file path. Each reads only files under the
-# change's record, never `.praxis/active-change` alone (the model writes that file):
+# An OPEN CYCLE is a change whose ledger exists, whose `stage:` is not shipped, and which carries
+# `round:` or `builder:` in its frontmatter or has a review/ folder (praxis_ledger_is_open). A
+# ledger written before the cycle existed is never one, so it never gates an unrelated PR.
+# The lenses a round waits for are its review/round-N/lenses (else the ledger's `lenses:`),
+# always unioned with correctness, security and tests.
 #
-#   Agent        a dispatch of `builder` — and, while a round is open, of any write-capable
-#                role (engineer, backend, design, platform)
-#   SendMessage  a resume whose `to` is the `builder:` SOME ledger records; with a round open
-#                and no `builder:` recorded, every message is denied until it is
+# The gates on tools that carry no file path. Each reads only files under a change's record,
+# never `.praxis/active-change` alone (the model writes that file):
+#
+#   Agent        at the cap of ANY open cycle — round ≥ 2 complete and not all PASS, no rework
+#                since — every dispatch of builder, engineer, backend, design or platform is
+#                denied. Otherwise a dispatch of `builder`, and while a round of the active
+#                change is open a dispatch of engineer|backend|design|platform, is judged as a
+#                builder resume of the active change (below).
+#   SendMessage  at the cap of any open cycle: every message denied, whatever `to` names.
+#                Otherwise a resume whose `to` is the `builder:` SOME ledger records; with a
+#                round open and no `builder:` recorded, every message is denied until it is
 #                → no ledger: deny ("open the change first") · round 0: allow · round N with a
 #                  lens file missing: deny, naming the missing lenses (the barrier) · round N
 #                  complete, all PASS: allow · round 1 complete with CHANGES or SKIP: allow (the
 #                  one fix round) · round 2 complete and not all PASS: deny (the cap). The round
 #                  is the larger of the ledger's `round:` and the highest `review/round-N/` that
 #                  holds a review, so a field written back to 0 reopens nothing.
-#   Bash         a ship: `gh pr create|merge`, `gh api …pulls…|…/merge…`, or `git push` whose
-#                refspec SOURCE (or destination) is `praxis/<name>`, or whose source is HEAD /
-#                absent while the branch checked out in the command's directory is one. The
-#                NAME comes from the branch, and its own ledger and decision.md are read: no
-#                ledger → deny ("no change record for praxis/<name>"); `decision.md` at APPROVE
-#                (human): allow; APPROVE with every lens of the current round at PASS: allow;
-#                anything else: deny with the reason. `--all` / `--mirror`: deny.
-#                Also: `scripts/approve.sh <c>` and `scripts/rework.sh <c>` run only while the
-#                one-shot token `.praxis/intent/<approve|rework>-<c>` exists — minted by
-#                user-prompt-submit from the PERSON's `/praxis:approve <c>`, consumed by
-#                post-tool-use. And any segment naming `.praxis/approved`, `.praxis/needs-human`
-#                or `.praxis/intent` is denied unless it is a plain read (cat, ls, test, rg…).
+#   Bash         read segment by segment as the shell would (below):
+#     ship       `git push`, `gh pr create|merge`, `gh api …pulls…|…/merge…|…git/refs…` or a
+#                GraphQL create/mergePullRequest. The change it is about: a pushed refspec
+#                SOURCE (else destination) or a PR head `praxis/<c>` → c, case-folded, a
+#                rev-expression cut off (`praxis/c~0`); any other branch → the change in
+#                .praxis/active-change, only when it is an open cycle (never the newest-ledger
+#                fallback); neither, or `git push --tags` with no refspec → not a ship, allow.
+#                Every segment of the command is judged. A change ships only while
+#                .praxis/ship/<c> exists AND its decision.md says APPROVE or APPROVE (human);
+#                no ledger for the name → deny ("no change record for praxis/<c>").
+#     trunk      a push whose destination is main, master or an open cycle's `base:`
+#                (case-folded; `HEAD:main`, `x:refs/heads/Main`, `:main`, a SHA or a
+#                rev-expression as source), a `gh api …git/refs/heads/<trunk>`, or `--all`,
+#                `--mirror`, `--branches`, while ANY change is an open cycle → deny. No open
+#                cycle → not Praxis's call, allow.
+#     records    a pipeline naming .praxis/{approved,needs-human,intent,ship}/ — or `.praxis`
+#                itself, or a glob over its entries — after normalising `//`, `/./`, a leading
+#                `./`, `..`, and a preceding `cd .praxis[/<dir>]` (or a cwd inside it), is denied
+#                unless every stage is a plain read: cat ls eza bat test [ stat rg grep find fd
+#                head tail wc file diff readlink sort tr cut nl column, git log|status|diff|show|
+#                ls-files|check-ignore|blame|grep|rev-parse. `find -exec|-execdir|-ok|-okdir|
+#                -delete|-fprint*|-fls`, `fd -x|-X|--exec*`, `rg --pre` and `sort -o` are not
+#                reads; a redirection INTO a record is a write; `mkdir` of `.praxis` alone is
+#                free; a `bash -c` string is read the same way.
+#     hooks      executing a Praxis hook — `hooks/<name>` as the command word or as the script of
+#                sh|bash|zsh|dash|ksh|source|. — is denied; reading one (bat, rg, sed -n) is free.
+#     intent     executing scripts/approve.sh <c> or scripts/rework.sh <c> needs the one-shot
+#                token `.praxis/intent/<approve|rework>-<c>` OF THAT KIND, minted by
+#                user-prompt-submit from the PERSON's `/praxis:approve <c>` or
+#                `/praxis:rework <c>` and consumed by post-tool-use after an execution. Reading
+#                the scripts, or `sh -n` on them, is free.
 #
-# The Bash command is read as the shell would, not as a substring (praxis_shell_segments):
-# segments on `&&` `||` `;` `|` `&` `(` `)` and newlines; argv per segment; quotes removed;
-# redirections (`2>&1`, `>/dev/null`, `>file`) stripped; `VAR=x`, `env`, `sudo`, `command`,
-# `time`, `nohup`, `nice`, `exec` skipped; `bash|sh|zsh -c "<string>"` and `eval` re-read;
+# How a Bash command is read (praxis_shell_segments and praxis_walk in lib.sh), not as a
+# substring: segments on `&&` `||` `;` `|` `&` `(` `)` and newlines; a reserved word in command
+# position (if then else elif fi do done while until !) is a separator; quotes removed; an
+# unquoted backslash dropped (`git \push` is `git push`); redirections stripped; `VAR=x` and the
+# wrappers env, sudo, command, time, timeout <n>, nohup, nice, exec, builtin, setsid, stdbuf,
+# xargs, caffeinate skipped with their options; `bash|sh|zsh|dash|ksh -c` in any flag spelling
+# (`-lc`, `-ec`, `-xc`), a here-string fed to a shell, `eval`, and `find … -exec … ;` re-read;
 # `git [-C dir] [-c k=v] [--git-dir …] push …` parsed; `cd <dir>` and `-C <dir>` move the
 # directory the branch is read from. `echo "git push"` is one token of an echo.
 #
-# DOCUMENTED GAPS, stated rather than pretended away (the Bash-path class, design.md Out):
-#   - git aliases (`git -c alias.p=push p`, `[alias]` in any config) are not expanded
-#   - GIT_DIR / GIT_WORK_TREE in the environment are not read; `-C` and `cd` are
-#   - `$(…)`, backticks and `$var` are not expanded: a directory or branch the shell would
-#     compute is one git cannot be asked about, and the gate fails open there
-#   - a script or shell function that wraps git (`./ship.sh`, `make release`) is opaque
-#   - wrapper options beyond the common value-taking ones (`nice -n`, `sudo -u/-g/-C/-p/-r/-t/-U`,
-#     `env -u/-C/-S`): an unknown option that takes a value makes its value the command word
-#   - Bash writes to the ledger (`sed -i`, `cat > …`) are not read: `round:` tamper from Bash
+# OPEN BY DESIGN (ADR-007) — spellings a drifting model does not produce; closing them needs a
+# shell parser, so the host's permission rules close them instead:
+#   - git aliases (`git -c alias.p=push p`, `[alias]` in any config)
+#   - GIT_DIR / GIT_WORK_TREE / `--git-dir`: the branch is read from `-C` and `cd` only
+#   - `$(…)`, backticks, `$var` and globs are not expanded (`scripts/appr*.sh`, a branch or a
+#     directory the shell would compute); a gate reading them fails open
+#   - a script, Makefile target or shell function that wraps git or a record write is opaque
+#   - interpreters that write records, run git or run a hook (`python -c`, `node -e`, `perl -e`)
+#   - wrappers outside the list above (`ionice`, `chrt`, `pushd`, `bash < file`), and the
+#     value-taking options of the listed ones that are not listed
+#   - Bash writes to the records under specs/<c>/ (decision.md, review files, the lens list,
+#     the ledger) are not read; the ship marker is why a decision.md forged that way ships nothing
 #   - the floor is keyed on the change NAME: `.praxis/active-change` pointed at another,
-#     already approved change satisfies the floor for a source edit (approval is per change)
+#     already approved change satisfies the floor for a source edit (approval is per change);
+#     pointed at a change that is not an open cycle, a push of a non-change branch is no ship
+#   - a SendMessage whose `to` differs from the recorded `builder:` passes the barrier of an
+#     incomplete round; at the cap every SendMessage is denied
+#   - agent types outside builder|engineer|backend|design|platform (general-purpose, a
+#     project-defined agent) are not counted as builders
+#   - the one-shot token is not time-boxed: it lives until the script it licenses runs
 #   - Codex puts no agent fields on PreToolUse, so there every write looks like the main
 #     thread's: lenses and the approver cannot write their files, and the cycle on Codex ends
 #     in the person's `/praxis:approve`
@@ -102,7 +154,9 @@
 # `<active>` is `.praxis/active-change` when present, else the most recently modified ledger.
 # An edit under `<root>/.praxis/worktrees/<name>/` — the builder's linked worktree — is judged
 # by that checkout (its own `.praxis/` and `specs/`, seeded by scripts/worktree.sh; the ledger
-# from the main checkout), because the host's project dir stays on the main checkout.
+# from the main checkout), because the host's project dir stays on the main checkout. Every
+# path of an edit is classified with its own checkout (a Codex patch carries many); one denied
+# path denies the edit.
 #
 # A second gate rides on the edit event: the tier-1 comment pass (specs/comment-discipline,
 # ADR-001/ADR-002). Only lines this edit ADDS are inspected, and the false-positive gate
@@ -151,8 +205,8 @@ agent_id="$(praxis_json_string "$payload" agent_id)"
 role="$(praxis_lower "$(praxis_json_string "$payload" agent_type)")"; role="${role#praxis:}"
 is_main=0; [ -z "$agent_id" ] && is_main=1
 
-# The change and its files under the current root. Called again when an edit re-roots into
-# the builder's worktree.
+# The change and its files under the current root. Called again for each path an edit
+# re-roots into the builder's worktree.
 resolve_change() {
   change="$(praxis_active_change "$root")"
   name="${change:-<change>}"
@@ -206,108 +260,127 @@ new_content() {
 # A builder dispatch or resume against the change's effective round.
 #   builder_gate <change>
 builder_gate() {
-  local c="${1:-}" round lenses missing not_pass
+  local c="${1:-}" round missing not_pass
   if [ -z "$c" ] || [ -z "$(praxis_ledger_path "$root" "$c")" ]; then
     decide deny "PRAXIS: open the change first — ${c:+specs/${c}/implementation.md does not exist}${c:-.praxis/active-change names no change}. A builder is dispatched only inside a change: Write specs/<change>/spec.md and specs/<change>/implementation.md, Write .praxis/active-change with the change name, and get the person's approval. ${override}"
   fi
   round="$(praxis_effective_round "$root" "$c")"
   [ "$round" -gt 0 ] || exit 0                       # no review yet: the first build runs free
-  lenses="$(praxis_round_lenses "$root" "$c" "$round")"
-  [ -n "$lenses" ] || decide deny "PRAXIS barrier: waiting for specs/${c}/review/round-${round}/lenses — round ${round} is open and no lens list exists. The orchestrator writes it (one lens name per line: correctness, security, tests, + ui when the diff touches UI paths) before dispatching the lenses; the builder resumes only when every named lens has written specs/${c}/review/round-${round}/<lens>.md. ${override}"
   missing="$(praxis_round_missing "$root" "$c" "$round" | tr '\n' ' ')"; missing="${missing% }"
-  [ -z "$missing" ] || decide deny "PRAXIS barrier: waiting for ${missing} — round ${round} of specs/${c} is incomplete. Each lens writes specs/${c}/review/round-${round}/<lens>.md (verdict: PASS | CHANGES) in its own context; the builder resumes only when every name in review/round-${round}/lenses has its file. A lens that never returns gets 'verdict: SKIP' from the orchestrator; SKIP counts as not PASS — at round 1 the builder may still resume for the other lenses' CHANGES, at round 2 the change goes to the approver. ${override}"
+  [ -z "$missing" ] || decide deny "PRAXIS barrier: waiting for ${missing} — round ${round} of specs/${c} is incomplete. Each lens writes specs/${c}/review/round-${round}/<lens>.md (verdict: PASS | CHANGES) in its own context; the builder resumes only when every lens of the round has its file — the names in review/round-${round}/lenses, always with correctness, security and tests. A lens that never returns gets 'verdict: SKIP' from the orchestrator; SKIP counts as not PASS — at round 1 the builder may still resume for the other lenses' CHANGES, at round 2 the change goes to the approver. ${override}"
   praxis_round_all_pass "$root" "$c" "$round" && exit 0
   [ "$round" -lt 2 ] && exit 0                       # the one fix round (CHANGES or SKIP alike)
   not_pass="$(praxis_round_not_pass "$root" "$c" "$round" | tr '\n' ' ')"; not_pass="${not_pass% }"
   decide deny "PRAXIS round cap: 2 rounds done → approver / ESCALATE. Round ${round} of specs/${c} is complete and not all PASS (${not_pass}). A third fix round never starts: dispatch the approver, which records ESCALATE in specs/${c}/decision.md; the person then decides with /praxis:approve ${c} or /praxis:rework ${c} \"<note>\". ${override}"
 }
 
-# A push of a change branch or a PR against that change's decision.
+# The cap of ANY open cycle, before a builder-class dispatch or any SendMessage. Read over every
+# open cycle: `.praxis/active-change` pointed at another change does not move it.
+cap_gate() {
+  local c round not_pass
+  c="$(praxis_capped_change "$root")"
+  [ -n "$c" ] || return 0
+  round="$(praxis_effective_round "$root" "$c")"
+  not_pass="$(praxis_round_not_pass "$root" "$c" "$round" | tr '\n' ' ')"; not_pass="${not_pass% }"
+  target="cap:${c}"
+  decide deny "PRAXIS round cap: 2 rounds done → approver / ESCALATE. Round ${round} of specs/${c} is complete and not all PASS (${not_pass}). Until the person runs /praxis:rework ${c} \"<note>\", no SendMessage and no builder, engineer, backend, design or platform dispatch goes out, whichever change .praxis/active-change names. Dispatch the approver, which records ESCALATE in specs/${c}/decision.md; the person then decides with /praxis:approve ${c} or /praxis:rework ${c} \"<note>\". ${override}"
+}
+
+# A ship of one change: its decision.md says APPROVE or APPROVE (human), and .praxis/ship/<c> —
+# written only by post-tool-use over the approver's APPROVE, or by the person's approve.sh —
+# exists. Returns on allow; denies with the reason otherwise.
 #   ship_gate <change>
 ship_gate() {
   local c="$1" verdict round not_pass
   verdict="$(praxis_decision_verdict "$root" "$c")"
   [ -n "$verdict" ] || decide deny "PRAXIS ship gate: specs/${c}/decision.md does not exist — nothing ships without it. The approver writes it (verdict: APPROVE | ESCALATE, with every check it re-ran) once every lens is PASS; the person can override with /praxis:approve ${c}, which records APPROVE (human). ${override}"
   case "$verdict" in
-    "APPROVE (human)") exit 0 ;;
-    APPROVE)
-      round="$(praxis_effective_round "$root" "$c")"
-      [ "$round" -gt 0 ] || decide deny "PRAXIS ship gate: specs/${c}/decision.md records APPROVE but the round is 0 — no review round ran. APPROVE ships only with every lens of the current round at PASS; without a round the person decides with /praxis:approve ${c}. ${override}"
-      praxis_round_all_pass "$root" "$c" "$round" && exit 0
-      not_pass="$(praxis_round_not_pass "$root" "$c" "$round" | tr '\n' ' ')"; not_pass="${not_pass% }"
-      decide deny "PRAXIS ship gate: lenses not all PASS in round ${round} of specs/${c}: ${not_pass:-no lens listed in review/round-${round}/lenses}. APPROVE ships only with every lens at PASS, each with its 'What I tried to break'; a CHANGES, SKIP or no-evidence PASS goes back to the builder (round < 2) or to the approver for ESCALATE. The person can override with /praxis:approve ${c}. ${override}"
-      ;;
-    *)
-      decide deny "PRAXIS ship gate: specs/${c}/decision.md verdict ${verdict} — only APPROVE (with every lens PASS) or APPROVE (human) ships. ESCALATE means the person decides: /praxis:approve ${c} to ship, /praxis:rework ${c} \"<note>\" to send it back to the builder. ${override}"
-      ;;
+    APPROVE|"APPROVE (human)") ;;
+    *) decide deny "PRAXIS ship gate: specs/${c}/decision.md verdict ${verdict} — only APPROVE (with every lens PASS) or APPROVE (human) ships. ESCALATE means the person decides: /praxis:approve ${c} to ship, /praxis:rework ${c} \"<note>\" to send it back to the builder. ${override}" ;;
   esac
+  [ -f "$(praxis_ship_marker "$root" "$c")" ] && return 0
+  [ "$verdict" = APPROVE ] || decide deny "PRAXIS ship gate: specs/${c}/decision.md says APPROVE (human) but .praxis/ship/${c} does not exist. That verdict ships only as scripts/approve.sh writes it, with the marker, when the person runs /praxis:approve ${c}; a decision.md written any other way ships nothing. Stop and ask the person. ${override}"
+  round="$(praxis_effective_round "$root" "$c")"
+  [ "$round" -gt 0 ] || decide deny "PRAXIS ship gate: specs/${c}/decision.md records APPROVE but the round is 0 — no review round ran, so .praxis/ship/${c} was never written. APPROVE ships only with every lens of the current round at PASS; without a round the person decides with /praxis:approve ${c}. ${override}"
+  if ! praxis_round_all_pass "$root" "$c" "$round"; then
+    not_pass="$(praxis_round_not_pass "$root" "$c" "$round" | tr '\n' ' ')"; not_pass="${not_pass% }"
+    decide deny "PRAXIS ship gate: lenses not all PASS in round ${round} of specs/${c}: ${not_pass}. APPROVE ships only with every lens at PASS, each with its 'What I tried to break' — only then does post-tool-use write .praxis/ship/${c}. A CHANGES, SKIP or no-evidence PASS goes back to the builder (round < 2) or to the approver for ESCALATE. The person can override with /praxis:approve ${c}. ${override}"
+  fi
+  decide deny "PRAXIS ship gate: .praxis/ship/${c} does not exist. post-tool-use writes it when the approver Writes specs/${c}/decision.md with APPROVE over a complete all-PASS round; a decision.md written any other way ships nothing. Dispatch the approver to record its decision. ${override}"
+}
+
+# A ship about a change named by a branch: its record must exist, then the ship gate.
+ship_change() {
+  local c="$1"
+  target="bash:ship:${c}"
+  if ! praxis_valid_change_name "$c" || [ -z "$(praxis_ledger_path "$root" "$c")" ]; then
+    decide deny "PRAXIS ship gate: no change record for praxis/${c} — specs/${c}/implementation.md does not exist. A praxis/<change> branch ships only through its change's cycle: the ledger, the lenses' reviews and the approver's decision.md all live under specs/${c}/. ${override}"
+  fi
+  ship_gate "$c"
 }
 
 # --- Reading a Bash command -------------------------------------------------------------------
 
-re_redir_self='^[0-9]*(>>|>|<)&[0-9-]+$'            # 2>&1, >&2, 1>&-: one token, no target
-re_redir_op='^([0-9]*(>>|>|<|<>)|&>>|&>)$'           # the operator alone: the next token is its target
-re_redir_tgt='^([0-9]*(>>|>|<|<>)|&>>|&>).+'         # the operator glued to its target
-
-# argv without its redirections.
-strip_redirects() {
-  local -a out=()
-  local i=0 n=${#argv[@]} t
-  while [ "$i" -lt "$n" ]; do
-    t="${argv[$i]}"
-    if [[ $t =~ $re_redir_self ]]; then i=$((i + 1)); continue; fi
-    if [[ $t =~ $re_redir_op ]]; then i=$((i + 2)); continue; fi
-    if [[ $t =~ $re_redir_tgt ]]; then i=$((i + 1)); continue; fi
-    out+=("$t"); i=$((i + 1))
-  done
-  argv=("${out[@]+"${out[@]}"}")
-}
-
-# The index of the command word: past `VAR=x` assignments and the wrappers that run a command
-# unchanged (env, command, time, nohup, nice, sudo, exec, builtin) and their valueless options.
-command_index() {
-  local i=0 n=${#argv[@]}
-  while [ "$i" -lt "$n" ]; do
-    case "${argv[$i]}" in
-      *=*) i=$((i + 1)) ;;
-      env|command|time|nohup|nice|sudo|exec|builtin)
-        w="${argv[$i]}"; i=$((i + 1))
-        while [ "$i" -lt "$n" ]; do
-          case "${argv[$i]}" in
-            -*) case "${w}:${argv[$i]}" in
-                  nice:-n|sudo:-u|sudo:-g|sudo:-C|sudo:-p|sudo:-r|sudo:-t|sudo:-U|env:-u|env:-C|env:-S) i=$((i + 2)) ;;
-                  *) i=$((i + 1)) ;;
-                esac ;;
-            *) break ;;
-          esac
-        done ;;
-      *) break ;;
-    esac
-  done
-  printf '%s' "$i"
-}
-
 on_branch_of() { git -C "$1" rev-parse --abbrev-ref HEAD 2>/dev/null; }
-resolve_dir() { case "$1" in "") printf '%s' "$2" ;; /*) printf '%s' "$1" ;; *) printf '%s/%s' "$2" "$1" ;; esac; }
 
-# What a ship command names. Set by ship_command when it finds one:
-#   ship_kind   push | pr
-#   ship_name   the <name> of praxis/<name>; for a PR off a non-change branch, the active change
-#   ship_all    1 for `git push --all` / `--mirror`
-ship_kind=""; ship_name=""; ship_all=0
+# The open cycles, the trunk names and the active change when it is an open cycle — read once.
+cycles_loaded=0; open_list=""; trunk_list=" main master "; active_open=""
+load_cycles() {
+  local c b
+  [ "$cycles_loaded" = 0 ] || return 0
+  cycles_loaded=1
+  open_list="$(praxis_open_cycles "$root")"
+  while IFS= read -r c; do
+    [ -n "$c" ] || continue
+    b="$(praxis_ledger_field "$root" "$c" base)"
+    [ -z "$b" ] || trunk_list="${trunk_list}$(ref_branch "$b") "
+  done <<EOF
+$open_list
+EOF
+  c="$(praxis_active_change_file "$root")"
+  case $'\n'"${open_list}"$'\n' in *$'\n'"${c}"$'\n'*) [ -z "$c" ] || active_open="$c" ;; esac
+}
 
-# A `gh` segment: pr create|merge, or api touching pulls / merge. argv from index $1, dir $2.
+# A ref as a branch name, lower-cased, without `refs/heads/` or `heads/`.
+ref_branch() {
+  local l; l="$(praxis_lower "$1")"
+  l="${l#refs/heads/}"; l="${l#heads/}"
+  printf '%s' "$l"
+}
+
+# The change a ref names — `praxis/<c>` in any case, `refs/heads/` or `heads/` in front and a
+# rev-expression behind (`~0`, `^`, `@{0}`) — or nothing. The name keeps its own spelling.
+ref_change() {
+  local r="$1" l
+  l="$(praxis_lower "$r")"
+  case "$l" in refs/heads/*) r="${r:11}"; l="${l:11}" ;; heads/*) r="${r:6}"; l="${l:6}" ;; esac
+  case "$l" in praxis/?*) r="${r:7}"; printf '%s' "${r%%[~^@:]*}" ;; esac
+}
+
+trunk_deny() {
+  target="bash:trunk"
+  decide deny "PRAXIS ship gate: the cycle never pushes trunk — ${1} while specs/${open_list%%$'\n'*}/ is an open cycle. A change ships as a PR from praxis/<change> behind its decision; trunk is merged by the person, never pushed by the model. ${override}"
+}
+
+# A `gh` segment: pr create|merge, or api touching pulls, merges, git refs or a GraphQL PR
+# mutation. argv from index $1, dir $2. Denies, or returns.
 gh_ship() {
-  local i="$1" dir="$2" n=${#argv[@]} sub t branch="" j hit
+  local i="$1" dir="$2" n=${#argv[@]} sub t branch="" args="" c
   while [ "$i" -lt "$n" ]; do
     case "${argv[$i]}" in -R|--repo|--hostname) i=$((i + 2)) ;; -*) i=$((i + 1)) ;; *) break ;; esac
   done
   sub="${argv[$i]:-}"; i=$((i + 1))
   case "$sub" in
-    pr)  case "${argv[$i]:-}" in create|merge) ;; *) return 1 ;; esac ;;
-    api) hit=0; j="$i"; while [ "$j" -lt "$n" ]; do case "${argv[$j]}" in *pulls*|*/merge*) hit=1 ;; esac; j=$((j + 1)); done
-         [ "$hit" = 1 ] || return 1 ;;
-    *)   return 1 ;;
+    pr)  case "${argv[$i]:-}" in create|merge) ;; *) return 0 ;; esac ;;
+    api) args="$(praxis_lower "${argv[*]:$i}")"
+         case "$args" in *pulls*|*/merge*|*mergepullrequest*|*createpullrequest*|*git/refs*) ;; *) return 0 ;; esac ;;
+    *)   return 0 ;;
+  esac
+  load_cycles
+  case "$args" in
+    *git/refs/heads/*)
+      t="${args##*git/refs/heads/}"; t="${t%% *}"
+      case "$trunk_list" in *" ${t} "*) [ -z "$open_list" ] || trunk_deny "gh api … git/refs/heads/${t}" ;; esac ;;
   esac
   while [ "$i" -lt "$n" ]; do
     t="${argv[$i]}"
@@ -319,146 +392,252 @@ gh_ship() {
     i=$((i + 1))
   done
   [ -n "$branch" ] || branch="$(on_branch_of "$dir")"
-  ship_kind=pr
-  case "$branch" in praxis/*) ship_name="${branch#praxis/}" ;; *) ship_name="$change" ;; esac
+  c="$(ref_change "${branch##*:}")"
+  if [ -n "$c" ]; then ship_change "$c"
+  elif [ -n "$active_open" ]; then ship_change "$active_open"
+  fi
   return 0
 }
 
-# A `git … push …` segment: argv from index $1 (the `git` token), dir $2.
+# A `git … push …` segment: argv from index $1 (the `git` token), dir $2. Denies, or returns.
 git_ship() {
-  local i="$1" gitdir="$2" n=${#argv[@]} pos=0 refs="" ref src dst branch
+  local i="$1" gitdir="$2" n=${#argv[@]} pos=0 all=0 tags=0 ref src dst branch c="" cs other=0 trunk=""
+  local -a refs=()
   i=$((i + 1))
   while [ "$i" -lt "$n" ]; do
     case "${argv[$i]}" in
-      -C) gitdir="$(resolve_dir "${argv[$((i + 1))]:-}" "$gitdir")"; i=$((i + 2)) ;;
+      -C) gitdir="$(praxis_resolve_dir "${argv[$((i + 1))]:-}" "$gitdir")"; i=$((i + 2)) ;;
       -c|--git-dir|--work-tree|--namespace|--exec-path) i=$((i + 2)) ;;
       -*) i=$((i + 1)) ;;
       *)  break ;;
     esac
   done
-  [ "${argv[$i]:-}" = push ] || return 1
+  [ "${argv[$i]:-}" = push ] || return 0
   i=$((i + 1))
   while [ "$i" -lt "$n" ]; do
     case "${argv[$i]}" in
-      --all|--mirror|--branches) ship_kind=push; ship_all=1; return 0 ;;
-      -o|--push-option|--receive-pack|--exec|--repo) i=$((i + 2)); continue ;;
-      -*) i=$((i + 1)); continue ;;
+      --all|--mirror|--branches) all=1 ;;
+      --tags) tags=1 ;;
+      -o|--push-option|--receive-pack|--exec|--repo) i=$((i + 1)) ;;
+      -*) ;;
+      *) pos=$((pos + 1)); [ "$pos" -lt 2 ] || refs+=("${argv[$i]}") ;;
     esac
-    pos=$((pos + 1))
-    [ "$pos" -ge 2 ] && refs="${refs}${argv[$i]}"$'\n'
     i=$((i + 1))
   done
-  if [ -z "$refs" ]; then
-    branch="$(on_branch_of "$gitdir")"
-    case "$branch" in praxis/*) ship_kind=push; ship_name="${branch#praxis/}"; return 0 ;; esac
-    return 1
+  [ "${#refs[@]}" -gt 0 ] || [ "$tags" = 0 ] || [ "$all" = 1 ] || return 0   # `--tags` alone pushes no branch
+  load_cycles
+  if [ "$all" = 1 ]; then
+    [ -z "$open_list" ] || { target="bash:ship"; decide deny "PRAXIS ship gate: git push --all / --mirror / --branches pushes every branch, change branches and trunk included, while specs/${open_list%%$'\n'*}/ is an open cycle, so no change's record can be checked. Push the branch explicitly: git push origin <branch>. ${override}"; }
+    return 0
   fi
-  while IFS= read -r ref; do
-    [ -n "$ref" ] || continue
+  branch="$(on_branch_of "$gitdir")"
+  [ "${#refs[@]}" -gt 0 ] || refs=("")                # no refspec: the current branch, to its name
+  for ref in "${refs[@]}"; do
     ref="${ref#+}"
-    src="${ref%%:*}"; dst=""
-    case "$ref" in *:*) dst="${ref#*:}" ;; esac
-    src="${src#refs/heads/}"; dst="${dst#refs/heads/}"
-    case "$src" in
-      praxis/*) ship_kind=push; ship_name="${src#praxis/}"; return 0 ;;
-      HEAD|"")  branch="$(on_branch_of "$gitdir")"
-                case "$branch" in praxis/*) ship_kind=push; ship_name="${branch#praxis/}"; return 0 ;; esac ;;
+    case "$ref" in
+      "")  src="$branch"; dst="$branch" ;;
+      *:*) src="${ref%%:*}"; dst="${ref#*:}" ;;
+      *)   src="$ref"; dst="$ref" ;;
     esac
-    case "$dst" in praxis/*) ship_kind=push; ship_name="${dst#praxis/}"; return 0 ;; esac
-  done <<EOF
-$refs
-EOF
-  return 1
+    [ "$src" != HEAD ] || src="$branch"
+    [ "$dst" != HEAD ] || dst="$branch"
+    case "$trunk_list" in *" $(ref_branch "$dst") "*) [ -z "$dst" ] || trunk="$dst" ;; esac
+    cs="$(ref_change "$src")"; [ -n "$cs" ] || cs="$(ref_change "$dst")"
+    if [ -n "$cs" ]; then [ -n "$c" ] || c="$cs"; else other=1; fi
+  done
+  [ -z "$trunk" ] || [ -z "$open_list" ] || trunk_deny "this push names ${trunk} as its destination"
+  [ -z "$c" ] || ship_change "$c"
+  [ "$other" = 0 ] || [ -z "$active_open" ] || ship_change "$active_open"
+  return 0
 }
 
-# Whether a command ships a change. Segments as the shell reads them; `cd` moves the
-# directory for the segments after it; `bash -c` / `eval` strings are read the same way.
-#   ship_command <command> [<depth>] [<dir>]
-ship_command() {
-  local depth="${2:-0}" dir="${3:-$cwd}" seg i n j
-  local -a argv
-  [ "$depth" -le 3 ] || return 1
-  while IFS= read -r seg; do
-    [ -n "$seg" ] || continue
-    IFS=$'\034' read -r -a argv <<< "$seg"
-    strip_redirects
-    i="$(command_index)"; n=${#argv[@]}
-    [ "$i" -lt "$n" ] || continue
-    case "${argv[$i]}" in
-      cd) dir="$(resolve_dir "${argv[$((i + 1))]:-}" "$dir")" ;;
-      bash|sh|zsh|*/bash|*/sh|*/zsh)
-        j=$((i + 1))
-        while [ "$j" -lt "$n" ]; do
-          if [ "${argv[$j]}" = -c ]; then ship_command "${argv[$((j + 1))]:-}" $((depth + 1)) "$dir" && return 0; break; fi
-          j=$((j + 1))
-        done ;;
-      eval) ship_command "$(printf '%s ' "${argv[@]:$((i + 1))}")" $((depth + 1)) "$dir" && return 0 ;;
-      gh|*/gh)   gh_ship $((i + 1)) "$dir" && return 0 ;;
-      git|*/git) git_ship "$i" "$dir" && return 0 ;;
-    esac
-  done <<EOF
-$(praxis_shell_segments "$1")
-EOF
-  return 1
-}
-
-# `scripts/approve.sh <c>` and `scripts/rework.sh <c> …` run only on the person's one-shot
-# token. Any spelling of the path; the change is the script's first argument.
-intent_gate() {
-  local seg kind c i n
-  local -a argv
-  while IFS= read -r seg; do
-    [ -n "$seg" ] || continue
-    IFS=$'\034' read -r -a argv <<< "$seg"
-    i=0; n=${#argv[@]}
-    while [ "$i" -lt "$n" ]; do
-      case "$(praxis_lower "${argv[$i]}")" in
-        approve.sh|*/approve.sh) kind=approve ;;
-        rework.sh|*/rework.sh)   kind=rework ;;
-        *) i=$((i + 1)); continue ;;
+# Executing a Praxis hook, or the person's scripts without their token.
+exec_gates() {
+  local s ls kind c
+  praxis_exec_script
+  s="$exec_script"; [ -n "$s" ] || return 0
+  ls="$(praxis_lower "$s")"
+  case "${ls##*/}" in
+    pre-tool-use|post-tool-use|user-prompt-submit|session-start|session-start-codex|subagent-start|subagent-stop|stop|run-hook.cmd)
+      case "$ls" in
+        hooks/*|*/hooks/*) ;;
+        *) case "$(praxis_lower "$dir")" in */hooks) ;; *) return 0 ;; esac ;;
       esac
-      c="${argv[$((i + 1))]:-}"
-      if praxis_valid_change_name "$c" && [ -f "$(praxis_intent_token "$root" "$kind" "$c")" ]; then break; fi
-      target="bash:${kind}.sh"
-      decide deny "PRAXIS: scripts/${kind}.sh is typed by the person — /praxis:${kind} ${c:-<change>}. That command mints a one-shot token (.praxis/intent/${kind}-<change>) only the person's own prompt can create; without it the script does not run, and the model has no way to mint it. Stop and ask the person. ${override}"
-    done
-  done <<EOF
-$(praxis_shell_segments "$1")
-EOF
+      target="bash:hook"
+      decide deny "PRAXIS: ${s} is a Praxis hook. The host runs it on its own events; the model does not run it from Bash — not to mint a token, write a marker or try a payload against the live project. Reading it is fine (bat, rg, sed -n). ${override}" ;;
+    approve.sh) kind=approve ;;
+    rework.sh)  kind=rework ;;
+    *) return 0 ;;
+  esac
+  c="$exec_arg"
+  if praxis_valid_change_name "$c" && [ -f "$(praxis_intent_token "$root" "$kind" "$c")" ]; then return 0; fi
+  target="bash:${kind}.sh"
+  decide deny "PRAXIS: scripts/${kind}.sh is typed by the person — /praxis:${kind} ${c:-<change>}. That prompt mints a one-shot token (.praxis/intent/${kind}-<change>) the script needs to run, one run per prompt; without it the script does not run. Reading the script is fine; running it is the person's. Stop and ask the person. ${override}"
 }
 
-# The marker directories are not reached from Bash either, except to read them.
-marker_bash_gate() {
-  local seg i n hit t
-  local -a argv
-  while IFS= read -r seg; do
-    [ -n "$seg" ] || continue
-    IFS=$'\034' read -r -a argv <<< "$seg"
-    hit=""; n=${#argv[@]}
-    for t in "${argv[@]}"; do
-      case "$(praxis_lower "$t")" in *.praxis/approved*|*.praxis/needs-human*|*.praxis/intent*) hit="$t" ;; esac
-    done
-    [ -n "$hit" ] || continue
-    for t in "${argv[@]}"; do
-      if [[ $t =~ $re_redir_self ]] || [[ $t =~ $re_redir_op ]] || [[ $t =~ $re_redir_tgt ]]; then hit="redirect"; break; fi
-    done
-    i="$(command_index)"
-    if [ "$hit" != redirect ]; then
-      case "${argv[$i]:-}" in cat|ls|eza|bat|test|\[|stat|rg|grep|find|fd|head|tail|wc|file|diff|readlink) continue ;; esac
+# One simple command of a Bash call (praxis_walk callback): the intent and hook gates, then the
+# ship and trunk gates. Every segment is judged; none stops the walk early.
+bash_cb() {
+  exec_gates
+  case "${argv[$i]##*/}" in
+    gh)  gh_ship $((i + 1)) "$dir" ;;
+    git) git_ship "$i" "$dir" ;;
+  esac
+  return 1
+}
+
+# --- Bash and the record directories ---------------------------------------------------------
+#
+# .praxis/{approved,needs-human,intent,ship}/ are reached from Bash only to be read. A pipeline
+# that names one is allowed when every stage of it only reads; any other is denied.
+
+# Whether the command at argv[i] only reads: a reader, with no option that executes or writes.
+plain_read() {
+  local t j
+  case "${argv[$i]##*/}" in
+    cat|ls|eza|bat|test|\[|stat|grep|head|tail|wc|file|diff|readlink|tr|cut|nl|column) return 0 ;;
+    sort) for t in "${argv[@]:$i}"; do case "$t" in -o|-o*|--output*) return 1 ;; esac; done; return 0 ;;
+    find) for t in "${argv[@]:$i}"; do case "$t" in -exec|-execdir|-ok|-okdir|-delete|-fprint|-fprint0|-fprintf|-fls) return 1 ;; esac; done; return 0 ;;
+    fd)   for t in "${argv[@]:$i}"; do case "$t" in -x|-X|--exec|--exec-batch|--exec=*|--exec-batch=*) return 1 ;; esac; done; return 0 ;;
+    rg)   for t in "${argv[@]:$i}"; do case "$t" in --pre|--pre=*) return 1 ;; esac; done; return 0 ;;
+    git)  j=$((i + 1))
+          while [ "$j" -lt "$n" ]; do case "${argv[$j]}" in -C|-c|--git-dir|--work-tree) j=$((j + 2)) ;; -*) j=$((j + 1)) ;; *) break ;; esac; done
+          case "${argv[$j]:-}" in log|status|diff|show|ls-files|check-ignore|blame|grep|rev-parse) return 0 ;; esac ;;
+  esac
+  return 1
+}
+
+# Whether a word reaches a record, read from where a preceding `cd` left the command. Sets
+# wh_parent when it names `.praxis` itself rather than a record directory.
+word_hit() {
+  local w="$1" c l
+  for c in "$w" "${w##*=}"; do
+    if [ -n "$cdpfx" ]; then
+      case "$c" in
+        /*|-*|"~"*) ;;
+        *) if praxis_reaches_record "$cdpfx" || case "$c" in *..*) true ;; *) false ;; esac; then c="${cdpfx}/${c}"; fi ;;
+      esac
     fi
-    target="bash:markers"
-    decide deny "PRAXIS: ${hit} is a record the model does not write, from Bash or any tool. .praxis/approved/<c> is the person's approval (the host's ask, or /praxis:approve <c>); .praxis/needs-human/<c> is post-tool-use's record of an ESCALATE; .praxis/intent/* is the person's one-shot command token. Reading them is fine (cat, ls, test). ${override}"
+    case "$c" in *[Pp][Rr][Aa][Xx][Ii][Ss]*) ;; *) continue ;; esac
+    praxis_norm_path "$c"; l="$(praxis_lower "$REPLY")"
+    praxis_reaches_record "$l" || continue
+    case "$l" in *.praxis) wh_parent=1 ;; *) wh_parent=0 ;; esac
+    return 0
+  done
+  return 1
+}
+
+# Where a `cd` leaves the following stages: the part of its target from `.praxis` on, or nothing.
+move_cd() {
+  local d="$1" l
+  case "$d" in ""|"~"*|-) cdpfx=""; return 0 ;; esac
+  case "$d" in /*) ;; *) [ -z "$cdpfx" ] || d="${cdpfx}/${d}" ;; esac
+  praxis_norm_path "$d"; l="$(praxis_lower "$REPLY")"
+  case "/$l" in */.praxis|*/.praxis/*) cdpfx=".praxis${l##*.praxis}" ;; *) cdpfx="" ;; esac
+}
+
+# One stage of a pipeline: sets st_touch (it names a record), st_read (it only reads) and
+# st_hit; moves cdpfx on `cd`; reads a shell's `-c` string through marker_scan.
+marker_stage() {
+  local depth="$1" t k op tgt hit_rec=0 w j
+  local -a raw
+  st_touch=0; st_read=1; st_hit=""
+  raw=("${argv[@]+"${argv[@]}"}")
+  praxis_strip_redirects
+  i="$(praxis_command_index)"; n=${#argv[@]}
+  if [ "$i" -lt "$n" ] && [ "${argv[$i]}" = cd ]; then move_cd "${argv[$((i + 1))]:-}"; return 0; fi
+  # Redirections: a target that is a record is reached; `>`, `>>`, `&>`, `<>` into one writes it.
+  k=0
+  while [ "$k" -lt "${#raw[@]}" ]; do
+    t="${raw[$k]}"; op=""; tgt=""
+    if [[ $t =~ $praxis_re_redir_self ]]; then k=$((k + 1)); continue; fi
+    if [[ $t =~ $praxis_re_redir_op ]]; then op="$t"; tgt="${raw[$((k + 1))]:-}"; k=$((k + 2))
+    elif [[ $t =~ $praxis_re_redir_tgt ]]; then op="${BASH_REMATCH[1]}"; tgt="${t#"$op"}"; k=$((k + 1))
+    else k=$((k + 1)); continue
+    fi
+    if word_hit "$tgt"; then
+      st_touch=1; st_hit="$tgt"; hit_rec=1
+      case "$op" in *">"*) st_read=0 ;; esac
+    fi
+  done
+  [ "$i" -lt "$n" ] || return 0
+  w="${argv[$i]##*/}"
+  case "$w" in
+    bash|sh|zsh|dash|ksh)
+      j=$((i + 1))
+      while [ "$j" -lt "$n" ]; do
+        case "${argv[$j]}" in
+          --) break ;;
+          -o|+o|-O|+O|--rcfile|--init-file) j=$((j + 2)) ;;
+          --*) j=$((j + 1)) ;;
+          -*c*) marker_scan "${argv[$((j + 1))]:-}" $((depth + 1)) "$cdpfx"
+                [ "$ms_read" = 1 ] || st_read=0
+                return 0 ;;
+          -*|+*) j=$((j + 1)) ;;
+          *) break ;;
+        esac
+      done ;;
+  esac
+  for t in "${argv[@]}"; do
+    if word_hit "$t"; then
+      st_touch=1; st_hit="$t"
+      [ "$wh_parent" = 1 ] || hit_rec=1
+    fi
+  done
+  plain_read && return 0
+  [ "$w" = mkdir ] && [ "$st_touch" = 1 ] && [ "$hit_rec" = 0 ] && return 0   # creating .praxis itself
+  st_read=0
+}
+
+marker_close() {
+  if [ "$p_touch" = 1 ] && [ "$p_read" = 0 ]; then
+    target="bash:records"
+    decide deny "PRAXIS: ${p_hit} is a record the model does not write, from Bash or any tool. .praxis/approved/<c> is the person's approval (the host's ask, or /praxis:approve <c>); .praxis/needs-human/<c> is post-tool-use's record of an ESCALATE; .praxis/ship/<c> is the ship record post-tool-use writes for the approver's APPROVE over an all-PASS round, or /praxis:approve <c> for the person's; .praxis/intent/* is the person's one-shot command token. Reading them is fine — cat, ls, test, rg, with every stage of the pipeline a plain read. ${override}"
+  fi
+  [ "$p_read" = 1 ] || a_read=0
+  p_touch=0; p_read=1; p_hit=""
+}
+
+# Every pipeline of a command against the record dirs; denies on a pipeline that names a record
+# and has a stage that is not a plain read. Sets ms_read: every stage of the command only reads.
+#   marker_scan <command> <depth> <cd prefix>
+marker_scan() {
+  local cmd="$1" depth="$2" cdpfx="$3" line piped=0 p_touch=0 p_read=1 p_hit="" a_read=1
+  local i n st_touch st_read st_hit
+  local -a argv
+  if [ "$depth" -gt 3 ]; then ms_read=0; return 0; fi
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    if [ "$line" = "|" ]; then piped=1; continue; fi
+    [ "$piped" = 1 ] || marker_close
+    piped=0
+    IFS=$'\034' read -r -a argv <<< "$line"
+    marker_stage "$depth"
+    if [ "$st_touch" = 1 ]; then p_touch=1; p_hit="$st_hit"; fi
+    [ "$st_read" = 1 ] || p_read=0
   done <<EOF
-$(praxis_shell_segments "$1")
+$(praxis_shell_segments "$cmd" mark)
 EOF
+  marker_close
+  ms_read="$a_read"
+}
+
+# The directory the command starts in, when it lies inside the project's `.praxis/`.
+start_cdpfx() {
+  local d rel
+  case "$cwd" in *[Pp][Rr][Aa][Xx][Ii][Ss]*) ;; *) return 0 ;; esac
+  d="$(praxis_canonical_path "$cwd")" || return 0
+  case "$d" in "$root"/*) rel="${d#"$root"/}" ;; *) return 0 ;; esac
+  cdpfx=""; move_cd "$rel"; printf '%s' "$cdpfx"
 }
 
 case "$tool" in
   Agent)
     kind="$(praxis_lower "$(praxis_json_string "$payload" subagent_type)")"; kind="${kind#praxis:}"
     case "$kind" in
-      builder) ;;
+      builder) cap_gate ;;
       engineer|backend|design|platform)
+        cap_gate
         # While a round is open, any write-capable dispatch is a builder resume by another name.
         [ -n "$change" ] && [ -n "$ledger" ] || exit 0
         [ "$(praxis_effective_round "$root" "$change")" -gt 0 ] || exit 0
@@ -468,6 +647,7 @@ case "$tool" in
     target="agent:${kind}"; builder_gate "$change"
     ;;
   SendMessage)
+    cap_gate
     to="$(praxis_json_string "$payload" to)"
     [ -n "$to" ] || exit 0
     owner="$(praxis_change_of_builder "$root" "$to")"
@@ -482,29 +662,19 @@ case "$tool" in
     ;;
   Bash)
     cmd="$(praxis_json_strings "$payload" command)"
-    intent_gate "$cmd"
-    marker_bash_gate "$cmd"
-    ship_command "$cmd" 0 "$cwd" || exit 0
-    [ "$ship_all" = 0 ] || { target="bash:ship"; decide deny "PRAXIS ship gate: git push --all / --mirror pushes every branch, change branches included, so no change's record can be checked. Push the branch explicitly: git push origin <branch>. ${override}"; }
-    [ -n "$ship_name" ] || exit 0                     # a PR off a non-change branch with no change open
-    target="bash:ship:${ship_name}"
-    if ! praxis_valid_change_name "$ship_name" || [ -z "$(praxis_ledger_path "$root" "$ship_name")" ]; then
-      decide deny "PRAXIS ship gate: no change record for praxis/${ship_name} — specs/${ship_name}/implementation.md does not exist. A praxis/<change> branch ships only through its change's cycle: the ledger, the lenses' reviews and the approver's decision.md all live under specs/${ship_name}/. ${override}"
-    fi
-    ship_gate "$ship_name"
+    marker_scan "$cmd" 0 "$(start_cdpfx)"
+    praxis_walk "$cmd" bash_cb 0 "$cwd"
+    exit 0
     ;;
 esac
 
 paths="$(praxis_edit_paths "$payload")"
 [ -n "$paths" ] || allow "no file path in tool input"
 
-# The builder edits in a linked worktree under <root>/.praxis/worktrees/<name>/ while the
-# host's project dir stays on the main checkout. An edit in there is judged by that checkout.
-worktree="$(praxis_worktree_root "$root" "$(praxis_project_targets "$root" "$cwd" "$paths" | head -n 1)")"
-if [ -n "$worktree" ] && [ -d "$worktree" ]; then
-  root="$worktree"
-  resolve_change
-fi
+# Every path with the checkout that judges it (praxis_path_roots): the builder edits in a linked
+# worktree under <root>/.praxis/worktrees/<name>/ while the host's project dir stays on the main
+# checkout, and a Codex patch may touch both.
+entries="$(praxis_path_roots "$root" "$cwd" "$paths")"
 
 # --- The records: who writes what ------------------------------------------------------------
 
@@ -553,21 +723,30 @@ lens_file_gate() {   # <rel>
 }
 
 ledger_gate() {   # <rel>
-  local rel="$1" c new cur
+  local rel="$1" c new cur stage
   target="$rel"
   [ "$is_main" = 1 ] || decide deny "PRAXIS ledger: ${rel} is the orchestrator's; a subagent (${role:-unnamed}) does not write it. Report in your handback and the orchestrator records it. ${override}"
   c="${rel#*/}"; c="${c%%/*}"
   new="$(new_content | praxis_frontmatter_read round)"
-  [ -n "$new" ] || return 0
-  new="$(praxis_round_number "$new")"
-  cur="$(praxis_effective_round "$root" "$c")"
-  [ "$new" -ge "$cur" ] || decide deny "PRAXIS ledger: round: ${new} is lower than the current round ${cur} of specs/${c} (the ledger's field, or the highest review/round-N/ holding a review). The round goes down only through /praxis:rework ${c} \"<note>\" (scripts/rework.sh), run by the person. ${override}"
+  if [ -n "$new" ]; then
+    new="$(praxis_round_number "$new")"
+    cur="$(praxis_effective_round "$root" "$c")"
+    [ "$new" -ge "$cur" ] || decide deny "PRAXIS ledger: round: ${new} is lower than the current round ${cur} of specs/${c} (the ledger's field, or the highest review/round-N/ holding a review). The round goes down only through /praxis:rework ${c} \"<note>\" (scripts/rework.sh), run by the person. ${override}"
+  fi
+  # `stage: shipped` ends an open cycle, and with it the gates; it is true only once the change
+  # could ship, which is what the ship marker records.
+  stage="$(new_content | praxis_frontmatter_read stage)"
+  case "$stage" in [Ss][Hh][Ii][Pp][Pp][Ee][Dd]) ;; *) return 0 ;; esac
+  praxis_open_cycle "$root" "$c" || return 0
+  [ -f "$(praxis_ship_marker "$root" "$c")" ] && return 0
+  decide deny "PRAXIS ledger: stage: shipped would close specs/${c}, an open cycle, and .praxis/ship/${c} does not exist — nothing of it can have shipped. post-tool-use writes that marker when the approver records APPROVE over an all-PASS round, scripts/approve.sh when the person runs /praxis:approve ${c}; set shipped once the PR exists. ${override}"
 }
 
 record_gate() {
-  local rel lrel
-  while IFS= read -r rel; do
+  local proot rel lrel
+  while IFS=$'\t' read -r proot rel; do
     [ -n "$rel" ] || continue
+    root="$proot"; resolve_change
     lrel="$(praxis_lower "$rel")"
     case "$lrel" in
       .praxis/approved/*)
@@ -576,6 +755,8 @@ record_gate() {
         target="$rel"; decide deny "PRAXIS floor: ${rel} is the escalation record. It is written by post-tool-use when specs/${name}/decision.md records ESCALATE, and removed when the person runs /praxis:approve ${name} or /praxis:rework ${name} — never by the model. Do not create or edit it." ;;
       .praxis/intent/*)
         target="$rel"; decide deny "PRAXIS floor: ${rel} is the person's command token, minted by user-prompt-submit from their own /praxis:approve or /praxis:rework prompt and consumed when the script ran — never by the model. Do not create or edit it." ;;
+      .praxis/ship/*)
+        target="$rel"; decide deny "PRAXIS floor: ${rel} is the ship record. It is written by post-tool-use when the approver's decision.md records APPROVE over a complete all-PASS round, or by /praxis:approve ${name}, and removed by an ESCALATE or /praxis:rework ${name} — never by the model. Do not create or edit it." ;;
       specs/_templates/*) ;;
       specs/*/decision.md)              decision_gate "$rel" ;;
       specs/*/review/round-*/lenses)    lenses_gate "$rel" ;;
@@ -583,16 +764,25 @@ record_gate() {
       specs/*/implementation.md)        ledger_gate "$rel" ;;
     esac
   done <<EOF
-$(praxis_project_targets "$root" "$cwd" "$paths")
+$entries
 EOF
 }
 record_gate
 
-# The first source-side target decides; an all-spec-side write is free.
-target="$(praxis_source_target "$root" "$cwd" "$paths")"
+# The first source-side target, with its checkout, carries the comment pass; an all-spec-side
+# write is free.
+target=""
+while IFS=$'\t' read -r proot rel; do
+  [ -n "$rel" ] || continue
+  praxis_is_spec_side "$rel" && continue
+  root="$proot"; target="$rel"; break
+done <<EOF
+$entries
+EOF
 [ -n "$target" ] || exit 0
+resolve_change
 
-# Tier-1 comment discipline. It runs before the mode case because it judges the CONTENT of
+# Tier-1 comment discipline. It runs before the floor because it judges the CONTENT of
 # this edit, which is true or false independently of what `specs/` holds — one call site
 # instead of one at each of the floor's allow points. Everything it can fail to understand
 # (a tool it does not read, a path it cannot classify, an unparseable body) returns silently
@@ -634,49 +824,68 @@ Override: PRAXIS_COMMENTS=off lifts this check alone; PRAXIS_FLOOR=off lifts the
 }
 comment_gate
 
-# The spec's shape, repeated in the deny for a model that cannot read the template. The
-# template itself ships with factory-cycle (T05); until the plugin carries spec.md the deny
-# points at design.md as the form to read, and still names spec.md as the file to write.
-sections="Goal, Scope (In / Out), Acceptance (runnable checks: command → expected output; the approver executes these), Approach (files and the seam, no code), Open questions ([NEEDS CLARIFICATION] items; ready: true when none remain)"
-spec_template="specs/_templates/spec.md"
-[ -f "${PRAXIS_ROOT}/specs/_templates/spec.md" ] || [ -f "${root}/specs/_templates/spec.md" ] || spec_template="specs/_templates/design.md"
+# The floor for one source path under one checkout (root, target and the change resolved for
+# it): prints a deny or an ask and exits, or returns when the path may be written.
+floor() {
+  # The spec's shape, repeated in the deny for a model that cannot read the template. The
+  # template itself ships with factory-cycle (T05); until the plugin carries spec.md the deny
+  # points at design.md as the form to read, and still names spec.md as the file to write.
+  local sections="Goal, Scope (In / Out), Acceptance (runnable checks: command → expected output; the approver executes these), Approach (files and the seam, no code), Open questions ([NEEDS CLARIFICATION] items; ready: true when none remain)"
+  local spec_template="specs/_templates/spec.md" reason
+  [ -f "${PRAXIS_ROOT}/specs/_templates/spec.md" ] || [ -f "${root}/specs/_templates/spec.md" ] || spec_template="specs/_templates/design.md"
 
-case "$mode" in
-  fast)
-    [ -n "$change" ] && [ -f "$ledger" ] && exit 0
-    deny "PRAXIS floor (fast): ${target} is a source edit and specs/${name}/implementation.md does not exist.
+  case "$mode" in
+    fast)
+      [ -n "$change" ] && [ -f "$ledger" ] && exit 0
+      deny "PRAXIS floor (fast): ${target} is a source edit and specs/${name}/implementation.md does not exist.
 1. Read specs/_templates/implementation.md, then Write specs/${name}/implementation.md in that shape (kebab-case change name): Status, one task line for this edit, Completed + verify evidence after the verify command runs.
 2. Write .praxis/active-change containing the single line: ${name}
 ${trailer}"
-    ;;
-  *)
-    if [ -n "$change" ] && [ -n "$spec" ] && [ -f "$ledger" ]; then
-      praxis_approved "$root" "$change" && exit 0
-      reason="${spec} is written and awaits the person's approval. Approving this edit approves the spec: the approval writes .praxis/approved/${change} and the floor will not ask again. On a host without a prompt, or in an unattended run, the person runs /praxis:approve ${change}. After approval, set 'stage: planned' in specs/${change}/implementation.md as the record — the stage unlocks nothing; only the approval does."
-      case "$host" in
-        claude) decide ask "$reason" ;;
-        *) decide deny "${reason} (This host cannot ask, so the floor denies: stop and wait for the person to run /praxis:approve ${change}.)" ;;
-      esac
-    fi
-    if [ -n "$spec" ] && [ ! -f "$ledger" ]; then
-      deny "PRAXIS floor (${mode}): ${target} is a source edit and specs/${change}/implementation.md does not exist (${spec} does).
+      ;;
+    *)
+      if [ -n "$change" ] && [ -n "$spec" ] && [ -f "$ledger" ]; then
+        praxis_approved "$root" "$change" && exit 0
+        reason="${spec} is written and awaits the person's approval. Approving this edit approves the spec: the approval writes .praxis/approved/${change} and the floor will not ask again. On a host without a prompt, or in an unattended run, the person runs /praxis:approve ${change}. After approval, set 'stage: planned' in specs/${change}/implementation.md as the record — the stage unlocks nothing; only the approval does."
+        case "$host" in
+          claude) decide ask "$reason" ;;
+          *) decide deny "${reason} (This host cannot ask, so the floor denies: stop and wait for the person to run /praxis:approve ${change}.)" ;;
+        esac
+      fi
+      if [ -n "$spec" ] && [ ! -f "$ledger" ]; then
+        deny "PRAXIS floor (${mode}): ${target} is a source edit and specs/${change}/implementation.md does not exist (${spec} does).
 1. Read specs/_templates/implementation.md, then Write specs/${change}/implementation.md with 'stage: designed' in its frontmatter and the task list.
 2. STOP: the first source edit after that asks the person to approve the spec.
 ${trailer}"
-    elif [ -z "$change" ] || [ ! -f "$ledger" ]; then
-      deny "PRAXIS floor (${mode}): ${target} is a source edit and specs/${name}/ has no spec yet.
+      elif [ -z "$change" ] || [ ! -f "$ledger" ]; then
+        deny "PRAXIS floor (${mode}): ${target} is a source edit and specs/${name}/ has no spec yet.
 1. Read ${spec_template}, then Write specs/${name}/spec.md (kebab-case change name) with: ${sections}. A legacy specs/${name}/design.md is accepted in its place.
 2. Read specs/_templates/implementation.md, then Write specs/${name}/implementation.md with 'stage: designed' in its frontmatter and the task list.
 3. Write .praxis/active-change containing the single line: ${name}
 4. STOP: the first source edit after that asks the person to approve the spec.
 ${trailer}"
-    else
-      deny "PRAXIS floor (${mode}): ${target} is a source edit and specs/${change}/spec.md does not exist (nor the legacy design.md).
+      else
+        deny "PRAXIS floor (${mode}): ${target} is a source edit and specs/${change}/spec.md does not exist (nor the legacy design.md).
 1. Read ${spec_template}, then Write specs/${change}/spec.md with: ${sections}.
 2. Set 'stage: designed' in the frontmatter of specs/${change}/implementation.md.
 3. STOP: the first source edit after that asks the person to approve the spec.
 ${trailer}"
-    fi
-    ;;
-esac
+      fi
+      ;;
+  esac
+}
+
+# Every source path, each under its own checkout: the first deny wins, else the first ask.
+asked=""
+while IFS=$'\t' read -r proot rel; do
+  [ -n "$rel" ] || continue
+  praxis_is_spec_side "$rel" && continue
+  out="$(root="$proot"; target="$rel"; resolve_change; floor)"
+  case "$out" in
+    *'"permissionDecision": "deny"'*) printf '%s\n' "$out"; exit 0 ;;
+    *'"permissionDecision": "ask"'*) [ -n "$asked" ] || asked="$out" ;;
+  esac
+done <<EOF
+$entries
+EOF
+[ -z "$asked" ] || printf '%s\n' "$asked"
 exit 0

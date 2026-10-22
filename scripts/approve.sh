@@ -13,13 +13,16 @@
 # 2. The ship override (specs/factory-cycle, design.md appendix). When `.praxis/needs-human/<c>`
 #    exists — the approver recorded ESCALATE and `hooks/post-tool-use` wrote the marker — the
 #    person is deciding to ship anyway. The script writes `specs/<change>/decision.md` with
-#    `verdict: APPROVE (human)`, which the ship gate accepts whatever the lenses said, removes
-#    the marker, sets `stage: implemented` in the ledger (the appendix names this script as a
-#    ledger writer; the person runs it) so the next step is ship, and prints the two ship
-#    commands for the orchestrator to run. It does not run them: push and PR are the
-#    orchestrator's, behind the gate, and `stage: shipped` is the orchestrator's once the PR
-#    URL exists. The marker, and ONLY the marker, triggers this: a ledger `stage: needs-human`
-#    is a field the model writes, and a model-written field unlocks nothing (ADR-005).
+#    `verdict: APPROVE (human)` and the ship marker `.praxis/ship/<change>` — the two records
+#    the ship gate reads, whatever the lenses said (design.md, Round-3 amendments: decision.md
+#    alone is a file Bash can forge; the marker is written only by a hook or by this script) —
+#    removes the needs-human marker, sets `stage: implemented` in the ledger (the appendix
+#    names this script as a ledger writer; the person runs it) so the next step is ship, and
+#    prints the two ship commands for the orchestrator to run. It does not run them: push and
+#    PR are the orchestrator's, behind the gate, and `stage: shipped` is the orchestrator's
+#    once the PR URL exists. The needs-human marker, and ONLY that marker, triggers this: a
+#    ledger `stage: needs-human` is a field the model writes, and a model-written field
+#    unlocks nothing (ADR-005).
 #
 # Refuses a change with neither spec file: there is nothing to approve, and a marker without a
 # spec would let the floor through on a change that never had one.
@@ -45,15 +48,7 @@ praxis_valid_change_name "$change" || { echo "error: '${change}' is not a change
 root="$(praxis_project_root "$PWD")"
 spec="$(praxis_spec_file "$root" "$change")"
 [ -n "$spec" ] || { echo "error: specs/${change}/spec.md does not exist (nor the legacy design.md) — nothing to approve" >&2; exit 1; }
-
-praxis_ensure_praxis_dir "$root" || { echo "error: cannot create ${root}/.praxis" >&2; exit 1; }
-mkdir -p "${root}/.praxis/approved"
-: > "$(praxis_approved_marker "$root" "$change")"
-
 marker="$(praxis_needs_human_marker "$root" "$change")"
-[ -f "$marker" ] || { printf 'approved %s → .praxis/approved/%s (spec: %s)\n' "$change" "$change" "$spec"; exit 0; }
-
-# --- The ship override ------------------------------------------------------------------------
 
 # The PR's base: what worktree.sh recorded on the branch when it created it, else the ledger's
 # `base:`, else the branch the main checkout is on, else main.
@@ -74,24 +69,38 @@ spec_goal() {
   ' "${root}/${spec}"
 }
 
-# The base is validated BEFORE anything is written: a bad value in the branch config or the
-# ledger is a refusal, not a decision followed by a command nobody should paste.
-base="$(pr_base)"
-praxis_valid_ref_name "$base" || { echo "error: PR base '${base}' is not a branch name ([A-Za-z0-9._/-], no leading -, no .., no //) — checked branch.praxis/${change}.praxisBase, the ledger's base:, HEAD" >&2; exit 2; }
+# On the ship override the base is validated BEFORE anything is written — the spec approval
+# included: a bad value in the branch config or the ledger is a refusal, not a decision
+# followed by a command nobody should paste.
+if [ -f "$marker" ]; then
+  base="$(pr_base)"
+  praxis_valid_ref_name "$base" || { echo "error: PR base '${base}' is not a branch name ([A-Za-z0-9._/-], no leading -, no .., no //) — checked branch.praxis/${change}.praxisBase, the ledger's base:, HEAD" >&2; exit 2; }
+fi
+
+praxis_ensure_praxis_dir "$root" || { echo "error: cannot create ${root}/.praxis" >&2; exit 1; }
+mkdir -p "${root}/.praxis/approved"
+: > "$(praxis_approved_marker "$root" "$change")"
+
+[ -f "$marker" ] || { printf 'approved %s → .praxis/approved/%s (spec: %s)\n' "$change" "$change" "$spec"; exit 0; }
+
+# --- The ship override ------------------------------------------------------------------------
 
 round="$(praxis_ledger_round "$root" "$change")"
 ledger="${root}/specs/${change}/implementation.md"
 decision="${root}/specs/${change}/decision.md"
+ship="$(praxis_ship_marker "$root" "$change")"
 printf -- '---\nverdict: APPROVE (human)\nround: %s\n---\n## Checks run\n- none — human override\n## Reason\napproved by the person via /praxis:approve\n' \
   "$round" > "$decision"
+mkdir -p "${ship%/*}"
+: > "$ship"
 rm -f "$marker"
 [ -f "$ledger" ] && praxis_set_frontmatter_field "$ledger" stage implemented
 
 title="$(spec_goal)"; [ -n "$title" ] || title="$change"
 body="Spec: specs/${change}/${spec##*/} · Decision: specs/${change}/decision.md (APPROVE (human), round ${round})"
 
-printf 'approved %s → specs/%s/decision.md (verdict: APPROVE (human), round %s); .praxis/needs-human/%s removed; ledger stage: implemented\n' \
-  "$change" "$change" "$round" "$change"
+printf 'approved %s → specs/%s/decision.md (verdict: APPROVE (human), round %s); .praxis/ship/%s written; .praxis/needs-human/%s removed; ledger stage: implemented\n' \
+  "$change" "$change" "$round" "$change" "$change"
 # Every interpolated value single-quoted (praxis_sq), the Goal included: these lines are pasted.
 printf 'ship:\n  git push -u origin %s\n  gh pr create --base %s --head %s --title %s --body %s\n' \
   "$(praxis_sq "praxis/${change}")" "$(praxis_sq "$base")" "$(praxis_sq "praxis/${change}")" "$(praxis_sq "$title")" "$(praxis_sq "$body")"

@@ -104,6 +104,20 @@ test("rework archives the review state into rework-1/, writes the note, resets t
   assert.equal(lastLine(stdout), join(archive, "note.md"));
 });
 
+// The ship marker (design.md, Round-3 amendments) belongs to the decision rework.sh archives: a
+// change sent back after an APPROVE must not keep the right to ship the old round's work.
+test("rework removes .praxis/ship/<change> with the decision it came from", () => {
+  const dir = repo();
+  escalated(dir);
+  mkdirSync(join(dir, ".praxis", "ship"), { recursive: true });
+  writeFileSync(join(dir, ".praxis", "ship", "x"), "");
+  writeFileSync(join(dir, ".praxis", "ship", "y"), "");
+  const { status, stderr } = run(REWORK, dir, "x", "redo the parser");
+  assert.equal(status, 0, stderr);
+  assert.ok(!existsSync(join(dir, ".praxis/ship/x")), "the ship marker must go with the archived decision");
+  assert.ok(existsSync(join(dir, ".praxis/ship/y")), "another change's marker is not this rework's");
+});
+
 test("a second rework archives into rework-2/ and leaves rework-1/ alone", () => {
   const dir = repo();
   const base = escalated(dir);

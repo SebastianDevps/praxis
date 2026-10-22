@@ -41,13 +41,15 @@ case "$switch" in
     ;;
 esac
 
-# The person's one-shot command token (specs/factory-cycle, round-1 security review). Only a
-# prompt the PERSON submits reaches this hook — the model cannot submit one — so a prompt that
-# starts with `/praxis:approve <c>` or `/praxis:rework <c>` mints `.praxis/intent/<kind>-<c>`,
-# which is the only thing that lets `pre-tool-use` run `scripts/approve.sh` / `rework.sh`;
-# `post-tool-use` deletes it once the script ran. Edit/Write and Bash to `.praxis/intent/` are
-# denied, so the token has exactly one mint.
-intent=$(printf '%s' "$prompt" | sed -nE 's|^[[:space:]]*/praxis:(approve\|rework)[[:space:]]+([A-Za-z0-9][A-Za-z0-9._-]*).*|\1 \2|p' | head -1)
+# The person's one-shot command token (specs/factory-cycle, round-1 security review). The host
+# runs this hook on a prompt the PERSON submits, so a prompt that starts with
+# `/praxis:approve <c>` or `/praxis:rework <c>` mints `.praxis/intent/<kind>-<c>`, which is the
+# only thing that lets `pre-tool-use` run `scripts/approve.sh` / `rework.sh`; `post-tool-use`
+# deletes it once the script ran. pre-tool-use denies Edit/Write and Bash writes to
+# `.praxis/intent/` and denies running this hook from Bash; an interpreter or a wrapper script
+# that runs it is open by design (ADR-007) and closed by the host's permission rules.
+# `#` delimits the expression so the alternation's `|` is unescaped: BSD and GNU sed -E agree.
+intent=$(printf '%s' "$prompt" | sed -nE 's#^[[:space:]]*/praxis:(approve|rework)[[:space:]]+([A-Za-z0-9][A-Za-z0-9._-]*).*#\1 \2#p' | head -1)
 if [ -n "$intent" ]; then
   kind="${intent%% *}"; change="${intent#* }"
   if praxis_valid_change_name "$change"; then

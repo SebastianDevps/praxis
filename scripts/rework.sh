@@ -13,6 +13,7 @@
 #     note.md                                the person's note (frontmatter: rework, archived_round)
 #   specs/<change>/implementation.md         round: 0 · stage: planned
 #   .praxis/needs-human/<change>             removed
+#   .praxis/ship/<change>                    removed — it belonged to the decision archived here
 #
 # Why the rounds move rather than stay: `hooks/pre-tool-use` reads `review/round-<round>/`
 # for the barrier and the cap. A fresh cycle at round 1 must find an empty round-1, and a
@@ -81,9 +82,12 @@ praxis_set_frontmatter_field "$ledger" stage planned
 marker="$(praxis_needs_human_marker "$root" "$change")"
 cleared="absent"
 [ -f "$marker" ] && { rm -f "$marker"; cleared="removed"; }
+ship="$(praxis_ship_marker "$root" "$change")"
+shipped=""
+[ -f "$ship" ] && { rm -f "$ship"; shipped=" · .praxis/ship/${change} removed"; }
 
-printf 'rework %s of %s → specs/%s/review/rework-%s/ (archived:%s) · ledger round: 0, stage: planned · .praxis/needs-human/%s %s\n' \
-  "$k" "$change" "$change" "$k" "${archived:- nothing}" "$change" "$cleared"
+printf 'rework %s of %s → specs/%s/review/rework-%s/ (archived:%s) · ledger round: 0, stage: planned · .praxis/needs-human/%s %s%s\n' \
+  "$k" "$change" "$change" "$k" "${archived:- nothing}" "$change" "$cleared" "$shipped"
 [ "$cleared" = removed ] || printf 'note: no .praxis/needs-human/%s existed — a rework before an ESCALATE is the person'"'"'s call; the round counter is reset all the same\n' "$change"
 for f in "${archive}"/round-*/*.md; do
   [ -f "$f" ] || continue

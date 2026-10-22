@@ -164,6 +164,9 @@ test("approve on a needs-human change writes decision.md APPROVE (human), clears
 
   assert.ok(!existsSync(join(dir, ".praxis/needs-human/x")), "the escalation record must go with the override");
   assert.ok(existsSync(join(dir, ".praxis/approved/x")), "the spec approval is implied by shipping");
+  // The ship gate keys on this record, not on decision.md alone (design.md, Round-3 amendments).
+  assert.ok(existsSync(join(dir, ".praxis/ship/x")), "the override writes the ship marker");
+  assert.match(readFileSync(join(dir, ".praxis/.gitignore"), "utf8"), /^ship\/$/m, "the ship marker is per-machine state");
 
   // The person's script may write the ledger (design.md appendix): the next step is ship.
   const led = readFileSync(join(dir, "specs/x/implementation.md"), "utf8");
@@ -203,6 +206,8 @@ test("approve refuses an option-like or metacharacter PR base before writing any
     assert.match(stderr, /PR base .* is not a branch name/);
     assert.ok(!existsSync(join(dir, "specs/x/decision.md")), `decision written for base ${evil}`);
     assert.ok(existsSync(join(dir, ".praxis/needs-human/x")), "the marker must survive a refusal");
+    assert.ok(!existsSync(join(dir, ".praxis/approved/x")), "nothing is written before the base is validated");
+    assert.ok(!existsSync(join(dir, ".praxis/ship/x")), "no ship marker on a refusal");
     assert.doesNotMatch(stdout, /ship:/);
   }
   const viaConfig = project();
@@ -253,5 +258,6 @@ test("without needs-human, approve writes no decision and prints no ship command
   const { status, stdout } = approve(dir, "x");
   assert.equal(status, 0);
   assert.ok(!existsSync(join(dir, "specs/x/decision.md")), "a decision the approver did not write");
+  assert.ok(!existsSync(join(dir, ".praxis/ship/x")), "a spec approval is not a ship approval");
   assert.doesNotMatch(stdout, /ship:/);
 });

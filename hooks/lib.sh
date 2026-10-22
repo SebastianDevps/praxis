@@ -353,7 +353,7 @@ praxis_lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
 
 praxis_is_spec_side() {
   case "$(praxis_lower "$1")" in
-    .praxis/approved/*|.praxis/needs-human/*|.praxis/intent/*|.praxis/worktrees/*) return 1 ;;
+    .praxis/approved/*|.praxis/needs-human/*|.praxis/intent/*|.praxis/ship/*|.praxis/worktrees/*) return 1 ;;
     specs/*|.praxis/*|agents/*|agents.md|claude.md|progress.md|constraints.md) return 0 ;;
   esac
   return 1
@@ -369,31 +369,52 @@ praxis_valid_change_name() {
 # The builder's checkout is a linked worktree under `<root>/.praxis/worktrees/<name>/`
 # (scripts/worktree.sh), while the host's project dir stays on the main checkout. A path in
 # there belongs to that checkout — its own `.praxis/`, `specs/` and `src/` — not to the main
-# one's session state. Prints the worktree root when <rel> lies inside one, else nothing.
-#   praxis_worktree_root <root> <rel path>
-praxis_worktree_root() {
-  local name
-  case "$(praxis_lower "$2")" in
-    .praxis/worktrees/*/*)
-      name="${2#*/*/}"; name="${name%%/*}"       # the real spelling of the segment after .praxis/worktrees/
-      case "$name" in ""|.|..) return 0 ;; esac
-      printf '%s/.praxis/worktrees/%s' "$1" "$name" ;;
-  esac
-  return 0
+# one's session state. Prints every edited path inside <root> as `<checkout>\t<rel>`, one per
+# line: a path in an existing worktree is re-rooted there, in the spelling it was written with
+# (so `.Praxis/Worktrees/w` is that checkout on a case-insensitive volume), every other path
+# stays with <root>. Each path is judged on its own — a Codex patch spanning two checkouts is
+# never judged by its first path alone (security lens, round 2).
+#   praxis_path_roots <root> <cwd> <paths, newline-separated>
+praxis_path_roots() {
+  local root="$1" rel seg1 seg2 rest name
+  while IFS= read -r rel; do
+    [ -n "$rel" ] || continue
+    case "$(praxis_lower "$rel")" in
+      .praxis/worktrees/*/*)
+        seg1="${rel%%/*}"; rest="${rel#*/}"; seg2="${rest%%/*}"; rest="${rest#*/}"; name="${rest%%/*}"
+        case "$name" in
+          ""|.|..) ;;
+          *) if [ -d "${root}/${seg1}/${seg2}/${name}" ]; then
+               printf '%s/%s/%s/%s\t%s\n' "$root" "$seg1" "$seg2" "$name" "${rest#*/}"; continue
+             fi ;;
+        esac ;;
+    esac
+    printf '%s\t%s\n' "$root" "$rel"
+  done <<EOF
+$(praxis_project_targets "$1" "$2" "$3")
+EOF
 }
 
 # A shell command as the shell would read it: one segment per line, split on `&&`, `||`,
 # `;`, `|`, `&`, `(`, `)` and newlines (a `\`-newline continues the line); argv tokens
-# separated by \034, quotes removed (single, and double with `\"`), a standalone `{` or `}`
-# dropped. Redirections stay in the token stream (`2>&1`, `>/dev/null` are kept whole) for the
+# separated by \034, quotes removed (single, and double with `\"`), a backslash outside quotes
+# dropped before the character it escapes (`git \push` is `git push`, `\;` is one `;` token), a
+# standalone `{` or `}` dropped, and a reserved word in command position — if then else elif fi
+# do done while until ! — dropped, so `if x; then git push; fi` yields `git push` as a command.
+# With a second argument, a line holding `|` alone marks two segments joined by a pipe.
+# Redirections stay in the token stream (`2>&1`, `>/dev/null` are kept whole) for the
 # caller to strip. This is what lets the ship gate see `git -C <dir> push …` and `cd <dir>` as
 # commands rather than find `git push` as a substring — `echo "git push"` is one token of an
 # echo. Variables and substitutions are not expanded: a directory the shell would compute is
 # one git cannot be asked about, and a gate reading it fails open (Bash-path gap class).
+#   praxis_shell_segments <command> [mark-pipes]
 praxis_shell_segments() {
-  printf '%s\n' "$1" | awk '
-    BEGIN { US = sprintf("%c", 28) }
-    function flush_tok() { if (tok != "" && tok != "{" && tok != "}") { seg = (seg == "" ? tok : seg US tok) } tok = "" }
+  printf '%s\n' "$1" | awk -v MARK="${2:-}" '
+    BEGIN { US = sprintf("%c", 28); KW = " if then else elif fi do done while until ! " }
+    function flush_tok() {
+      if (tok != "" && tok != "{" && tok != "}" && !(seg == "" && index(KW, " " tok " "))) { seg = (seg == "" ? tok : seg US tok) }
+      tok = ""
+    }
     function flush_seg() { flush_tok(); if (seg != "") print seg; seg = "" }
     {
       s = $0; n = length(s); i = 1; cont = 0
@@ -415,6 +436,7 @@ praxis_shell_segments() {
           }
           continue
         }
+        if (c == "\\") { if (i < n) tok = tok substr(s, i + 1, 1); i += 2; continue }
         if (c == " " || c == "\t") { flush_tok(); i++; continue }
         if (c == ";" || c == "(" || c == ")") { flush_seg(); i++; continue }
         if (c == "&") {
@@ -422,12 +444,201 @@ praxis_shell_segments() {
           if (tok ~ /[<>]$/ || nx == ">") { tok = tok c; i++; continue }      # 2>&1, &>file: one token
           flush_seg(); i += (nx == "&") ? 2 : 1; continue
         }
-        if (c == "|") { flush_seg(); i += (substr(s, i + 1, 1) == c) ? 2 : 1; continue }
+        if (c == "|") {
+          if (substr(s, i + 1, 1) == c) { flush_seg(); i += 2; continue }
+          flush_seg(); if (MARK != "") print "|"; i++; continue
+        }
         tok = tok c; i++
       }
       if (cont) flush_tok(); else flush_seg()
     }
     END { flush_seg() }'
+}
+
+# --- Reading one simple command (every Bash gate, both hooks) ---------------------------------
+#
+# The callers split a command with praxis_shell_segments and hold one segment's words in an
+# array named `argv`; these helpers read and edit that array in the caller's scope.
+
+praxis_re_redir_self='^[0-9]*(>>|>|<)&[0-9-]+$'          # 2>&1, >&2, 1>&-: one token, no target
+praxis_re_redir_op='^([0-9]*(>>|>|<|<>)|&>>|&>)$'         # the operator alone: the next token is its target
+praxis_re_redir_tgt='^([0-9]*(>>|>|<|<>)|&>>|&>).+'       # the operator glued to its target (`<<<s`, `<<EOF` too)
+
+# argv without its redirections.
+praxis_strip_redirects() {
+  local -a out=()
+  local i=0 n=${#argv[@]} t
+  while [ "$i" -lt "$n" ]; do
+    t="${argv[$i]}"
+    if [[ $t =~ $praxis_re_redir_self ]]; then i=$((i + 1)); continue; fi
+    if [[ $t =~ $praxis_re_redir_op ]]; then i=$((i + 2)); continue; fi
+    if [[ $t =~ $praxis_re_redir_tgt ]]; then i=$((i + 1)); continue; fi
+    out+=("$t"); i=$((i + 1))
+  done
+  argv=("${out[@]+"${out[@]}"}")
+}
+
+# The index of the command word: past `VAR=x` assignments and the wrappers that run a command
+# unchanged — env, command, time, timeout (and its duration), nohup, nice, sudo, exec, builtin,
+# setsid, stdbuf, xargs, caffeinate — with their options, the value-taking ones included.
+praxis_command_index() {
+  local i=0 n=${#argv[@]} w
+  while [ "$i" -lt "$n" ]; do
+    case "${argv[$i]}" in
+      *=*) i=$((i + 1)) ;;
+      env|command|time|timeout|nohup|nice|sudo|exec|builtin|setsid|stdbuf|xargs|caffeinate|*/env|*/timeout|*/nohup|*/nice|*/sudo|*/setsid|*/stdbuf|*/xargs)
+        w="${argv[$i]##*/}"; i=$((i + 1))
+        while [ "$i" -lt "$n" ]; do
+          case "${argv[$i]}" in
+            --) i=$((i + 1)); break ;;
+            -*) case "${w}:${argv[$i]}" in
+                  nice:-n|sudo:-u|sudo:-g|sudo:-C|sudo:-p|sudo:-r|sudo:-t|sudo:-U|sudo:-h|env:-u|env:-C|env:-S|exec:-a|\
+                  timeout:-s|timeout:-k|stdbuf:-i|stdbuf:-o|stdbuf:-e|caffeinate:-t|caffeinate:-w|\
+                  xargs:-I|xargs:-n|xargs:-P|xargs:-L|xargs:-d|xargs:-E|xargs:-s|xargs:-a) i=$((i + 2)) ;;
+                  *) i=$((i + 1)) ;;
+                esac ;;
+            *) break ;;
+          esac
+        done
+        if [ "$w" = timeout ] && [ "$i" -lt "$n" ]; then i=$((i + 1)); fi ;;
+      *) break ;;
+    esac
+  done
+  printf '%s' "$i"
+}
+
+# A directory a command names, resolved against the one it runs in.
+praxis_resolve_dir() { case "$1" in "") printf '%s' "$2" ;; /*) printf '%s' "$1" ;; *) printf '%s/%s' "$2" "$1" ;; esac; }
+
+# Every simple command of <command>, as the shell would run it. For each one the callback runs
+# with `argv` (its words, redirections stripped), `i` (the command word's index), `n` and `dir`
+# (the directory a preceding `cd` moved to) in scope; the walk stops and returns 0 the first
+# time the callback does. Unwrapped on the way: the wrappers praxis_command_index skips,
+# `bash|sh|zsh|dash|ksh -c <string>` in any flag spelling (`-lc`, `-ec`, `-xc`), a here-string
+# fed to a shell, `eval`, and the command of `find … -exec|-execdir|-ok|-okdir … ;`.
+#   praxis_walk <command> <callback> [<depth>] [<dir>]
+praxis_walk() {
+  local cmd="$1" cb="$2" depth="${3:-0}" dir="${4:-$PWD}" seg
+  local -a argv
+  [ "$depth" -le 3 ] || return 1
+  while IFS= read -r seg; do
+    [ -n "$seg" ] || continue
+    IFS=$'\034' read -r -a argv <<< "$seg"
+    praxis_walk_argv "$cb" "$depth" && return 0
+  done <<EOF
+$(praxis_shell_segments "$cmd")
+EOF
+  return 1
+}
+
+praxis_walk_argv() {
+  local cb="$1" depth="$2" i n j k t prev="" here=""
+  local -a sub
+  for t in "${argv[@]+"${argv[@]}"}"; do
+    [ "$prev" = "<<<" ] && here="$t"
+    case "$t" in "<<<"?*) here="${t#<<<}" ;; esac
+    prev="$t"
+  done
+  praxis_strip_redirects
+  i="$(praxis_command_index)"; n=${#argv[@]}
+  [ "$i" -lt "$n" ] || return 1
+  case "${argv[$i]##*/}" in
+    cd) dir="$(praxis_resolve_dir "${argv[$((i + 1))]:-}" "$dir")"; return 1 ;;
+    bash|sh|zsh|dash|ksh)
+      j=$((i + 1))
+      while [ "$j" -lt "$n" ]; do
+        case "${argv[$j]}" in
+          --) break ;;
+          -o|+o|-O|+O|--rcfile|--init-file) j=$((j + 2)) ;;
+          --*) j=$((j + 1)) ;;
+          -*c*) praxis_walk "${argv[$((j + 1))]:-}" "$cb" $((depth + 1)) "$dir"; return $? ;;
+          -*|+*) j=$((j + 1)) ;;
+          *) break ;;
+        esac
+      done
+      if [ -n "$here" ]; then praxis_walk "$here" "$cb" $((depth + 1)) "$dir"; return $?; fi ;;
+    eval) praxis_walk "$(printf '%s ' "${argv[@]:$((i + 1))}")" "$cb" $((depth + 1)) "$dir"; return $? ;;
+    find)
+      j=$((i + 1))
+      while [ "$j" -lt "$n" ]; do
+        case "${argv[$j]}" in
+          -exec|-execdir|-ok|-okdir)
+            sub=(); k=$((j + 1))
+            while [ "$k" -lt "$n" ] && [ "${argv[$k]}" != ";" ] && [ "${argv[$k]}" != "+" ]; do sub+=("${argv[$k]}"); k=$((k + 1)); done
+            [ "${#sub[@]}" -gt 0 ] && praxis_walk_words "$cb" $((depth + 1)) "${sub[@]}" && return 0
+            j="$k" ;;
+        esac
+        j=$((j + 1))
+      done ;;
+  esac
+  "$cb" && return 0
+  return 1
+}
+
+# The walk over a command given as words rather than as a string (find's -exec).
+praxis_walk_words() {
+  local cb="$1" depth="$2"
+  local -a argv=("${@:3}")
+  [ "$depth" -le 3 ] || return 1
+  praxis_walk_argv "$cb" "$depth"
+}
+
+# The script a simple command executes (call from a praxis_walk callback): the command word, or
+# the script operand of a shell — sh, bash, zsh, dash, ksh, `source`, `.` — past its options. A
+# shell given `-n` only parses, so it executes nothing. Sets `exec_script` and `exec_arg` (the
+# script's first argument); both empty when nothing is executed.
+praxis_exec_script() {
+  local j="$i" w="${argv[$i]##*/}"
+  exec_script=""; exec_arg=""
+  case "$w" in
+    bash|sh|zsh|dash|ksh|source|.)
+      j=$((i + 1))
+      while [ "$j" -lt "$n" ]; do
+        case "${argv[$j]}" in
+          --) j=$((j + 1)); break ;;
+          -o|+o|-O|+O|--rcfile|--init-file) j=$((j + 2)) ;;
+          --*) j=$((j + 1)) ;;
+          -*n*) return 0 ;;
+          -*|+*) j=$((j + 1)) ;;
+          *) break ;;
+        esac
+      done ;;
+  esac
+  exec_script="${argv[$j]:-}"; exec_arg="${argv[$((j + 1))]:-}"
+}
+
+# A path as written, collapsed lexically: `//` and `/./` removed, a leading `./` dropped, `..`
+# resolved where it can be. Absolute stays absolute; `.` for an empty result. Sets REPLY (no
+# subshell: a gate calls it once per word of a command).
+praxis_norm_path() {
+  local IFS=/ part out="" lead=""
+  local -a parts
+  case "$1" in /*) lead=/ ;; esac
+  read -r -a parts <<< "$1"
+  for part in "${parts[@]+"${parts[@]}"}"; do
+    case "$part" in
+      ""|.) ;;
+      ..) case "$out" in ""|..|*/..) out="${out:+${out}/}.." ;; */*) out="${out%/*}" ;; *) out="" ;; esac ;;
+      *) out="${out:+${out}/}${part}" ;;
+    esac
+  done
+  REPLY="${lead}${out}"
+  [ -n "$REPLY" ] || REPLY=.
+}
+
+# Whether a lower-cased, normalised path reaches a record directory — .praxis/{approved,
+# needs-human,intent,ship}/ — or the `.praxis` directory that holds them, or a glob over its
+# entries (`.praxis/*`). Matched anywhere in the word, as before: `of=.praxis/approved/x` and an
+# echoed `touch .praxis/approved/x` are both reaches.
+praxis_reaches_record() {
+  local seg
+  case "$1/" in *.praxis/approved/*|*.praxis/needs-human/*|*.praxis/intent/*|*.praxis/ship/*) return 0 ;; esac
+  case "/$1/" in
+    */.praxis/) return 0 ;;
+    */.praxis/*) seg="${1##*.praxis/}"; seg="${seg%%/*}"
+                 case "$seg" in *[\*\?\[]*) return 0 ;; esac ;;
+  esac
+  return 1
 }
 
 # The approval marker for a change: `.praxis/approved/<change>`, an empty file whose
@@ -446,10 +657,21 @@ praxis_needs_human_marker() { printf '%s/.praxis/needs-human/%s' "$1" "$2"; }
 # it cannot mint one; pre-tool-use lets the script run only while the token exists.
 praxis_intent_token() { printf '%s/.praxis/intent/%s-%s' "$1" "$2" "$3"; }
 
+# The ship marker: `.praxis/ship/<change>`, the record the ship gate keys on (design.md,
+# Round-3 amendments). Written by post-tool-use when the approver's decision.md says APPROVE over
+# a complete all-PASS round, or by scripts/approve.sh with APPROVE (human); removed by an
+# ESCALATE and by scripts/rework.sh. decision.md alone is a file Bash can forge in one
+# redirection; this marker is written only by a hook or by the person's script. It lives in the
+# main checkout, where the ledger is, also when the caller runs from a linked worktree.
+praxis_ship_marker() {
+  local base; base="$(praxis_main_checkout "$1")"
+  printf '%s/.praxis/ship/%s' "${base:-$1}" "$2"
+}
+
 # The .gitignore Praxis writes into `.praxis/`: per-machine session state, not the team's
 # record — same rule as `sessions.jsonl` in the memory store.
-PRAXIS_GITIGNORE_ENTRIES="active-change approved/ needs-human/ worktrees/ intent/ session-started"
-PRAXIS_GITIGNORE=$'active-change\napproved/\nneeds-human/\nworktrees/\nintent/\nsession-started\n'
+PRAXIS_GITIGNORE_ENTRIES="active-change approved/ needs-human/ worktrees/ intent/ ship/ session-started"
+PRAXIS_GITIGNORE=$'active-change\napproved/\nneeds-human/\nworktrees/\nintent/\nship/\nsession-started\n'
 
 # Create `.praxis/` on first use and, only then, its .gitignore. An existing file is the
 # project's and is never rewritten — with one exception: a file made only of Praxis's own
@@ -561,6 +783,61 @@ EOF
     if [ -n "$newest" ]; then name="${newest%/implementation.md}"; name="${name##*/}"; fi
   fi
   printf '%s' "$name"
+}
+
+# `.praxis/active-change` alone, validated; never the newest-ledger fallback. The ship gate keys
+# on this: a guess at which change a PR belongs to is how every legacy ledger denied every
+# `gh pr create` (correctness lens, round 2).
+praxis_active_change_file() {
+  local name=""
+  [ -f "${1}/.praxis/active-change" ] || return 0
+  name=$(head -n 1 "${1}/.praxis/active-change" 2>/dev/null | tr -d '[:space:]')
+  praxis_valid_change_name "$name" && printf '%s' "$name"
+  return 0
+}
+
+# Whether a ledger file is an open cycle (design.md, Round-3 amendments): its `stage:` is not
+# shipped, and it carries the cycle's own keys — `round:` or `builder:`, empty or not — or its
+# change has a review/ folder. A pre-0.10 ledger has none of them and is never an open cycle, so
+# the gates leave that project's unrelated PRs, pushes and dispatches alone.
+#   praxis_ledger_is_open <ledger file>
+praxis_ledger_is_open() {
+  local flags
+  [ -f "${1:-}" ] || return 1
+  flags="$(awk '
+    { sub(/\r$/, "") }
+    NR == 1 { fm = ($0 ~ /^---[ \t]*$/); if (fm) next }
+    fm && /^---[ \t]*$/ { exit }
+    !seen && index($0, "stage:") == 1 {
+      v = $0; sub(/^[^:]*:[ \t]*/, "", v); sub(/[ \t]*#.*$/, "", v); sub(/[ \t]+$/, "", v)
+      seen = 1; if (tolower(v) == "shipped") shipped = 1
+    }
+    index($0, "round:") == 1 || index($0, "builder:") == 1 { cycle = 1 }
+    END { printf "%d%d", shipped, cycle }
+  ' "$1")"
+  case "$flags" in 1*) return 1 ;; 01) return 0 ;; esac
+  [ -d "${1%/implementation.md}/review" ]
+}
+
+# The same, for a change by name.
+praxis_open_cycle() {
+  [ -n "${2:-}" ] || return 1
+  praxis_ledger_is_open "$(praxis_ledger_path "$1" "$2")"
+}
+
+# Every change that is an open cycle, one per line, read from the main checkout's ledgers.
+praxis_open_cycles() {
+  local base f c
+  base="$(praxis_main_checkout "$1")"; [ -n "$base" ] || base="$1"
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    c="${f%/implementation.md}"; c="${c##*/}"
+    praxis_valid_change_name "$c" || continue
+    praxis_ledger_is_open "$f" && printf '%s\n' "$c"
+  done <<EOF
+$(praxis_spec_ledgers "$base")
+EOF
+  return 0
 }
 
 # One frontmatter value from stdin, trailing comment stripped; empty when the key is missing.
@@ -695,15 +972,18 @@ EOF
 praxis_round_dir() { printf '%s/review/round-%s' "$(praxis_change_dir "$1" "$2")" "$3"; }
 
 # The lens names a round waits for, one per line: `round-N/lenses`, which the orchestrator
-# writes before dispatching the lenses; else the ledger's `lenses:` field, split on commas.
-# Blank lines are dropped and a name carrying `/` is not a lens.
+# writes before dispatching the lenses; else the ledger's `lenses:` field, split on commas —
+# either way unioned with correctness, security and tests, so neither file can drop a required
+# lens (security and correctness lenses, round 2). Lower-cased, blank lines dropped, each name
+# once, and a name carrying `/` is not a lens.
 #   praxis_round_lenses <root> <change> <round>
 praxis_round_lenses() {
   local dir names; dir="$(praxis_round_dir "$1" "$2" "$3")"
   if [ -f "${dir}/lenses" ]; then names=$(cat "${dir}/lenses" 2>/dev/null)
   else names=$(praxis_ledger_field "$1" "$2" lenses | tr ',' '\n')
   fi
-  printf '%s\n' "$names" | awk '{ gsub(/^[ \t\r]+|[ \t\r]+$/, "") } $0 != "" && $0 !~ /\// { print }'
+  printf '%s\ncorrectness\nsecurity\ntests\n' "$names" \
+    | awk '{ gsub(/^[ \t\r]+|[ \t\r]+$/, ""); $0 = tolower($0) } $0 != "" && $0 !~ /\// && !seen[$0]++ { print }'
 }
 
 # The lenses whose `<lens>.md` is not yet in the round, one per line. Empty means the
@@ -756,6 +1036,25 @@ EOF
 # EMPTY lens list is false, never vacuously true (mutant M2, tests lens).
 praxis_round_all_pass() {
   [ -n "$(praxis_round_lenses "$1" "$2" "$3")" ] && [ -z "$(praxis_round_not_pass "$1" "$2" "$3")" ]
+}
+
+# The first open cycle at the round cap — its effective round is 2 or more, complete, and not
+# all PASS — or nothing. Read over every open cycle, not the active change alone: the model
+# writes `.praxis/active-change`, and pointing it at another change must not reopen the cap
+# (security lens, round 2). rework.sh, run by the person, moves the rounds away and ends it.
+praxis_capped_change() {
+  local c round
+  while IFS= read -r c; do
+    [ -n "$c" ] || continue
+    round="$(praxis_effective_round "$1" "$c")"
+    [ "$round" -ge 2 ] || continue
+    [ -z "$(praxis_round_missing "$1" "$c" "$round")" ] || continue
+    praxis_round_all_pass "$1" "$c" "$round" && continue
+    printf '%s' "$c"; return 0
+  done <<EOF
+$(praxis_open_cycles "$1")
+EOF
+  return 0
 }
 
 # The approver's verdict: the `verdict:` line of the change's `decision.md` — `APPROVE`,
