@@ -1,7 +1,9 @@
 ---
 title: Factory Cycle
-stage: planned      # new → designed → planned → implemented → shipped
+stage: needs-human  # new → designed → planned → implemented → shipped | needs-human
 owner: plugin owner
+round: 2
+lenses: correctness, security, tests
 ---
 
 # Factory Cycle — Implementation
@@ -39,9 +41,10 @@ files and run in parallel without worktrees; the orchestrator commits per wave.
 - [ ] T06 · phase: verify · state: in_progress · evals/cycle: fixture project + feature, 3 cells, assertions (subagents ≥ 4, barrier order, rounds ≤ 2, decision.md, stub gh after APPROVE), tokens vs praxis-full
       files:  evals/cycle/
       verify: evals/cycle/RESULTS.md with every EAG row in PASS · FAIL · SKIP · GAP
-- [ ] R03 · phase: review · state: review · refuter wave (correctness, security, tests) on the whole change, then ship
+- [ ] R03 · phase: review · state: blocked(user) · refuter wave (correctness, security, tests) on the whole change, then ship
 
 ## Completed
+- R03 round 2 (2026-10-22): all three lenses CHANGES again — security 2 blocking (Bash can forge decision.md then push; the intent token can be minted by running hooks/user-prompt-submit from Bash or bypassed via `bash -c`), correctness 1 blocking (`gh pr create` from a non-cycle branch denied by the newest ledger — regression for every project with legacy ledgers; the honest cycle path walks clean end to end), tests 0 blocking (97 new mutants, 27 survived, 5 equivalent). Round cap reached. Approver dispatch failed: `praxis:approver` is not registered in this session (plugin agents load at session start; agents/approver.md was created after). Verify: lens files present 3/3 round-2 (PASS); approver decision: SKIP (role not dispatchable here); needs-human marker: not written (hook-only; GAP in this session).
 - R03 round 1 (2026-10-22): security CHANGES (3 blocking, 5 important, 3 minor), correctness CHANGES (1 blocking, 6 important, 6 minor), tests CHANGES (0 blocking, 4 important, 4 minor; 53 mutants, 17 survived). Hardening landed: decision.md role-bound, ship gate keyed on the pushed branch with refspec source side, redirections/wrappers/`bash -c`/`gh api` tokenized, lens and ledger writes role-bound, lens list pinned and minimum, round derived from disk, PASS requires "What I tried to break", case-insensitive paths, person-intent tokens for approve.sh/rework.sh (minted by user-prompt-submit), NotebookEdit, name validation and quoting in scripts. Verify: `node --test tests/*.test.mjs` → 384 pass, 0 fail (PASS); hooks 118/118 with two mutations shown red (PASS); `node scripts/validate-resources.mjs` → 67/67 (PASS); `sh -n` on hooks and scripts clean (PASS). Round 2 of lenses: pending.
 - R02 fixes (2026-10-21, commit 44194b8): hooks (ship gate tokenized with -C/cd resolution; worktree re-root), scripts (approve.sh marker-only override + stage: implemented; loop.sh exit 5 on marker, --approve proceeds, guard off in cycle mode; worktree.sh exit 1 on foreign checkout, prints base:; scripts/ledger-field.sh shared setter), kernels/factory/orchestrator (base from ledger, Run Card defined once). Verify: `node --test tests/*.test.mjs` → 348 · pass 348 · fail 0 (PASS); hooks 102/102 (PASS); `sh -n` scripts 5× OK (PASS).
 - R02 review + design amendments (2026-10-21): design.md appendix gains `base:` in the ledger, `review/rework-<k>/` layout, person-run scripts as ledger writers, and the ship-gate rule covering `git -C`/`cd` forms; design.md:56 now matches the builder injection (kernel + change line + declared crafts). Verify: GAP — the three fix dispatches (hooks, scripts, kernels) have not reported yet.
@@ -67,9 +70,11 @@ files and run in parallel without worktrees; the orchestrator commits per wave.
 - T06 / R03: EAG row "SubagentStart output for `builder` is ≤15 lines plus the spec path" — measured kernel 15 + change line 1, but the builder also receives its two declared crafts (72 lines) per the T03 brief; decide whether the EAG counts crafts, or move the crafts behind a pointer for the builder.
 
 ## Blocked
-(none)
+state: blocked(user) — round cap reached with CHANGES in every lens. The person decides: `/praxis:rework factory-cycle "<note>"` authorises round 3 with the fixes listed in the Session Notes, or `/praxis:approve factory-cycle` ships with the documented gaps. Also: restart the session (or run the cycle from a fresh `claude` process) so `spec-writer`, `builder`, `approver`, `lens-ui` are dispatchable.
 
 ## Session Notes
+- Proposed round-3 note (priority order): (1) hook-written ship marker `.praxis/ship/<c>` on the approver's APPROVE, required by the ship gate; Bash denied on `.praxis/{approved,needs-human,intent,ship}` incl. `find -exec`, `fd -x`, `rg --pre`; path normalisation (`//`, `./`, `cd .praxis`). (2) Never push to trunk: deny any push whose destination is main/master/`base:`; case-fold refspecs; rev-expressions and SHA sources; `git \push`, `bash -lc`, `timeout`, `if/then`. (3) `gh pr create` gated only while a cycle is open and the head is not that cycle's branch; non-cycle branches free. (4) Intent gate uses the ship tokenizer (`bash -c` unwrapped), gates execution forms only, denies Bash invoking `hooks/*`. (5) Ledger `lenses:` fallback obeys the three-lens minimum; at the cap deny every SendMessage and every builder dispatch until the approver or rework resolves it. (6) Codex `apply_patch` re-rooted per path. (7) Tests: case-folding at all 6 sites, decision gate for MultiEdit/apply_patch/NotebookEdit, `--mirror`/`--branches`, rework.sh without token, `round: 08`, scorer boundaries S3–S5, S8. (8) ADR-007: the floor stops drift, not an adversary with a shell; adversarial resistance belongs to host permission rules (deny `Bash(*hooks/*)`, `Bash(*.praxis/*)`), documented in docs/cycle.md and README.
+- Agents added by a change are not dispatchable until the host reloads the plugin: document in README (install) and docs/cycle.md.
 - Research dossier (three reports with URLs and `file:line`): session scratchpad
   `/private/tmp/claude-501/-Users-sebasing-Projects-PluginClaude-praxis/606cb74a-2de7-4cf2-afd3-189b8ef711ed/scratchpad/dossier-factory-praxis-2026-10-21.md`; T05 copies it to `docs/research-factory-cycle.md`.
 - Project-side harness engineering is the next change (`harness-quality`), pending the owner's sample code.
