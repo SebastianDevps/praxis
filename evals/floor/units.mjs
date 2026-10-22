@@ -101,7 +101,7 @@ Design approved by the person before this session (\`.praxis/approved/${CHANGE}\
 
 // Mirror of praxis_is_spec_side in hooks/lib.sh. A drift here would mis-score, so keep it literal.
 export const isSpecSide = (rel) =>
-  !rel.startsWith(".praxis/approved/") &&
+  !rel.startsWith(".praxis/approved/") && !rel.startsWith(".praxis/needs-human/") &&
   (/^(specs\/|\.praxis\/|agents\/)/.test(rel) || /^(AGENTS|CLAUDE|PROGRESS|CONSTRAINTS)\.md$/.test(rel));
 
 // The first deny copies `specs/_templates/` into the project (ADR-006). That is the floor's own

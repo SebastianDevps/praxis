@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# gh — the stub evals/cycle puts first on PATH for every cell. The ship gate in
+# hooks/pre-tool-use decides whether `gh pr create` runs; this records that it ran, and when.
+#
+# Every invocation appends `<ISO timestamp>\t<arguments>` to $CYCLE_GH_LOG (the cell's gh.log).
+# `pr create` prints a fake PR URL so the orchestrator can record it in the ledger; the other
+# subcommands print enough to not look broken. Nothing talks to GitHub. Exit 0 always: a
+# failing stub would make the model retry, and the retries would show up as extra log lines
+# that the scorer has to explain away.
+#
+# The timestamp is taken through node (the harness's own runtime) because macOS `date` has no
+# millisecond field, and the scorer compares this clock with the transcript's message
+# timestamps, which carry milliseconds.
+set -u
+log="${CYCLE_GH_LOG:-}"
+if [ -n "$log" ]; then
+  ts="$(node -e 'process.stdout.write(new Date().toISOString())' 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)"
+  printf '%s\t%s\n' "$ts" "$*" >> "$log"
+fi
+case "${1:-} ${2:-}" in
+  "pr create") echo "https://github.com/praxis-eval/invoices-fixture/pull/1" ;;
+  "pr view"|"pr list") echo "https://github.com/praxis-eval/invoices-fixture/pull/1" ;;
+  "auth status") echo "Logged in to github.com account praxis-eval (stub)" ;;
+  "--version "|"version ") echo "gh version 0.0.0-stub" ;;
+esac
+exit 0
