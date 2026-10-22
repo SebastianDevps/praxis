@@ -346,12 +346,24 @@ praxis_canonical_path() {
 # agent CREATES the record, so the floor never stands in front of it.
 # `.praxis/approved/` is the one exception: the approval record is written by
 # the person (via the host's ask, or /praxis:approve), never by the model.
+# Lower-case, for every path classification. The default macOS volume is case-insensitive:
+# `.Praxis/Approved/c` IS `.praxis/approved/c` on disk, so a case-sensitive prefix match
+# would let the spelling choose the rule (security lens, round 1).
+praxis_lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
+
 praxis_is_spec_side() {
-  case "$1" in
-    .praxis/approved/*|.praxis/needs-human/*|.praxis/worktrees/*) return 1 ;;
-    specs/*|.praxis/*|agents/*|AGENTS.md|CLAUDE.md|PROGRESS.md|CONSTRAINTS.md) return 0 ;;
+  case "$(praxis_lower "$1")" in
+    .praxis/approved/*|.praxis/needs-human/*|.praxis/intent/*|.praxis/worktrees/*) return 1 ;;
+    specs/*|.praxis/*|agents/*|agents.md|claude.md|progress.md|constraints.md) return 0 ;;
   esac
   return 1
+}
+
+# A change name as the floor accepts it: a folder under specs/, nothing a path could be
+# smuggled through — no `/`, no `..`, no leading `.` or `-`, the template folder excluded.
+praxis_valid_change_name() {
+  case "${1:-}" in ""|*/*|*..*|_templates|[!A-Za-z0-9]*|*[!A-Za-z0-9._-]*) return 1 ;; esac
+  return 0
 }
 
 # The builder's checkout is a linked worktree under `<root>/.praxis/worktrees/<name>/`
@@ -361,9 +373,9 @@ praxis_is_spec_side() {
 #   praxis_worktree_root <root> <rel path>
 praxis_worktree_root() {
   local name
-  case "$2" in
+  case "$(praxis_lower "$2")" in
     .praxis/worktrees/*/*)
-      name="${2#.praxis/worktrees/}"; name="${name%%/*}"
+      name="${2#*/*/}"; name="${name%%/*}"       # the real spelling of the segment after .praxis/worktrees/
       case "$name" in ""|.|..) return 0 ;; esac
       printf '%s/.praxis/worktrees/%s' "$1" "$name" ;;
   esac
@@ -371,18 +383,21 @@ praxis_worktree_root() {
 }
 
 # A shell command as the shell would read it: one segment per line, split on `&&`, `||`,
-# `;`, `|`, `&` and newlines; argv tokens separated by \034, quotes removed (single, and
-# double with `\"`). This is what lets the ship gate see `git -C <dir> push …` and `cd <dir>`
-# as commands rather than find `git push` as a substring — `echo "git push"` is one token of
-# an echo. Variables and substitutions are not expanded: a directory the shell would compute
-# is one git cannot be asked about, and a gate reading it fails open (Bash-path gap class).
+# `;`, `|`, `&`, `(`, `)` and newlines (a `\`-newline continues the line); argv tokens
+# separated by \034, quotes removed (single, and double with `\"`), a standalone `{` or `}`
+# dropped. Redirections stay in the token stream (`2>&1`, `>/dev/null` are kept whole) for the
+# caller to strip. This is what lets the ship gate see `git -C <dir> push …` and `cd <dir>` as
+# commands rather than find `git push` as a substring — `echo "git push"` is one token of an
+# echo. Variables and substitutions are not expanded: a directory the shell would compute is
+# one git cannot be asked about, and a gate reading it fails open (Bash-path gap class).
 praxis_shell_segments() {
   printf '%s\n' "$1" | awk '
     BEGIN { US = sprintf("%c", 28) }
-    function flush_tok() { if (tok != "") { seg = (seg == "" ? tok : seg US tok); tok = "" } }
+    function flush_tok() { if (tok != "" && tok != "{" && tok != "}") { seg = (seg == "" ? tok : seg US tok) } tok = "" }
     function flush_seg() { flush_tok(); if (seg != "") print seg; seg = "" }
     {
-      s = $0; n = length(s); i = 1
+      s = $0; n = length(s); i = 1; cont = 0
+      if (substr(s, n, 1) == "\\") { cont = 1; n-- }
       while (i <= n) {
         c = substr(s, i, 1)
         if (c == "\047") {
@@ -401,12 +416,18 @@ praxis_shell_segments() {
           continue
         }
         if (c == " " || c == "\t") { flush_tok(); i++; continue }
-        if (c == ";") { flush_seg(); i++; continue }
-        if (c == "&" || c == "|") { flush_seg(); i += (substr(s, i + 1, 1) == c) ? 2 : 1; continue }
+        if (c == ";" || c == "(" || c == ")") { flush_seg(); i++; continue }
+        if (c == "&") {
+          nx = substr(s, i + 1, 1)
+          if (tok ~ /[<>]$/ || nx == ">") { tok = tok c; i++; continue }      # 2>&1, &>file: one token
+          flush_seg(); i += (nx == "&") ? 2 : 1; continue
+        }
+        if (c == "|") { flush_seg(); i += (substr(s, i + 1, 1) == c) ? 2 : 1; continue }
         tok = tok c; i++
       }
-      flush_seg()
-    }'
+      if (cont) flush_tok(); else flush_seg()
+    }
+    END { flush_seg() }'
 }
 
 # The approval marker for a change: `.praxis/approved/<change>`, an empty file whose
@@ -419,31 +440,35 @@ praxis_approved() { [ -n "${2:-}" ] && [ -f "$(praxis_approved_marker "$1" "$2")
 # (specs/factory-cycle). Like the approval marker, never the model's to Edit/Write.
 praxis_needs_human_marker() { printf '%s/.praxis/needs-human/%s' "$1" "$2"; }
 
-# The .gitignore Praxis writes into `.praxis/`: `active-change`, `approved/`, `needs-human/`,
-# `worktrees/` and `session-started` are per-machine session state, not the team's record —
-# same rule as `sessions.jsonl` in the memory store.
-PRAXIS_GITIGNORE=$'active-change\napproved/\nneeds-human/\nworktrees/\nsession-started\n'
+# The one-shot intent token: `.praxis/intent/<approve|rework>-<change>`, minted by
+# user-prompt-submit when the PERSON types `/praxis:approve <c>` or `/praxis:rework <c>`,
+# consumed by post-tool-use after the script ran. The model cannot submit a user prompt, so
+# it cannot mint one; pre-tool-use lets the script run only while the token exists.
+praxis_intent_token() { printf '%s/.praxis/intent/%s-%s' "$1" "$2" "$3"; }
+
+# The .gitignore Praxis writes into `.praxis/`: per-machine session state, not the team's
+# record — same rule as `sessions.jsonl` in the memory store.
+PRAXIS_GITIGNORE_ENTRIES="active-change approved/ needs-human/ worktrees/ intent/ session-started"
+PRAXIS_GITIGNORE=$'active-change\napproved/\nneeds-human/\nworktrees/\nintent/\nsession-started\n'
 
 # Create `.praxis/` on first use and, only then, its .gitignore. An existing file is the
-# project's and is never rewritten — with one exception: a file byte-identical to a default
-# an earlier Praxis wrote, which nobody has edited, gains the entries added since
-# (`needs-human/`, `worktrees/`), appended after its own lines, so a `.praxis/` created before
-# they existed learns them. The appended shape is itself recognised, so the upgrade is
-# idempotent. One edited character and the file is the project's.
+# project's and is never rewritten — with one exception: a file made only of Praxis's own
+# entries (an earlier default, nobody edited it) gains the entries added since, appended after
+# its own lines, so a `.praxis/` created before `needs-human/`, `worktrees/` or `intent/`
+# existed learns them. Idempotent. One line of the person's and the file is theirs.
 praxis_ensure_praxis_dir() {
-  local dir="$1/.praxis" file="$1/.praxis/.gitignore" current
+  local dir="$1/.praxis" file="$1/.praxis/.gitignore" entry
   [ -d "$dir" ] || mkdir -p "$dir" 2>/dev/null || return 1
   if [ ! -f "$file" ]; then
     printf '%s' "$PRAXIS_GITIGNORE" > "$file" 2>/dev/null || true
     return 0
   fi
-  current="$(cat "$file" 2>/dev/null; printf x)"; current="${current%x}"
-  case "$current" in
-    $'active-change\napproved/\nsession-started\n'|$'active-change\napproved/\n'| \
-    $'active-change\napproved/\nsession-started\nneeds-human/\nworktrees/\n'|$'active-change\napproved/\nneeds-human/\nworktrees/\n')
-      praxis_ensure_ignored "$1" needs-human/
-      praxis_ensure_ignored "$1" worktrees/ ;;
-  esac
+  awk -v known=" ${PRAXIS_GITIGNORE_ENTRIES} " '
+    BEGIN { ok = 1 }
+    { sub(/\r$/, ""); if (index(known, " " $0 " ") == 0) ok = 0 }
+    END { exit !ok }
+  ' "$file" 2>/dev/null || return 0
+  for entry in $PRAXIS_GITIGNORE_ENTRIES; do praxis_ensure_ignored "$1" "$entry"; done
 }
 
 # Append one entry to `.praxis/.gitignore` when it is not already listed. For a
@@ -460,11 +485,12 @@ praxis_ensure_ignored() {
 praxis_session_marker() { printf '%s/.praxis/session-started' "$1"; }
 
 # The file paths an edit tool call targets, one per line, from the host payload.
-# Claude Code: tool_input.file_path (MultiEdit carries the same key). Codex apply_patch:
-# every `*** Add/Update/Delete File:` header; JSON keeps the patch on one line, so a
-# header ends at the escaped newline or the closing quote.
+# Claude Code: tool_input.file_path (MultiEdit carries the same key; NotebookEdit calls it
+# notebook_path). Codex apply_patch: every `*** Add/Update/Delete File:` header; JSON keeps
+# the patch on one line, so a header ends at the escaped newline or the closing quote.
 praxis_edit_paths() {
   local paths; paths="$(praxis_json_string "$1" file_path)"
+  [ -n "$paths" ] || paths="$(praxis_json_string "$1" notebook_path)"
   if [ -z "$paths" ]; then
     paths=$(printf '%s' "$1" \
       | grep -oE '\*\*\* (Add|Update|Delete) File: [^"\\]+' \
@@ -523,7 +549,7 @@ praxis_active_change() {
   local root="$1" name="" f newest=""
   if [ -f "${root}/.praxis/active-change" ]; then
     name=$(head -n 1 "${root}/.praxis/active-change" 2>/dev/null | tr -d '[:space:]')
-    case "$name" in */*|*..*|_templates) name="" ;; esac
+    praxis_valid_change_name "$name" || name=""
   fi
   if [ -z "$name" ]; then
     while IFS= read -r f; do
@@ -546,6 +572,7 @@ EOF
 #   praxis_frontmatter_read <key>   (stdin)
 praxis_frontmatter_read() {
   awk -v KEY="$1" '
+    { sub(/\r$/, "") }                                   # a CRLF file reads like an LF one
     NR == 1            { fm = ($0 ~ /^---[ \t]*$/); if (fm) next }
     fm && /^---[ \t]*$/ { exit }
     index($0, KEY ":") == 1 {
@@ -582,26 +609,39 @@ praxis_spec_file() {
   fi
 }
 
-# The change's ledger, absolute; empty when it does not exist. In a linked worktree — the
-# builder's checkout from scripts/worktree.sh — the ledger is not seeded: one ledger, in the
-# main checkout, the orchestrator's. So when <root> has none and is a linked worktree, the
-# main checkout's is read; the floor still requires it, it only looks where the design put it.
+# The main checkout when <root> is a linked worktree (scripts/worktree.sh); empty otherwise.
 # `git-common-dir` is `.git` in the main checkout and the main `.git` from a linked one, in
-# either spelling; no git, no fallback.
-#   praxis_ledger_path <root> <change>
-praxis_ledger_path() {
-  local root="$1" change="${2:-}" common main
-  [ -n "$change" ] || return 0
-  if [ -f "${root}/specs/${change}/implementation.md" ]; then
-    printf '%s/specs/%s/implementation.md' "$root" "$change"; return 0
-  fi
+# either spelling; no git, no answer.
+praxis_main_checkout() {
+  local root="$1" common main
   common="$(git -C "$root" rev-parse --git-common-dir 2>/dev/null)" || return 0
   [ -n "$common" ] || return 0
   case "$common" in /*) ;; *) common="${root}/${common}" ;; esac
   main="$(cd "${common}/.." 2>/dev/null && pwd -P)" || return 0
-  [ "$main" != "$root" ] || return 0
-  [ -f "${main}/specs/${change}/implementation.md" ] && printf '%s/specs/%s/implementation.md' "$main" "$change"
+  [ "$main" != "$root" ] && printf '%s' "$main"
   return 0
+}
+
+# The change's ledger, absolute; empty when it does not exist. One ledger, in the main
+# checkout, the orchestrator's: from a linked worktree — the builder's — the main checkout's
+# is read FIRST, even when the worktree carries a committed copy (a repo that tracks specs/),
+# because that copy is as old as the branch and the gates would read a stale round from it.
+#   praxis_ledger_path <root> <change>
+praxis_ledger_path() {
+  local root="$1" change="${2:-}" main
+  [ -n "$change" ] || return 0
+  main="$(praxis_main_checkout "$root")"
+  if [ -n "$main" ] && [ -f "${main}/specs/${change}/implementation.md" ]; then
+    printf '%s/specs/%s/implementation.md' "$main" "$change"; return 0
+  fi
+  [ -f "${root}/specs/${change}/implementation.md" ] && printf '%s/specs/%s/implementation.md' "$root" "$change"
+  return 0
+}
+
+# The folder the change's record lives in: the ledger's, when there is one.
+praxis_change_dir() {
+  local file; file="$(praxis_ledger_path "$1" "$2")"
+  if [ -n "$file" ]; then printf '%s' "${file%/implementation.md}"; else printf '%s/specs/%s' "$1" "$2"; fi
 }
 
 # A frontmatter field of the change's ledger: `round:`, `builder:`, `lenses:`, `stage:`.
@@ -611,14 +651,48 @@ praxis_ledger_field() {
   praxis_frontmatter_field "$file" "$3"
 }
 
-# The ledger's round as a number. Missing or malformed reads as 0: no review yet.
-praxis_ledger_round() {
-  local r; r="$(praxis_ledger_field "$1" "$2" round)"
-  case "$r" in ''|*[!0-9]*) printf '0' ;; *) printf '%s' "$((r))" ;; esac
+# A round value as a number: whitespace and CR stripped, base-10 whatever the leading zeros
+# (`08` is eight, not an octal error that empties the gate), anything else 0.
+praxis_round_number() {
+  local r; r="$(printf '%s' "${1:-}" | tr -d '[:space:]')"
+  case "$r" in ''|*[!0-9]*) printf '0' ;; *) printf '%d' "$((10#$r))" ;; esac
+}
+praxis_ledger_round() { praxis_round_number "$(praxis_ledger_field "$1" "$2" round)"; }
+
+# The round the cap and the barrier count: the larger of the ledger's `round:` and the highest
+# `review/round-N/` that holds a review. The field is the orchestrator's to write; the folders
+# are what the lenses actually did, so a field written back to 0 does not reopen the cap.
+praxis_effective_round() {
+  local root="$1" change="$2" round d n f has
+  round="$(praxis_ledger_round "$root" "$change")"
+  for d in "$(praxis_change_dir "$root" "$change")"/review/round-*/; do
+    [ -d "$d" ] || continue
+    n="${d%/}"; n="${n##*/round-}"
+    case "$n" in ''|*[!0-9]*) continue ;; esac
+    has=0; for f in "$d"*.md; do [ -f "$f" ] && { has=1; break; }; done
+    [ "$has" = 1 ] || continue
+    n=$((10#$n)); [ "$n" -gt "$round" ] && round="$n"
+  done
+  printf '%s' "$round"
 }
 
-# `specs/<change>/review/round-N`, absolute.
-praxis_round_dir() { printf '%s/specs/%s/review/round-%s' "$1" "$2" "$3"; }
+# The change whose ledger records `builder: <id>`, searched across every ledger — the resume
+# gate must not depend on `.praxis/active-change`, which the model can point elsewhere.
+praxis_change_of_builder() {
+  local root="$1" id="${2:-}" f
+  [ -n "$id" ] || return 0
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    [ "$(praxis_frontmatter_field "$f" builder)" = "$id" ] || continue
+    f="${f%/implementation.md}"; printf '%s' "${f##*/}"; return 0
+  done <<EOF
+$(praxis_spec_ledgers "$root")
+EOF
+  return 0
+}
+
+# `review/round-N` of the change's record, absolute.
+praxis_round_dir() { printf '%s/review/round-%s' "$(praxis_change_dir "$1" "$2")" "$3"; }
 
 # The lens names a round waits for, one per line: `round-N/lenses`, which the orchestrator
 # writes before dispatching the lenses; else the ledger's `lenses:` field, split on commas.
@@ -644,32 +718,52 @@ $(praxis_round_lenses "$1" "$2" "$3")
 EOF
 }
 
-# Every lens of the round that did not record `verdict: PASS`, as `<lens>: <verdict>`,
-# one per line — `missing` for a file not yet written, `no verdict` for one without the
-# line. Empty means every lens passed, or the round names none.
+# Whether a review carries its evidence: a `## What I tried to break` section with at least
+# one bullet. The appendix makes it mandatory, also on PASS — "a PASS without it is treated
+# as SKIP" — and until now no hook read it, so the one gate the design calls mechanical let a
+# no-evidence PASS ship (tests lens, round 1).
+praxis_has_attack_list() {
+  [ -f "$1" ] || return 1
+  awk '
+    { sub(/\r$/, "") }
+    tolower($0) ~ /^##[ \t]+what i tried to break/ { in_section = 1; next }
+    /^##[ \t]/ { in_section = 0 }
+    in_section && /^[ \t]*[-*][ \t]+[^ \t]/ { found = 1; exit }
+    END { exit !found }
+  ' "$1"
+}
+
+# Every lens of the round that did not record a PASS the gates can count, as
+# `<lens>: <reason>`, one per line — `missing` for a file not yet written, `no verdict` for
+# one without the line, `PASS without attack list (treated as SKIP)` for a PASS with no
+# evidence. Empty means every lens passed, or the round names none.
 praxis_round_not_pass() {
-  local dir name verdict; dir="$(praxis_round_dir "$1" "$2" "$3")"
+  local dir name verdict file; dir="$(praxis_round_dir "$1" "$2" "$3")"
   while IFS= read -r name; do
     [ -n "$name" ] || continue
-    if [ ! -f "${dir}/${name}.md" ]; then printf '%s: missing\n' "$name"; continue; fi
-    verdict="$(praxis_frontmatter_field "${dir}/${name}.md" verdict)"
-    [ "$verdict" = PASS ] || printf '%s: %s\n' "$name" "${verdict:-no verdict}"
+    file="${dir}/${name}.md"
+    if [ ! -f "$file" ]; then printf '%s: missing\n' "$name"; continue; fi
+    verdict="$(praxis_frontmatter_field "$file" verdict)"
+    if [ "$verdict" != PASS ]; then printf '%s: %s\n' "$name" "${verdict:-no verdict}"; continue; fi
+    praxis_has_attack_list "$file" || printf '%s: PASS without attack list (treated as SKIP)\n' "$name"
   done <<EOF
 $(praxis_round_lenses "$1" "$2" "$3")
 EOF
 }
 
-# True when the round names at least one lens and every one recorded `verdict: PASS`.
-# SKIP and CHANGES are both "not PASS"; a round nobody reviewed is not a pass either.
+# True when the round names at least one lens and every one recorded a PASS with evidence.
+# SKIP and CHANGES are both "not PASS"; a round nobody reviewed is not a pass either — an
+# EMPTY lens list is false, never vacuously true (mutant M2, tests lens).
 praxis_round_all_pass() {
   [ -n "$(praxis_round_lenses "$1" "$2" "$3")" ] && [ -z "$(praxis_round_not_pass "$1" "$2" "$3")" ]
 }
 
-# The approver's verdict: the `verdict:` line of `specs/<change>/decision.md` —
-# `APPROVE`, `ESCALATE` or `APPROVE (human)`; empty when the file is not written.
+# The approver's verdict: the `verdict:` line of the change's `decision.md` — `APPROVE`,
+# `ESCALATE` or `APPROVE (human)`; empty when the file is not written. Read from the
+# change's record (the main checkout's, from a worktree).
 praxis_decision_verdict() {
   [ -n "${2:-}" ] || return 0
-  praxis_frontmatter_field "$1/specs/$2/decision.md" verdict
+  praxis_frontmatter_field "$(praxis_change_dir "$1" "$2")/decision.md" verdict
 }
 
 # --- Content pass: tier-1 comment discipline ---------------------------------

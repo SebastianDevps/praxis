@@ -51,7 +51,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Edit|Write|MultiEdit|Agent|SendMessage|Bash",
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Agent|SendMessage|Bash",
         "hooks": [
           {
             "type": "command",
@@ -64,7 +64,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Edit|Write|MultiEdit",
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash",
         "hooks": [
           {
             "type": "command",

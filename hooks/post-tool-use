@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# PostToolUse hook — writes the approval record (specs/hook-owned-approval, ADR-001) and the
-# escalation record (specs/factory-cycle).
+# PostToolUse hook — writes the approval record (specs/hook-owned-approval, ADR-001), the
+# escalation record, and consumes the person's command token (specs/factory-cycle).
 #
 # The floor's approval stop is the host's `ask` on the first source edit of a specified
 # change. The one thing the model cannot do is answer its own permission prompt, so the
@@ -8,21 +8,29 @@
 # `pre-tool-use` gates on that marker — not on `stage:`, which the model owns and, measured in
 # evals/floor, advances by itself (3/3 unattended runs) once the ask is refused.
 #
-# Written when, and only when: the edit targeted a source-side path, the mode is full or deep
-# (in fast nothing asks, so an edit there is not an approval of anything), the active change
-# has its spec (`spec.md`, or the legacy `design.md`), and no marker exists yet. Empty file;
-# its existence is the record.
+# Written when, and only when: the edit targeted a source-side path, the mode is full (in fast
+# nothing asks, so an edit there is not an approval of anything), the active change has its
+# spec (`spec.md`, or the legacy `design.md`), and no marker exists yet. Empty file; its
+# existence is the record. An edit inside the builder's worktree (`<root>/.praxis/worktrees/
+# <name>/`) is judged by that checkout, the same re-rooting pre-tool-use applies.
 #
 # The second record rides on the same event. When the edit wrote `specs/<change>/decision.md`
-# for the active change, the file is read back: `verdict: ESCALATE` creates
-# `.praxis/needs-human/<change>`; `APPROVE` or `APPROVE (human)` removes it. The marker is
-# what makes "needs a human" a state the Run Card reports from a file, not from prose, and
-# what `/praxis:approve` and `/praxis:rework` clear. It is written from the file's content in
-# every mode: the approver's verdict is a fact about the change, not about the dial.
+# for the ACTIVE change — pre-tool-use has already refused every writer but the approver —
+# the file is read back: `verdict: ESCALATE` creates `.praxis/needs-human/<change>`; `APPROVE`
+# or `APPROVE (human)` removes it. The marker is what makes "needs a human" a state the Run
+# Card reports from a file, not from prose, and what `/praxis:approve` and `/praxis:rework`
+# clear. It is written from the file's content in every mode, fast included: the approver's
+# verdict is a fact about the change, not about the dial.
 #
-# The first time this creates `.praxis/`, it also writes `.praxis/.gitignore` excluding
-# `active-change`, `approved/`, `needs-human/` and `worktrees/`: per-machine session state,
-# same rule as the memory store's `sessions.jsonl`.
+# The third is the one-shot command token. `user-prompt-submit` mints `.praxis/intent/
+# <approve|rework>-<change>` from the PERSON's `/praxis:approve <c>` or `/praxis:rework <c>`;
+# `pre-tool-use` lets `scripts/approve.sh <c>` / `scripts/rework.sh <c>` run only while it
+# exists; this hook deletes it once the Bash call that ran the script returns, whatever the
+# script's exit code — one prompt, one run.
+#
+# The first time this creates `.praxis/`, it also writes `.praxis/.gitignore` excluding the
+# per-machine session state (`active-change`, `approved/`, `needs-human/`, `worktrees/`,
+# `intent/`, `session-started`), same rule as the memory store's `sessions.jsonl`.
 #
 # LOOSENESS, stated: the hook fires after any edit the host let through. On Claude Code that
 # means the person answered the ask — or an `acceptEdits` permission mode auto-approved it,
@@ -34,7 +42,7 @@
 #
 # Hosts: Claude Code and Codex fire PostToolUse with the same payload shape as PreToolUse
 # (`tool_name`, `tool_input`, `cwd`); Codex reports `apply_patch` with the patch in
-# `tool_input.command`.
+# `tool_input.command` and its shell as `Bash`.
 
 set -uo pipefail
 
@@ -50,15 +58,45 @@ IFS= read -r -d '' -t 1 payload
 [ -n "$payload" ] || exit 0
 
 tool="$(praxis_json_string "$payload" tool_name)"
-case "$tool" in Edit|Write|MultiEdit|NotebookEdit|apply_patch) ;; *) exit 0 ;; esac
-
-paths="$(praxis_edit_paths "$payload")"
-[ -n "$paths" ] || exit 0
+case "$tool" in Edit|Write|MultiEdit|NotebookEdit|apply_patch|Bash) ;; *) exit 0 ;; esac
 
 cwd="$(praxis_json_string "$payload" cwd)"
 [ -n "$cwd" ] || cwd="$PWD"
 root="$(praxis_project_root "${CLAUDE_PROJECT_DIR:-${CODEX_PROJECT_DIR:-$cwd}}")"
 [ -n "$root" ] || exit 0
+
+# The command token, consumed after the script ran.
+if [ "$tool" = Bash ]; then
+  cmd="$(praxis_json_strings "$payload" command)"
+  while IFS= read -r seg; do
+    [ -n "$seg" ] || continue
+    IFS=$'\034' read -r -a argv <<< "$seg"
+    i=0; n=${#argv[@]}
+    while [ "$i" -lt "$n" ]; do
+      case "$(praxis_lower "${argv[$i]}")" in
+        approve.sh|*/approve.sh) kind=approve ;;
+        rework.sh|*/rework.sh)   kind=rework ;;
+        *) i=$((i + 1)); continue ;;
+      esac
+      c="${argv[$((i + 1))]:-}"
+      if praxis_valid_change_name "$c"; then
+        token="$(praxis_intent_token "$root" "$kind" "$c")"
+        [ -f "$token" ] && { rm -f "$token" 2>/dev/null || note "cannot consume ${token}"; praxis_trace "PostToolUse" "intent ${kind} ${c} consumed"; }
+      fi
+      break
+    done
+  done <<EOF
+$(praxis_shell_segments "$cmd")
+EOF
+  exit 0
+fi
+
+paths="$(praxis_edit_paths "$payload")"
+[ -n "$paths" ] || exit 0
+
+# An edit in the builder's worktree is that checkout's (same rule as pre-tool-use).
+worktree="$(praxis_worktree_root "$root" "$(praxis_project_targets "$root" "$cwd" "$paths" | head -n 1)")"
+[ -n "$worktree" ] && [ -d "$worktree" ] && root="$worktree"
 
 change="$(praxis_active_change "$root")"
 
@@ -67,7 +105,7 @@ decision_record() {
   [ -n "$change" ] || return 0
   local rel hit=0 verdict marker
   while IFS= read -r rel; do
-    [ "$rel" = "specs/${change}/decision.md" ] && hit=1
+    [ "$(praxis_lower "$rel")" = "$(praxis_lower "specs/${change}/decision.md")" ] && hit=1
   done <<EOF
 $(praxis_project_targets "$root" "$cwd" "$paths")
 EOF
@@ -91,7 +129,7 @@ decision_record
 
 target="$(praxis_source_target "$root" "$cwd" "$paths")"
 [ -n "$target" ] || exit 0
-case "$target" in .praxis/approved/*|.praxis/needs-human/*) exit 0 ;; esac
+case "$(praxis_lower "$target")" in .praxis/approved/*|.praxis/needs-human/*|.praxis/intent/*) exit 0 ;; esac
 
 case "$(praxis_mode)" in full|deep) ;; *) exit 0 ;; esac
 

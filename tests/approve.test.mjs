@@ -45,7 +45,7 @@ const spec = (dir, change) => {
   mkdirSync(join(dir, "specs", change), { recursive: true });
   writeFileSync(
     join(dir, "specs", change, "spec.md"),
-    `---\ntitle: x\nready: true\n---\n# x — Spec\n## Goal\nExport invoices to CSV, scoped by tenant — "fast" & $afe\n\nMore prose.\n## Scope\n`,
+    `---\ntitle: x\nready: true\n---\n# x — Spec\n## Goal\nExport the tenant's invoices to CSV — "fast" & $afe; rm -rf /\n\nMore prose.\n## Scope\n`,
   );
 };
 const ledger = (dir, change, { stage = "built", round = 2, base = "" } = {}) =>
@@ -93,13 +93,17 @@ test("approve refuses a change with neither spec.md nor design.md — there is n
   assert.ok(!existsSync(join(dir, ".praxis/approved/half")));
 });
 
-test("approve refuses a missing or traversing change name", () => {
+// The change name reaches printed shell lines and paths; the security lens confirmed the
+// injection through the unquoted `gh pr create` line. Refusal comes before any write.
+test("approve refuses a missing, traversing, option-like or shell-metacharacter change name", () => {
   const dir = project();
   assert.equal(approve(dir).status, 2);
-  for (const bad of ["../x", "a/b", "_templates", ".hidden"]) {
-    assert.equal(approve(dir, bad).status, 2, `accepted ${bad}`);
+  for (const bad of ["../x", "a/b", "_templates", ".hidden", "-x", "x;touch /tmp/pwn", "x$(id)", "a b", "x`id`"]) {
+    const { status } = approve(dir, bad);
+    assert.equal(status, 2, `accepted ${bad}`);
   }
   assert.ok(!existsSync(join(dir, ".praxis")), "a refusal must not scaffold .praxis");
+  assert.ok(!existsSync("/tmp/pwn"), "the injection payload ran");
 });
 
 test("the first approval creates .praxis with the gitignore that keeps the marker local", () => {
@@ -170,15 +174,44 @@ test("approve on a needs-human change writes decision.md APPROVE (human), clears
   assert.match(stdout, /round 2/);
   assert.match(stdout, /ledger stage: implemented/);
   assert.match(stdout, /^ship:$/m, "the orchestrator is told what to run next");
-  assert.match(stdout, /^\s+git push -u origin praxis\/x$/m);
+  assert.match(stdout, /^\s+git push -u origin 'praxis\/x'$/m, "every value single-quoted");
   // The PR line as the orchestrator pastes it: base from the ledger, title from the spec's
-  // Goal (first line, shell-escaped), body linking the two files.
+  // Goal (first line, single-quoted, the embedded quote as '\''), body linking the two files.
   const pr = stdout.split("\n").find((l) => l.includes("gh pr create"));
   assert.ok(pr, "no gh pr create line");
-  assert.match(pr, /--base develop --head praxis\/x /);
-  assert.match(pr, /--title "Export invoices to CSV, scoped by tenant — \\"fast\\" & \\\$afe" /, "Goal's first line, quotes and $ escaped");
-  assert.match(pr, /--body "Spec: specs\/x\/spec\.md · Decision: specs\/x\/decision\.md \(APPROVE \(human\), round 2\)"$/);
+  assert.match(pr, /--base 'develop' --head 'praxis\/x' /);
+  assert.equal(
+    pr.split("--title ")[1].split(" --body ")[0],
+    `'Export the tenant'\\''s invoices to CSV — "fast" & $afe; rm -rf /'`,
+    "the Goal is one single-quoted argument: no shell sees the ; or the $",
+  );
+  assert.match(pr, /--body 'Spec: specs\/x\/spec\.md · Decision: specs\/x\/decision\.md \(APPROVE \(human\), round 2\)'$/);
   assert.doesNotMatch(pr, /--fill/);
+});
+
+// The base comes from files a model can write (the ledger) or a person can mistype (git
+// config); as an argument it must be a branch name and nothing else — and the refusal comes
+// before the decision is written or the marker removed.
+test("approve refuses an option-like or metacharacter PR base before writing anything", () => {
+  for (const evil of ["--upload-pack=touch /tmp/pwn", "main;touch /tmp/pwn", "a//b", "../main"]) {
+    const dir = project();
+    spec(dir, "x");
+    ledger(dir, "x", { stage: "needs-human", round: 1, base: evil });
+    needsHuman(dir, "x");
+    const { status, stderr, stdout } = approve(dir, "x");
+    assert.equal(status, 2, `accepted base ${evil}: ${stdout}`);
+    assert.match(stderr, /PR base .* is not a branch name/);
+    assert.ok(!existsSync(join(dir, "specs/x/decision.md")), `decision written for base ${evil}`);
+    assert.ok(existsSync(join(dir, ".praxis/needs-human/x")), "the marker must survive a refusal");
+    assert.doesNotMatch(stdout, /ship:/);
+  }
+  const viaConfig = project();
+  spec(viaConfig, "x");
+  ledger(viaConfig, "x", { stage: "needs-human", round: 1 });
+  needsHuman(viaConfig, "x");
+  execFileSync("git", ["config", "branch.praxis/x.praxisBase", "-x"], { cwd: viaConfig });
+  assert.equal(approve(viaConfig, "x").status, 2);
+  assert.ok(!existsSync("/tmp/pwn"), "the injection payload ran");
 });
 
 // ADR-005: a model-written field unlocks nothing. `stage: needs-human` is the orchestrator's
@@ -202,7 +235,7 @@ test("the PR's base comes from the branch config worktree.sh records, before the
   needsHuman(dir, "x");
   execFileSync("git", ["config", "branch.praxis/x.praxisBase", "release/2"], { cwd: dir });
   const { stdout } = approve(dir, "x");
-  assert.match(stdout, /gh pr create --base release\/2 --head praxis\/x /);
+  assert.match(stdout, /gh pr create --base 'release\/2' --head 'praxis\/x' /);
 
   // No config, no ledger base: the main checkout's branch (an unborn one still has a name).
   const bare = project();
@@ -210,7 +243,7 @@ test("the PR's base comes from the branch config worktree.sh records, before the
   ledger(bare, "x", { stage: "needs-human", round: 1 });
   needsHuman(bare, "x");
   execFileSync("git", ["symbolic-ref", "HEAD", "refs/heads/trunk"], { cwd: bare });
-  assert.match(approve(bare, "x").stdout, /gh pr create --base trunk --head praxis\/x /);
+  assert.match(approve(bare, "x").stdout, /gh pr create --base 'trunk' --head 'praxis\/x' /);
 });
 
 test("without needs-human, approve writes no decision and prints no ship commands", () => {

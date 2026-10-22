@@ -36,10 +36,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "${SCRIPT_DIR}/../hooks/lib.sh"
 . "${SCRIPT_DIR}/ledger-field.sh"
+. "${SCRIPT_DIR}/lib-names.sh"
 
 change="${1:-}"
 [ -n "$change" ] || { echo "usage: approve.sh <change>   (a folder under specs/)" >&2; exit 2; }
-case "$change" in */*|*..*|_templates|.*) echo "error: '${change}' is not a change name" >&2; exit 2 ;; esac
+praxis_valid_change_name "$change" || { echo "error: '${change}' is not a change name ([A-Za-z0-9._-], no leading - or ., no ..)" >&2; exit 2; }
 
 root="$(praxis_project_root "$PWD")"
 spec="$(praxis_spec_file "$root" "$change")"
@@ -73,8 +74,10 @@ spec_goal() {
   ' "${root}/${spec}"
 }
 
-# Escape for a double-quoted shell string the orchestrator will paste.
-sh_dq() { local s="$1"; s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//\$/\\\$}"; s="${s//\`/\\\`}"; printf '%s' "$s"; }
+# The base is validated BEFORE anything is written: a bad value in the branch config or the
+# ledger is a refusal, not a decision followed by a command nobody should paste.
+base="$(pr_base)"
+praxis_valid_ref_name "$base" || { echo "error: PR base '${base}' is not a branch name ([A-Za-z0-9._/-], no leading -, no .., no //) — checked branch.praxis/${change}.praxisBase, the ledger's base:, HEAD" >&2; exit 2; }
 
 round="$(praxis_ledger_round "$root" "$change")"
 ledger="${root}/specs/${change}/implementation.md"
@@ -84,11 +87,11 @@ printf -- '---\nverdict: APPROVE (human)\nround: %s\n---\n## Checks run\n- none 
 rm -f "$marker"
 [ -f "$ledger" ] && praxis_set_frontmatter_field "$ledger" stage implemented
 
-base="$(pr_base)"
 title="$(spec_goal)"; [ -n "$title" ] || title="$change"
 body="Spec: specs/${change}/${spec##*/} · Decision: specs/${change}/decision.md (APPROVE (human), round ${round})"
 
 printf 'approved %s → specs/%s/decision.md (verdict: APPROVE (human), round %s); .praxis/needs-human/%s removed; ledger stage: implemented\n' \
   "$change" "$change" "$round" "$change"
-printf 'ship:\n  git push -u origin praxis/%s\n  gh pr create --base %s --head praxis/%s --title "%s" --body "%s"\n' \
-  "$change" "$base" "$change" "$(sh_dq "$title")" "$(sh_dq "$body")"
+# Every interpolated value single-quoted (praxis_sq), the Goal included: these lines are pasted.
+printf 'ship:\n  git push -u origin %s\n  gh pr create --base %s --head %s --title %s --body %s\n' \
+  "$(praxis_sq "praxis/${change}")" "$(praxis_sq "$base")" "$(praxis_sq "praxis/${change}")" "$(praxis_sq "$title")" "$(praxis_sq "$body")"

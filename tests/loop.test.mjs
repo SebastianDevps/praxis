@@ -197,6 +197,20 @@ test("exit 0 when the ledger reaches stage: shipped, whatever the output said", 
   assert.match(res.stdout, /\[loop\] DONE: demo is shipped — the ledger says stage: shipped \(after iteration 1\)\n$/);
 });
 
+// Both end states at once: the PR is the fact, the marker is a record nobody cleared.
+test("shipped wins over a stale needs-human marker: exit 0, and the marker is reported", () => {
+  const { run, iterations } = loopRepo(
+    { 1: "PR #142 open; forgot to clear the marker." },
+    { 1: `mkdir -p .praxis/needs-human && : > .praxis/needs-human/demo && cat > specs/demo/implementation.md <<'EOF'\n${LEDGER("shipped")}EOF` },
+  );
+  const res = run("--max-iterations", "3");
+  assert.equal(res.status, 0, res.stdout);
+  assert.equal(iterations(), 1);
+  assert.match(res.stdout, /\[loop\] NOTE: \.praxis\/needs-human\/demo still exists on a shipped change — stale/);
+  assert.match(res.stdout, /\[loop\] DONE: demo is shipped/);
+  assert.doesNotMatch(res.stdout, /STOP: demo needs a human/);
+});
+
 test("a change already shipped or escalated before the first iteration never invokes claude", () => {
   const shipped = loopRepo();
   writeFileSync(join(shipped.repo, "specs/demo/implementation.md"), LEDGER("shipped"));

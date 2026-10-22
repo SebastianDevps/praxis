@@ -39,11 +39,14 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "${SCRIPT_DIR}/../hooks/lib.sh"
+. "${SCRIPT_DIR}/lib-names.sh"
 
 change="${1:-}"
 base="${2:-}"
 [ -n "$change" ] || { echo "usage: worktree.sh <change> [base]   (base: the branch to start from; default the current one)" >&2; exit 2; }
-case "$change" in */*|*..*|_templates|.*) echo "error: '${change}' is not a change name" >&2; exit 2 ;; esac
+praxis_valid_change_name "$change" || { echo "error: '${change}' is not a change name ([A-Za-z0-9._-], no leading - or ., no ..)" >&2; exit 2; }
+# A base that starts with `-` would reach git as an option (`--upload-pack=…` runs a command).
+[ -z "$base" ] || praxis_valid_ref_name "$base" || { echo "error: base '${base}' is not a branch name ([A-Za-z0-9._/-], no leading -, no .., no //)" >&2; exit 2; }
 
 root="$(praxis_project_root "$PWD")"
 git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "error: ${root} is not a git repository" >&2; exit 1; }
@@ -79,6 +82,7 @@ seed_worktree() {
 base_key="branch.${branch}.praxisBase"
 recorded_base() {
   local b; b="$(git -C "$root" config --get "$base_key" 2>/dev/null || true)"
+  praxis_valid_ref_name "$b" || b=""                 # a hand-edited config value is not a base
   if [ -z "$b" ] && [ -n "$base" ]; then git -C "$root" config "$base_key" "$base"; b="$base"; fi
   printf '%s' "${b:-unknown}"
 }
@@ -117,11 +121,19 @@ if git -C "$root" show-ref --verify --quiet "refs/heads/${branch}"; then
   git -C "$root" worktree add --quiet "$path" "$branch"
   printf 'worktree added: %s on existing branch %s\n' ".praxis/worktrees/${change}" "$branch"
 else
-  [ -n "$base" ] || base="$(git -C "$root" rev-parse --abbrev-ref HEAD)"
+  if [ -z "$base" ]; then
+    base="$(git -C "$root" rev-parse --abbrev-ref HEAD)"
+    # Detached HEAD has no branch name; a change cut from a bare commit has no base to diff
+    # against or open a PR onto. The person names one.
+    [ "$base" != HEAD ] || { echo "error: ${root} is on a detached HEAD — pass the base branch explicitly: worktree.sh ${change} <base>" >&2; exit 1; }
+  fi
   git -C "$root" worktree add --quiet -b "$branch" "$path" "$base"
   git -C "$root" config "$base_key" "$base"
   printf 'worktree created: %s on new branch %s from %s\n' ".praxis/worktrees/${change}" "$branch" "$base"
 fi
 seed_worktree "$path"
+# A ledger that arrived WITH the branch (committed on the base) is left alone, and named: the
+# hooks read the main checkout's through git-common-dir; a copy in here is never the record.
+[ ! -f "${path}/specs/${change}/implementation.md" ] || printf 'note: %s/specs/%s/implementation.md came with the branch and is not the ledger — the main checkout'"'"'s is authoritative; never edit the copy\n' ".praxis/worktrees/${change}" "$change"
 printf 'base: %s\n' "$(recorded_base)"
 (cd "$path" && pwd -P)

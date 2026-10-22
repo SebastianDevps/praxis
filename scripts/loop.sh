@@ -236,7 +236,14 @@ recent_loop_commits() {
 #   cycle_state_exit <where>
 cycle_state_exit() {
   [[ -n "$CHANGE" ]] || return 0
-  if [[ -f "$(praxis_needs_human_marker "$PROJECT_ROOT" "$CHANGE")" ]]; then
+  local marker; marker="$(praxis_needs_human_marker "$PROJECT_ROOT" "$CHANGE")"
+  # Shipped wins over a leftover marker: the PR is the fact; the marker is a record nobody
+  # cleared, and the loop says so instead of stopping a finished change.
+  if [[ "$(praxis_ledger_stage "$LEDGER")" == shipped ]]; then
+    [[ ! -f "$marker" ]] || echo "[loop] NOTE: .praxis/needs-human/${CHANGE} still exists on a shipped change — stale; approve.sh or rework.sh would have removed it"
+    echo "[loop] DONE: ${CHANGE} is shipped — the ledger says stage: shipped (${1})"; exit 0
+  fi
+  if [[ -f "$marker" ]]; then
     log_diag "STOP: ${CHANGE} needs a human — the approver recorded ESCALATE (${1})"
     cat <<EOF
 [loop] STOP: ${CHANGE} needs a human — .praxis/needs-human/${CHANGE} exists (the approver recorded ESCALATE in specs/${CHANGE}/decision.md). Two ways on, both typed by a person:
@@ -244,9 +251,6 @@ cycle_state_exit() {
   /praxis:approve ${CHANGE}           ship as is: decision.md APPROVE (human), push praxis/${CHANGE}, open the PR — or rerun this loop with --approve
 EOF
     exit 5
-  fi
-  if [[ "$(praxis_ledger_stage "$LEDGER")" == shipped ]]; then
-    echo "[loop] DONE: ${CHANGE} is shipped — the ledger says stage: shipped (${1})"; exit 0
   fi
 }
 

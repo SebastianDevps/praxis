@@ -24,17 +24,26 @@
 # Prints the archive, the ledger fields set, one `changes: <file>` line per archived lens at
 # `verdict: CHANGES` (what the orchestrator hands the builder), and the note's absolute path on
 # the LAST line. Exit 1 on refusal (no ledger), 2 on usage.
+#
+# The builder's worktree keeps its own `.praxis/` — a seeded mirror of the main checkout's
+# markers (scripts/worktree.sh). This script changes only the main checkout; the orchestrator
+# reruns `worktree.sh <change>` before resuming the builder, which re-seeds the mirror.
+#
+# The needs-human marker is not required: the person may send a change back at any point of the
+# cycle — after round 1, before the approver ran — not only after an ESCALATE. When no marker
+# existed the output says so in one line, and the round counter is reset all the same.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "${SCRIPT_DIR}/../hooks/lib.sh"
 . "${SCRIPT_DIR}/ledger-field.sh"
+. "${SCRIPT_DIR}/lib-names.sh"
 
 change="${1:-}"
 note="${2:-}"
 [ -n "$change" ] && [ -n "$note" ] || { echo 'usage: rework.sh <change> "<note>"   (what the builder should do differently)' >&2; exit 2; }
-case "$change" in */*|*..*|_templates|.*) echo "error: '${change}' is not a change name" >&2; exit 2 ;; esac
+praxis_valid_change_name "$change" || { echo "error: '${change}' is not a change name ([A-Za-z0-9._-], no leading - or ., no ..)" >&2; exit 2; }
 
 root="$(praxis_project_root "$PWD")"
 ledger="${root}/specs/${change}/implementation.md"
@@ -75,6 +84,7 @@ cleared="absent"
 
 printf 'rework %s of %s → specs/%s/review/rework-%s/ (archived:%s) · ledger round: 0, stage: planned · .praxis/needs-human/%s %s\n' \
   "$k" "$change" "$change" "$k" "${archived:- nothing}" "$change" "$cleared"
+[ "$cleared" = removed ] || printf 'note: no .praxis/needs-human/%s existed — a rework before an ESCALATE is the person'"'"'s call; the round counter is reset all the same\n' "$change"
 for f in "${archive}"/round-*/*.md; do
   [ -f "$f" ] || continue
   [ "$(praxis_frontmatter_field "$f" verdict)" = CHANGES ] && printf 'changes: %s\n' "$f"

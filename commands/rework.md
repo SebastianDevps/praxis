@@ -4,6 +4,11 @@ description: Send a needs-human change back to the builder with a note — archi
 
 # /praxis:rework — back to the builder, with a note
 
+**The person types this command.** The hooks gate `scripts/rework.sh` on the person's own
+prompt: invoked on a model's initiative — at the round cap, after an ESCALATE, from a loop
+iteration — it is refused, and that refusal is the cap working. The note is the person's reading
+of the reviews, not a model's summary of them.
+
 Run, in the user's project directory, with the change name and the note the user typed:
 
 ```
@@ -29,12 +34,14 @@ exists to stop. It refuses a change with no `specs/<change>/implementation.md`.
 
 ## Then resume the builder
 
-1. Read the ledger's `builder:` id. `SendMessage` to it with the note path and the `changes:`
+1. Rerun `bash "${CLAUDE_PLUGIN_ROOT}/scripts/worktree.sh" <change>` first. It is idempotent and
+   re-seeds the worktree's `.praxis/` and spec from the main checkout — the worktree's markers are
+   a mirror, and the script above changed only the original. Its last line is the worktree path.
+2. Read the ledger's `builder:` id. `SendMessage` to it with the note path and the `changes:`
    files the script printed — paths, never content. The hook allows the resume: the round is 0.
-   If the builder is gone (no such agent), dispatch a fresh `builder` with the worktree path
-   (`scripts/worktree.sh <change>` prints it, idempotent), the spec path, the note path and the
-   `changes:` files, and record the new id in `builder:`.
-2. Continue the cycle through the `factory` skill: on the builder's handback, `stage: built`,
+   If the builder is gone (no such agent), dispatch a fresh `builder` with the worktree path, the
+   spec path, the note path and the `changes:` files, and record the new id in `builder:`.
+3. Continue the cycle through the `factory` skill: on the builder's handback, `stage: built`,
    `round: 1`, write `review/round-1/lenses`, dispatch the lenses in one message, and so on.
    The round cap starts again at 1; a second ESCALATE ends in needs-human again, and the person
    decides again.

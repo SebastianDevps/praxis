@@ -41,6 +41,24 @@ case "$switch" in
     ;;
 esac
 
+# The person's one-shot command token (specs/factory-cycle, round-1 security review). Only a
+# prompt the PERSON submits reaches this hook — the model cannot submit one — so a prompt that
+# starts with `/praxis:approve <c>` or `/praxis:rework <c>` mints `.praxis/intent/<kind>-<c>`,
+# which is the only thing that lets `pre-tool-use` run `scripts/approve.sh` / `rework.sh`;
+# `post-tool-use` deletes it once the script ran. Edit/Write and Bash to `.praxis/intent/` are
+# denied, so the token has exactly one mint.
+intent=$(printf '%s' "$prompt" | sed -nE 's|^[[:space:]]*/praxis:(approve\|rework)[[:space:]]+([A-Za-z0-9][A-Za-z0-9._-]*).*|\1 \2|p' | head -1)
+if [ -n "$intent" ]; then
+  kind="${intent%% *}"; change="${intent#* }"
+  if praxis_valid_change_name "$change"; then
+    project="$(praxis_project_root "${CLAUDE_PROJECT_DIR:-${CODEX_PROJECT_DIR:-$(praxis_json_string "$payload" cwd)}}")"
+    if [ -n "$project" ] && praxis_ensure_praxis_dir "$project" && mkdir -p "${project}/.praxis/intent" 2>/dev/null; then
+      : > "$(praxis_intent_token "$project" "$kind" "$change")" 2>/dev/null || true
+      praxis_trace "UserPromptSubmit" "intent ${kind} ${change}"
+    fi
+  fi
+fi
+
 mode="$(praxis_mode)"
 # A dial left on `deep` before ADR-004: rewrite it once, say so once, run as `full`
 # either way — the kernel has no `deep` blocks left to filter for.

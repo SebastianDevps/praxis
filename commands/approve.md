@@ -4,6 +4,11 @@ description: Approve a change as the person driving — writes .praxis/approved/
 
 # /praxis:approve — approve a spec, or ship an escalated change
 
+**The person types this command.** The hooks gate `scripts/approve.sh` on the person's own
+prompt: invoked on a model's initiative — after a deny, inside a subagent, from a loop
+iteration — it is refused, and that refusal is the floor working. If you are reading this
+because a deny told you to wait, wait.
+
 Run, in the user's project directory, with the change name the user typed:
 
 ```
@@ -33,12 +38,13 @@ nothing — the person is deciding to ship anyway. The script writes `specs/<cha
 with `verdict: APPROVE (human)` and the ledger's round, removes the marker, sets
 `stage: implemented` in the ledger, and prints a `ship:` block with two commands. Then:
 
-1. Run the two commands it printed, in the project directory, as printed:
-   `git push -u origin praxis/<change>` and `gh pr create --base <base> --head praxis/<change>
-   --title "<the spec's Goal, first line>" --body "<links to spec.md and decision.md>"`. The base
-   is the branch the worktree was cut from (recorded by `scripts/worktree.sh`, else the ledger's
-   `base:`). The ship gate in `hooks/pre-tool-use` allows both on `APPROVE (human)`, whatever the
-   lenses recorded.
+1. Run the two commands it printed, in the project directory, exactly as printed — every value
+   is already single-quoted and validated by the script; do not rebuild the lines from the
+   change name: `git push -u origin 'praxis/<change>'` and `gh pr create --base '<base>' --head
+   'praxis/<change>' --title '<the spec's Goal, first line>' --body '<links to spec.md and
+   decision.md>'`. The base is the branch the worktree was cut from (recorded by
+   `scripts/worktree.sh`, else the ledger's `base:`). The ship gate in `hooks/pre-tool-use`
+   allows both on `APPROVE (human)`, whatever the lenses recorded.
 2. Set `stage: shipped` in `specs/<change>/implementation.md` with the PR URL on the same line
    or under Session Notes. The ledger is yours; the two markers and `decision.md` were not.
 3. Run Card: ship — the PR, the rounds, and that the approval was the person's override.

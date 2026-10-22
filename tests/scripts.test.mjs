@@ -124,12 +124,14 @@ test("a second rework archives into rework-2/ and leaves rework-1/ alone", () =>
   assert.equal(lastLine(stdout), join(base, "review", "rework-2", "note.md"));
 });
 
-test("rework with nothing to archive still writes the note and resets the ledger", () => {
+test("rework with nothing to archive and no marker still writes the note and resets the ledger, and says no marker existed", () => {
   const dir = repo();
   mkdirSync(join(dir, "specs", "x"), { recursive: true });
   writeFileSync(join(dir, "specs", "x", "implementation.md"), "---\ntitle: x\nstage: built\n---\n\n## Tasks\n");
   const { status, stdout } = run(REWORK, dir, "x", "start over");
   assert.equal(status, 0);
+  // The person may rework before any ESCALATE; the output says the marker was never there.
+  assert.match(stdout, /^note: no \.praxis\/needs-human\/x existed — a rework before an ESCALATE is the person's call/m);
   const ledger = readFileSync(join(dir, "specs/x/implementation.md"), "utf8");
   assert.match(ledger, /^---\n(?:[^\n]*\n)*?stage: planned\n/, "stage replaced inside the frontmatter");
   assert.match(ledger, /^round: 0$/m, "a missing round: is added to the frontmatter");
@@ -147,8 +149,16 @@ test("rework refuses without a ledger, a note, or a sane change name", () => {
   escalated(dir);
   assert.equal(run(REWORK, dir, "x").status, 2, "the note is required — a rework without a reason is a loop");
   assert.equal(run(REWORK, dir, "x", "").status, 2);
-  for (const bad of ["../x", "a/b", "_templates", ".hidden"]) assert.equal(run(REWORK, dir, bad, "n").status, 2, `accepted ${bad}`);
+  for (const bad of ["../x", "a/b", "_templates", ".hidden", "-x", "x;touch /tmp/pwn", "x$(id)", "a b"]) {
+    assert.equal(run(REWORK, dir, bad, "n").status, 2, `accepted ${bad}`);
+  }
   assert.ok(existsSync(join(dir, "specs/x/decision.md")), "a refusal must not archive anything");
+  assert.doesNotMatch(readFileSync(join(dir, "specs/x/implementation.md"), "utf8"), /^round: 0/m, "a refusal must not touch the ledger");
+  assert.ok(!existsSync("/tmp/pwn"), "the injection payload ran");
+  // A rework with the marker present reports it removed, not the no-marker note.
+  const out = run(REWORK, dir, "x", "n").stdout;
+  assert.match(out, /needs-human\/x removed/);
+  assert.doesNotMatch(out, /^note: no \.praxis\/needs-human/m);
 });
 
 // ---- worktree.sh --------------------------------------------------------------------------
@@ -302,12 +312,55 @@ test("worktree takes an explicit base and refuses a bad name or a repo with no c
   assert.equal(status, 0, stderr);
   assert.equal(git(lastLine(stdout), "rev-parse", "HEAD"), git(dir, "rev-parse", "develop"));
 
-  for (const bad of ["../x", "a/b", "_templates", ".hidden"]) assert.equal(run(WORKTREE, dir, bad).status, 2, `accepted ${bad}`);
+  for (const bad of ["../x", "a/b", "_templates", ".hidden", "-x", "x;touch /tmp/pwn", "x$(id)", "a b"]) {
+    assert.equal(run(WORKTREE, dir, bad).status, 2, `accepted ${bad}`);
+  }
   assert.equal(run(WORKTREE, dir).status, 2);
+  assert.ok(!existsSync("/tmp/pwn"), "the injection payload ran");
 
   const empty = mkdtempSync(join(tmpdir(), "praxis-scripts-empty-"));
   execFileSync("git", ["init", "-q"], { cwd: empty });
   const noHead = run(WORKTREE, empty, "x");
   assert.equal(noHead.status, 1);
   assert.match(noHead.stderr, /no commit/);
+});
+
+// A base that starts with `-` reaches git as an option: `--upload-pack=<cmd>` runs it. Refused
+// before git is called — no branch, no worktree, no payload.
+test("worktree refuses an option-like or metacharacter base before calling git", () => {
+  const dir = repo();
+  for (const evil of ["--upload-pack=touch /tmp/pwn", "-x", "main;touch /tmp/pwn", "a//b", "../main", "/main", "main/"]) {
+    const { status, stderr } = run(WORKTREE, dir, "y", evil);
+    assert.equal(status, 2, `accepted base ${evil}`);
+    assert.match(stderr, /is not a branch name/);
+  }
+  assert.equal(git(dir, "branch", "--list", "praxis/y"), "", "a branch was created on a refused base");
+  assert.ok(!existsSync(join(dir, ".praxis", "worktrees", "y")));
+  assert.ok(!existsSync("/tmp/pwn"), "the injection payload ran");
+});
+
+test("worktree on a detached HEAD refuses without an explicit base, and takes one", () => {
+  const dir = repo();
+  git(dir, "checkout", "-q", "--detach");
+  const refused = run(WORKTREE, dir, "x");
+  assert.equal(refused.status, 1);
+  assert.match(refused.stderr, /detached HEAD — pass the base branch explicitly/);
+  assert.equal(git(dir, "branch", "--list", "praxis/x"), "", "no branch named after HEAD");
+  const ok = run(WORKTREE, dir, "x", "main");
+  assert.equal(ok.status, 0, ok.stderr);
+  assert.equal(ok.stdout.trimEnd().split("\n").at(-2), "base: main");
+});
+
+test("worktree leaves a ledger that came with the branch and names the main checkout's as authoritative", () => {
+  const dir = repo();
+  mkdirSync(join(dir, "specs", "x"), { recursive: true });
+  writeFileSync(join(dir, "specs", "x", "implementation.md"), "---\ntitle: x\nstage: planned\n---\n");
+  git(dir, "add", "-A");
+  git(dir, "commit", "-qm", "chore: ledger committed on main");
+  const { status, stdout } = run(WORKTREE, dir, "x");
+  assert.equal(status, 0);
+  const wt = lastLine(stdout);
+  assert.ok(existsSync(join(wt, "specs", "x", "implementation.md")), "a committed file is git's to manage, not the script's");
+  assert.match(stdout, /^note: \.praxis\/worktrees\/x\/specs\/x\/implementation\.md came with the branch and is not the ledger — the main checkout's is authoritative/m);
+  assert.equal(stdout.trimEnd().split("\n").at(-2), "base: main", "the note comes before base: and the path");
 });
