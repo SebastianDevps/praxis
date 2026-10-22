@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # PreToolUse hook — the floor of the spec-driven workflow (specs/spec-driven-workflow, ADR-003;
-# approval hardened in specs/hook-owned-approval, ADR-001).
+# approval hardened in specs/hook-owned-approval, ADR-001; the cycle's limits added in
+# specs/factory-cycle).
 #
 # Praxis primes; it did not gate. The measured evaluation recorded what priming alone buys
 # for the record of a change: 0 Run Cards in 8/8 `full` cells. A prose rule saying "write the
@@ -9,25 +10,28 @@
 # mechanically, and scaled by the dial:
 #
 #   fast        `specs/<active>/implementation.md` exists
-#   full, deep  `specs/<active>/design.md` and `implementation.md` exist, AND the person
-#               approved the design: `.praxis/approved/<active>` exists → allow, whatever
-#               `stage:` says. No marker → the ONE approval stop, as the host's own
-#               primitive, `permissionDecision: "ask"`. When the person approves, the edit
-#               runs and `post-tool-use` writes the marker; the floor never asks again.
-#               No design → deny, naming the file to write.
+#   full, deep  `specs/<active>/spec.md` (a legacy `design.md` is accepted) and
+#               `implementation.md` exist, AND the person approved the spec:
+#               `.praxis/approved/<active>` exists → allow, whatever `stage:` says. No marker →
+#               the ONE approval stop, as the host's own primitive, `permissionDecision: "ask"`.
+#               When the person approves, the edit runs and `post-tool-use` writes the marker;
+#               the floor never asks again. No spec → deny, naming the file to write.
 #
 # Why a marker and not `stage:`: evals/floor measured 3/3 unattended `full` runs setting
 # `stage: planned` themselves after the host refused the `ask`, then building. The ledger is
 # a field the model owns; the marker is written by a hook after an edit the person allowed,
 # or by the person through `/praxis:approve <change>`. Edit/Write targeting
-# `.praxis/approved/` is denied here so the model cannot forge it (Bash writes remain a
-# documented gap). In `claude -p` the host refuses `ask` — that is the intended outcome: an
-# unattended run must ship the marker, written by a person or by CI.
+# `.praxis/approved/` or `.praxis/needs-human/` is denied here so the model cannot forge
+# either record (Bash writes remain a documented gap). In `claude -p` the host refuses `ask` —
+# that is the intended outcome: an unattended run must ship the marker, written by a person
+# or by CI.
 #
-# Only source edits are gated. Writes under `specs/`, `.praxis/` (except `approved/`),
-# `agents/` and to the root instruction files are always allowed: that is how the agent
-# creates the record the floor asks for. Targets outside the project root are not this
-# project's business.
+# Only source edits are gated. Writes under `specs/`, `.praxis/` (except the two marker
+# directories), `agents/` and to the root instruction files are always allowed: that is how
+# the agent creates the record the floor asks for. Targets outside the project root are not
+# this project's business. One spec-side exception: the main thread may write under
+# `specs/<c>/review/round-*/` only a file whose verdict is SKIP — the orchestrator's record of
+# a lens that never returned; every other review file is its lens's to write.
 #
 # A deny must be followable by the model that receives it. It cannot read the plugin
 # directory (in `claude -p` that is a refusal; interactively, a permission prompt), so on the
@@ -38,7 +42,24 @@
 # `<active>` is `.praxis/active-change` when present, else the most recently modified
 # ledger.
 #
-# A second gate rides on the same event: the tier-1 comment pass (specs/comment-discipline,
+# Three more gates ride on tools that carry no file path (specs/factory-cycle, design.md
+# appendix). Each reads only files under `specs/<change>/`, so nothing depends on the
+# conversation:
+#
+#   Agent        a dispatch whose subagent_type is `builder` (`praxis:builder` too)
+#   SendMessage  a resume whose `to` is the builder id the ledger records
+#                → round 0: allow · round N with a lens file missing: deny, naming the
+#                  missing lenses (the barrier) · round N complete, all PASS: allow · round 1
+#                  complete with CHANGES: allow (the one fix round) · round 2 complete and not
+#                  all PASS: deny (the cap) — the approver records ESCALATE, the person decides
+#   Bash         `gh pr create`, or `git push` naming `praxis/<change>`
+#                → `decision.md` at APPROVE (human): allow · APPROVE with every lens of the
+#                  current round at PASS: allow · anything else: deny with the reason
+#
+# No active change, no ledger, or `fast` mode → these three stay silent: a project that has
+# not opened a cycle has nothing to wait for, and `fast` is the trivial path, unchanged.
+#
+# A second gate rides on the edit event: the tier-1 comment pass (specs/comment-discipline,
 # ADR-001/ADR-002). It reads the content the edit carries — `tool_input.content` for Write,
 # `old_string`/`new_string` for Edit, `edits[]` for MultiEdit, the `+` lines of a Codex
 # patch — and denies four patterns that need no judgment to recognise: commented-out code,
@@ -51,8 +72,8 @@
 # example, a regex explanation and an owned TODO are all mandated by somebody's published
 # guidance (ADR-005), so every detector is anchored and loosened until they pass.
 #
-# Escape hatches: PRAXIS_FLOOR=off allows everything, floor and comment pass together.
-# PRAXIS_COMMENTS=off lifts the comment pass alone and leaves the spec floor standing.
+# Escape hatches: PRAXIS_FLOOR=off allows everything — floor, cycle gates and comment pass.
+# PRAXIS_COMMENTS=off lifts the comment pass alone and leaves the rest standing.
 # Those are the only two overrides — there is no phrase, flag file or prompt that lifts
 # either from inside a session.
 #
@@ -65,7 +86,8 @@
 # the tool call CONTINUES — so on Codex the approval stop is emitted as `deny` with the same
 # reason, pointing at `/praxis:approve` (host detection: praxis_host in lib.sh). Codex also
 # reports `tool_name: apply_patch` with the patch in `tool_input.command`; paths are read
-# from its `*** … File:` headers.
+# from its `*** … File:` headers. Codex reports its shell as `Bash` and `spawn_agent` as
+# `Agent`, so the ship gate and the barrier reach it; it has no SendMessage.
 
 set -uo pipefail
 
@@ -82,26 +104,20 @@ IFS= read -r -d '' -t 1 payload
 [ -n "$payload" ] || allow "no payload"
 
 tool="$(praxis_json_string "$payload" tool_name)"
-case "$tool" in Edit|Write|MultiEdit|NotebookEdit|apply_patch) ;; *) exit 0 ;; esac
-
-paths="$(praxis_edit_paths "$payload")"
-[ -n "$paths" ] || allow "no file path in tool input"
+case "$tool" in Edit|Write|MultiEdit|NotebookEdit|apply_patch|Agent|SendMessage|Bash) ;; *) exit 0 ;; esac
 
 cwd="$(praxis_json_string "$payload" cwd)"
 [ -n "$cwd" ] || cwd="$PWD"
 root="$(praxis_project_root "${CLAUDE_PROJECT_DIR:-${CODEX_PROJECT_DIR:-$cwd}}")"
 [ -n "$root" ] || allow "cannot resolve the project root"
 
-# The first source-side target decides; an all-spec-side write is free.
-target="$(praxis_source_target "$root" "$cwd" "$paths")"
-[ -n "$target" ] || exit 0
-
 mode="$(praxis_mode)"
 host="$(praxis_host)"
 change="$(praxis_active_change "$root")"
 name="${change:-<change>}"
 ledger="${root}/specs/${change}/implementation.md"
-design="${root}/specs/${change}/design.md"
+spec="$(praxis_spec_file "$root" "$change")"
+target=""
 
 # The blank forms, project-local, so the deny points at files the model may read. Copied
 # once, only on a deny — an allowed edit never writes into the user's repository. The
@@ -126,10 +142,114 @@ decide() {
 }
 deny() { ensure_templates; decide deny "$1"; }
 
-# The approval record is not the model's to write, in any mode.
+# Same trailer on every deny: what is free, and the only way out.
+trailer="Writes under specs/, .praxis/, agents/ are always allowed. Override: PRAXIS_FLOOR=off (env, session-wide)."
+override="Override: PRAXIS_FLOOR=off (env, session-wide)."
+
+# --- The cycle's limits: barrier, round cap, ship gate ---------------------------------------
+#
+# Every decision below is read from files the roles write (design.md appendix); the hook adds
+# only the message. A deny names the file that would open the gate and who writes it.
+
+# A builder dispatch or resume against the ledger's round.
+builder_gate() {
+  local round lenses missing not_pass
+  round="$(praxis_ledger_round "$root" "$change")"
+  [ "$round" -gt 0 ] || exit 0                       # no review yet: the first build runs free
+  lenses="$(praxis_round_lenses "$root" "$change" "$round")"
+  [ -n "$lenses" ] || decide deny "PRAXIS barrier: waiting for specs/${change}/review/round-${round}/lenses — the ledger says round ${round} and no lens list exists. The orchestrator writes it (one lens name per line) before dispatching the lenses; the builder resumes only when every named lens has written specs/${change}/review/round-${round}/<lens>.md. ${override}"
+  missing="$(praxis_round_missing "$root" "$change" "$round" | tr '\n' ' ')"; missing="${missing% }"
+  [ -z "$missing" ] || decide deny "PRAXIS barrier: waiting for ${missing} — round ${round} of specs/${change} is incomplete. Each lens writes specs/${change}/review/round-${round}/<lens>.md (verdict: PASS | CHANGES) in its own context; the builder resumes only when every name in review/round-${round}/lenses has its file. A lens that never returns gets 'verdict: SKIP' written by the orchestrator, which counts as not PASS. ${override}"
+  praxis_round_all_pass "$root" "$change" "$round" && exit 0
+  [ "$round" -lt 2 ] && exit 0                       # the one fix round
+  not_pass="$(praxis_round_not_pass "$root" "$change" "$round" | tr '\n' ' ')"; not_pass="${not_pass% }"
+  decide deny "PRAXIS round cap: 2 rounds done → approver / ESCALATE. Round ${round} of specs/${change} is complete and not all PASS (${not_pass}). A third fix round never starts: dispatch the approver, which records ESCALATE in specs/${change}/decision.md; the person then decides with /praxis:approve ${change} or /praxis:rework ${change} \"<note>\". ${override}"
+}
+
+# A push of the change branch or a PR against the approver's decision.
+ship_gate() {
+  local verdict round not_pass
+  verdict="$(praxis_decision_verdict "$root" "$change")"
+  [ -n "$verdict" ] || decide deny "PRAXIS ship gate: specs/${change}/decision.md does not exist — nothing ships without it. The approver writes it (verdict: APPROVE | ESCALATE, with every check it re-ran) once every lens is PASS; the person can override with /praxis:approve ${change}, which records APPROVE (human). ${override}"
+  case "$verdict" in
+    "APPROVE (human)") exit 0 ;;
+    APPROVE)
+      round="$(praxis_ledger_round "$root" "$change")"
+      [ "$round" -gt 0 ] || decide deny "PRAXIS ship gate: specs/${change}/decision.md records APPROVE but the ledger's round is 0 — no review round ran. APPROVE ships only with every lens of the current round at PASS; without a round the person decides with /praxis:approve ${change}. ${override}"
+      praxis_round_all_pass "$root" "$change" "$round" && exit 0
+      not_pass="$(praxis_round_not_pass "$root" "$change" "$round" | tr '\n' ' ')"; not_pass="${not_pass% }"
+      decide deny "PRAXIS ship gate: lenses not all PASS in round ${round} of specs/${change}: ${not_pass:-no lens listed in review/round-${round}/lenses}. APPROVE ships only with every lens at PASS; a CHANGES or SKIP goes back to the builder (round < 2) or to the approver for ESCALATE. The person can override with /praxis:approve ${change}. ${override}"
+      ;;
+    *)
+      decide deny "PRAXIS ship gate: specs/${change}/decision.md verdict ${verdict} — only APPROVE (with every lens PASS) or APPROVE (human) ships. ESCALATE means the person decides: /praxis:approve ${change} to ship, /praxis:rework ${change} \"<note>\" to send it back to the builder. ${override}"
+      ;;
+  esac
+}
+
+case "$tool" in
+  Agent|SendMessage|Bash)
+    [ "$mode" != fast ] || exit 0
+    [ -n "$change" ] && [ -f "$ledger" ] || exit 0
+    case "$tool" in
+      Agent)
+        kind="$(praxis_json_string "$payload" subagent_type | tr 'A-Z' 'a-z')"; kind="${kind#praxis:}"
+        [ "$kind" = builder ] || exit 0
+        target="agent:${kind}"; builder_gate
+        ;;
+      SendMessage)
+        to="$(praxis_json_string "$payload" to)"
+        builder_id="$(praxis_ledger_field "$root" "$change" builder)"
+        [ -n "$to" ] && [ "$to" = "$builder_id" ] || exit 0
+        target="message:${to}"; builder_gate
+        ;;
+      Bash)
+        cmd="$(praxis_json_strings "$payload" command)"
+        ship=0
+        case "$cmd" in *"gh pr create"*) ship=1 ;; esac
+        case "$cmd" in *"git push"*) case "$cmd" in *"praxis/${change}"*) ship=1 ;; esac ;; esac
+        [ "$ship" = 1 ] || exit 0
+        target="bash:ship"; ship_gate
+        ;;
+    esac
+    exit 0
+    ;;
+esac
+
+paths="$(praxis_edit_paths "$payload")"
+[ -n "$paths" ] || allow "no file path in tool input"
+
+# A review file is its lens's to write. The main thread may write one only to record a lens
+# that never returned, and only with `verdict: SKIP`. Claude Code puts `agent_id` on every
+# hook that fires inside a subagent (hooks reference, common input fields) and nothing on the
+# main thread, so its absence is the main thread. Other hosts document no such field; there
+# the rule stays out rather than deny a lens its own file.
+review_gate() {
+  [ "$host" = claude ] || return 0
+  [ -z "$(praxis_json_string "$payload" agent_id)" ] || return 0
+  local rel
+  while IFS= read -r rel; do
+    case "$rel" in specs/*/review/round-*/*.md) ;; *) continue ;; esac
+    { praxis_json_strings "$payload" content; praxis_json_strings "$payload" new_string; } \
+      | awk '/^verdict:[ \t]*SKIP([ \t]|$)/ { found = 1 } END { exit !found }' && return 0
+    target="$rel"
+    decide deny "PRAXIS review: ${rel} is a lens's file and the main thread is writing it. Each lens writes its own review in its own context. The orchestrator writes one only to record a lens that never returned, with 'verdict: SKIP' and the reason — SKIP counts as not PASS, so the change goes to the approver, never to the builder. Dispatch the lens, or wait for it. ${override}"
+  done <<EOF
+$(praxis_project_targets "$root" "$cwd" "$paths")
+EOF
+}
+review_gate
+
+# The first source-side target decides; an all-spec-side write is free.
+target="$(praxis_source_target "$root" "$cwd" "$paths")"
+[ -n "$target" ] || exit 0
+
+# The two markers are not the model's to write, in any mode.
 case "$target" in
   .praxis/approved/*)
     decide deny "PRAXIS floor: ${target} is the approval record. It is written by the person — by approving the first source edit when the floor asks, or by running /praxis:approve ${name} — never by the model. Do not create or edit it."
+    ;;
+  .praxis/needs-human/*)
+    decide deny "PRAXIS floor: ${target} is the escalation record. It is written by post-tool-use when specs/${name}/decision.md records ESCALATE, and removed when the person runs /praxis:approve ${name} or /praxis:rework ${name} — never by the model. Do not create or edit it."
     ;;
 esac
 
@@ -175,9 +295,12 @@ Override: PRAXIS_COMMENTS=off lifts this check alone; PRAXIS_FLOOR=off lifts the
 }
 comment_gate
 
-# Same trailer on every deny: what is free, and the only way out.
-trailer="Writes under specs/, .praxis/, agents/ are always allowed. Override: PRAXIS_FLOOR=off (env, session-wide)."
-sections="Overview, Problem Statement, User Stories, Scope, Technical Design, Acceptance"
+# The spec's shape, repeated in the deny for a model that cannot read the template. The
+# template itself ships with factory-cycle (T05); until the plugin carries spec.md the deny
+# points at design.md as the form to read, and still names spec.md as the file to write.
+sections="Goal, Scope (In / Out), Acceptance (runnable checks: command → expected output; the approver executes these), Approach (files and the seam, no code), Open questions ([NEEDS CLARIFICATION] items; status: ready when none remain)"
+spec_template="specs/_templates/spec.md"
+[ -f "${PRAXIS_ROOT}/specs/_templates/spec.md" ] || [ -f "${root}/specs/_templates/spec.md" ] || spec_template="specs/_templates/design.md"
 
 case "$mode" in
   fast)
@@ -188,26 +311,26 @@ case "$mode" in
 ${trailer}"
     ;;
   *)
-    if [ -n "$change" ] && [ -f "$design" ] && [ -f "$ledger" ]; then
+    if [ -n "$change" ] && [ -n "$spec" ] && [ -f "$ledger" ]; then
       praxis_approved "$root" "$change" && exit 0
-      reason="specs/${change}/design.md is written and awaits the person's approval. Approving this edit approves the design: the approval writes .praxis/approved/${change} and the floor will not ask again. On a host without a prompt, or in an unattended run, the person runs /praxis:approve ${change}. After approval, set 'stage: planned' in specs/${change}/implementation.md as the record — the stage unlocks nothing; only the approval does."
+      reason="${spec} is written and awaits the person's approval. Approving this edit approves the spec: the approval writes .praxis/approved/${change} and the floor will not ask again. On a host without a prompt, or in an unattended run, the person runs /praxis:approve ${change}. After approval, set 'stage: planned' in specs/${change}/implementation.md as the record — the stage unlocks nothing; only the approval does."
       case "$host" in
         claude) decide ask "$reason" ;;
         *) decide deny "${reason} (This host cannot ask, so the floor denies: stop and wait for the person to run /praxis:approve ${change}.)" ;;
       esac
     fi
     if [ -z "$change" ] || [ ! -f "$ledger" ]; then
-      deny "PRAXIS floor (${mode}): ${target} is a source edit and specs/${name}/ has no design yet.
-1. Read specs/_templates/design.md, then Write specs/${name}/design.md (kebab-case change name) with: ${sections}.
+      deny "PRAXIS floor (${mode}): ${target} is a source edit and specs/${name}/ has no spec yet.
+1. Read ${spec_template}, then Write specs/${name}/spec.md (kebab-case change name) with: ${sections}. A legacy specs/${name}/design.md is accepted in its place.
 2. Read specs/_templates/implementation.md, then Write specs/${name}/implementation.md with 'stage: designed' in its frontmatter and the task list.
 3. Write .praxis/active-change containing the single line: ${name}
-4. STOP: the first source edit after that asks the person to approve the design.
+4. STOP: the first source edit after that asks the person to approve the spec.
 ${trailer}"
     else
-      deny "PRAXIS floor (${mode}): ${target} is a source edit and specs/${change}/design.md does not exist.
-1. Read specs/_templates/design.md, then Write specs/${change}/design.md with: ${sections}.
+      deny "PRAXIS floor (${mode}): ${target} is a source edit and specs/${change}/spec.md does not exist (nor the legacy design.md).
+1. Read ${spec_template}, then Write specs/${change}/spec.md with: ${sections}.
 2. Set 'stage: designed' in the frontmatter of specs/${change}/implementation.md.
-3. STOP: the first source edit after that asks the person to approve the design.
+3. STOP: the first source edit after that asks the person to approve the spec.
 ${trailer}"
     fi
     ;;

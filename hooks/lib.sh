@@ -348,7 +348,7 @@ praxis_canonical_path() {
 # the person (via the host's ask, or /praxis:approve), never by the model.
 praxis_is_spec_side() {
   case "$1" in
-    .praxis/approved/*) return 1 ;;
+    .praxis/approved/*|.praxis/needs-human/*) return 1 ;;
     specs/*|.praxis/*|agents/*|AGENTS.md|CLAUDE.md|PROGRESS.md|CONSTRAINTS.md) return 0 ;;
   esac
   return 1
@@ -359,14 +359,22 @@ praxis_is_spec_side() {
 praxis_approved_marker() { printf '%s/.praxis/approved/%s' "$1" "$2"; }
 praxis_approved() { [ -n "${2:-}" ] && [ -f "$(praxis_approved_marker "$1" "$2")" ]; }
 
+# The escalation marker: `.praxis/needs-human/<change>`, written by post-tool-use when
+# `decision.md` records ESCALATE, removed when a later decision records APPROVE
+# (specs/factory-cycle). Like the approval marker, never the model's to Edit/Write.
+praxis_needs_human_marker() { printf '%s/.praxis/needs-human/%s' "$1" "$2"; }
+
 # Create `.praxis/` on first use and, only then, its .gitignore. `active-change`,
-# `approved/` and `session-started` are per-machine session state, not the team's
-# record — same rule as `sessions.jsonl` in the memory store. Written only when absent:
-# a project that has edited this file keeps its edit.
+# `approved/`, `needs-human/`, `worktrees/` and `session-started` are per-machine session
+# state, not the team's record — same rule as `sessions.jsonl` in the memory store. Written
+# only when absent: a project that has edited this file keeps its edit. The two entries
+# added by factory-cycle are appended to a .gitignore written before they existed.
 praxis_ensure_praxis_dir() {
   local dir="$1/.praxis"
   [ -d "$dir" ] || mkdir -p "$dir" 2>/dev/null || return 1
-  [ -f "${dir}/.gitignore" ] || printf 'active-change\napproved/\nsession-started\n' > "${dir}/.gitignore" 2>/dev/null || true
+  [ -f "${dir}/.gitignore" ] || printf 'active-change\napproved/\nneeds-human/\nworktrees/\nsession-started\n' > "${dir}/.gitignore" 2>/dev/null || true
+  praxis_ensure_ignored "$1" needs-human/
+  praxis_ensure_ignored "$1" worktrees/
 }
 
 # Append one entry to `.praxis/.gitignore` when it is not already listed. For a
@@ -396,20 +404,32 @@ praxis_edit_paths() {
   printf '%s' "$paths"
 }
 
-# The first source-side target among those paths, relative to <root>; nothing when
-# every path is spec-side or outside the project.
-#   praxis_source_target <root> <cwd> <paths, newline-separated>
-praxis_source_target() {
-  local root="$1" cwd="$2" p abs rel
+# Every one of those paths that lies inside <root>, relative to it, one per line.
+# Spec-side and source-side alike; the caller sorts them.
+#   praxis_project_targets <root> <cwd> <paths, newline-separated>
+praxis_project_targets() {
+  local root="$1" cwd="$2" p abs
   while IFS= read -r p; do
     [ -n "$p" ] || continue
     p="${p//\\\//\/}"; p="${p//\\\\/\\}"          # undo JSON escaping of / and \
     abs="$(praxis_canonical_path "$p" "$cwd")" || continue
-    case "$abs" in "$root"/*) rel="${abs#"$root"/}" ;; *) continue ;; esac
+    case "$abs" in "$root"/*) printf '%s\n' "${abs#"$root"/}" ;; esac
+  done <<EOF
+$3
+EOF
+}
+
+# The first source-side target among those paths, relative to <root>; nothing when
+# every path is spec-side or outside the project.
+#   praxis_source_target <root> <cwd> <paths, newline-separated>
+praxis_source_target() {
+  local rel
+  while IFS= read -r rel; do
+    [ -n "$rel" ] || continue
     praxis_is_spec_side "$rel" && continue
     printf '%s' "$rel"; return 0
   done <<EOF
-$3
+$(praxis_project_targets "$1" "$2" "$3")
 EOF
   return 0
 }
@@ -448,15 +468,107 @@ EOF
   printf '%s' "$name"
 }
 
-# The `stage:` value from a ledger's frontmatter, trailing comment stripped.
-# Empty when the file or the key is missing.
-praxis_ledger_stage() {
+# One frontmatter value, trailing comment stripped; empty when the file or the key is
+# missing. Scoped to the `---` block when the file opens with one. A file without a block
+# is scanned whole, so a lens that wrote `verdict:` as its first body line is still read:
+# the floor should stand on what a role recorded, not on where it put the dashes.
+praxis_frontmatter_field() {
   [ -f "$1" ] || return 0
-  awk '
-    NR == 1 && /^---[ \t]*$/ { fm = 1; next }
-    fm && /^---[ \t]*$/       { exit }
-    fm && /^stage:/ { sub(/^stage:[ \t]*/, ""); sub(/[ \t]*#.*$/, ""); sub(/[ \t]+$/, ""); print; exit }
+  awk -v KEY="$2" '
+    NR == 1            { fm = ($0 ~ /^---[ \t]*$/); if (fm) next }
+    fm && /^---[ \t]*$/ { exit }
+    index($0, KEY ":") == 1 {
+      sub(/^[^:]*:[ \t]*/, ""); sub(/[ \t]*#.*$/, ""); sub(/[ \t]+$/, ""); print; exit
+    }
   ' "$1"
+}
+
+# The `stage:` value from a ledger's frontmatter.
+praxis_ledger_stage() { praxis_frontmatter_field "$1" stage; }
+
+# --- The cycle's files (specs/factory-cycle, design.md appendix) ---------------
+#
+# The limits of the cycle — the review barrier, the round cap, the ship gate, the
+# escalation record — are held by hooks, so every input they decide on is a file under
+# `specs/<change>/` and nothing in the conversation. These helpers are the only readers
+# of those files; the hooks compose them and add the message.
+
+# The file the floor keys on: `spec.md` (the cycle), else the legacy `design.md` (every
+# change closed before factory-cycle), else nothing. Relative to the project root, so
+# one string serves both the test and the message that names it.
+praxis_spec_file() {
+  local root="$1" change="${2:-}"
+  [ -n "$change" ] || return 0
+  if [ -f "${root}/specs/${change}/spec.md" ]; then printf 'specs/%s/spec.md' "$change"
+  elif [ -f "${root}/specs/${change}/design.md" ]; then printf 'specs/%s/design.md' "$change"
+  fi
+}
+
+# A frontmatter field of the change's ledger: `round:`, `builder:`, `lenses:`, `stage:`.
+praxis_ledger_field() {
+  [ -n "${2:-}" ] || return 0
+  praxis_frontmatter_field "$1/specs/$2/implementation.md" "$3"
+}
+
+# The ledger's round as a number. Missing or malformed reads as 0: no review yet.
+praxis_ledger_round() {
+  local r; r="$(praxis_ledger_field "$1" "$2" round)"
+  case "$r" in ''|*[!0-9]*) printf '0' ;; *) printf '%s' "$((r))" ;; esac
+}
+
+# `specs/<change>/review/round-N`, absolute.
+praxis_round_dir() { printf '%s/specs/%s/review/round-%s' "$1" "$2" "$3"; }
+
+# The lens names a round waits for, one per line: `round-N/lenses`, which the orchestrator
+# writes before dispatching the lenses; else the ledger's `lenses:` field, split on commas.
+# Blank lines are dropped and a name carrying `/` is not a lens.
+#   praxis_round_lenses <root> <change> <round>
+praxis_round_lenses() {
+  local dir names; dir="$(praxis_round_dir "$1" "$2" "$3")"
+  if [ -f "${dir}/lenses" ]; then names=$(cat "${dir}/lenses" 2>/dev/null)
+  else names=$(praxis_ledger_field "$1" "$2" lenses | tr ',' '\n')
+  fi
+  printf '%s\n' "$names" | awk '{ gsub(/^[ \t\r]+|[ \t\r]+$/, "") } $0 != "" && $0 !~ /\// { print }'
+}
+
+# The lenses whose `<lens>.md` is not yet in the round, one per line. Empty means the
+# barrier is open — or that the round names no lens at all; the caller tells them apart.
+praxis_round_missing() {
+  local dir name; dir="$(praxis_round_dir "$1" "$2" "$3")"
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    [ -f "${dir}/${name}.md" ] || printf '%s\n' "$name"
+  done <<EOF
+$(praxis_round_lenses "$1" "$2" "$3")
+EOF
+}
+
+# Every lens of the round that did not record `verdict: PASS`, as `<lens>: <verdict>`,
+# one per line — `missing` for a file not yet written, `no verdict` for one without the
+# line. Empty means every lens passed, or the round names none.
+praxis_round_not_pass() {
+  local dir name verdict; dir="$(praxis_round_dir "$1" "$2" "$3")"
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    if [ ! -f "${dir}/${name}.md" ]; then printf '%s: missing\n' "$name"; continue; fi
+    verdict="$(praxis_frontmatter_field "${dir}/${name}.md" verdict)"
+    [ "$verdict" = PASS ] || printf '%s: %s\n' "$name" "${verdict:-no verdict}"
+  done <<EOF
+$(praxis_round_lenses "$1" "$2" "$3")
+EOF
+}
+
+# True when the round names at least one lens and every one recorded `verdict: PASS`.
+# SKIP and CHANGES are both "not PASS"; a round nobody reviewed is not a pass either.
+praxis_round_all_pass() {
+  [ -n "$(praxis_round_lenses "$1" "$2" "$3")" ] && [ -z "$(praxis_round_not_pass "$1" "$2" "$3")" ]
+}
+
+# The approver's verdict: the `verdict:` line of `specs/<change>/decision.md` —
+# `APPROVE`, `ESCALATE` or `APPROVE (human)`; empty when the file is not written.
+praxis_decision_verdict() {
+  [ -n "${2:-}" ] || return 0
+  praxis_frontmatter_field "$1/specs/$2/decision.md" verdict
 }
 
 # --- Content pass: tier-1 comment discipline ---------------------------------

@@ -539,13 +539,14 @@ test("pre-tool-use in full denies a source edit with no spec, and names both fil
   const { repo, hook } = floorRepo({ mode: "full" });
   const out = hook("pre-tool-use", edit(join(repo, "src/a.js")));
   assert.equal(decision(out), "deny");
-  assert.match(reason(out), /design\.md/);
+  assert.match(reason(out), /Write specs\/<change>\/spec\.md/, "spec.md is the file to write");
+  assert.match(reason(out), /legacy specs\/<change>\/design\.md/, "design.md is named only as the accepted legacy form");
   assert.match(reason(out), /implementation\.md/);
   assert.match(reason(out), /active-change/, "the deny must say how to name the change");
   assert.match(reason(out), /PRAXIS_FLOOR=off/, "the only override is stated, not hidden");
 });
 
-test("pre-tool-use in full allows once design.md exists and the person approved it", () => {
+test("pre-tool-use in full allows once the legacy design.md exists and the person approved it", () => {
   const { repo, hook, write, approve } = floorRepo({ mode: "full" });
   write("specs/x/design.md", "# x\n");
   write("specs/x/implementation.md", ledger("designed"));
@@ -570,7 +571,7 @@ test("pre-tool-use in full asks while the marker is missing, whatever stage: say
     write("specs/x/implementation.md", ledger(stage));
     const out = hook("pre-tool-use", edit(join(repo, "src/a.js")));
     assert.equal(decision(out), "ask", `stage ${stage} without the marker`);
-    assert.match(reason(out), /Approving this edit approves the design/);
+    assert.match(reason(out), /Approving this edit approves the spec/);
     assert.match(reason(out), /\.praxis\/approved\/x/, "the ask names the record the approval writes");
     assert.match(reason(out), /\/praxis:approve x/, "and the person's command on hosts without a prompt");
     assert.match(reason(out), /unlocks nothing/, "stage: must not read as the key");
@@ -579,13 +580,13 @@ test("pre-tool-use in full asks while the marker is missing, whatever stage: say
   assert.equal(decision(hook("pre-tool-use", edit(join(repo, "src/a.js")))), "allow");
 });
 
-test("the marker is not a bypass: a change whose design.md is gone is denied", () => {
+test("the marker is not a bypass: a change whose spec is gone is denied", () => {
   const { repo, hook, write, approve } = floorRepo({ mode: "full" });
   write("specs/x/implementation.md", ledger("planned"));
   approve("x");
   const out = hook("pre-tool-use", edit(join(repo, "src/a.js")));
   assert.equal(decision(out), "deny");
-  assert.match(reason(out), /specs\/x\/design\.md does not exist/);
+  assert.match(reason(out), /specs\/x\/spec\.md does not exist \(nor the legacy design\.md\)/);
 });
 
 test("pre-tool-use denies Edit/Write to the approval record itself, in every mode", () => {
@@ -609,7 +610,7 @@ test("on Codex, where ask is parsed but not honoured, the approval stop is a den
   const env = { ...codex, PLUGIN_DATA: codexData(repo) };
   const out = hook("pre-tool-use", { ...edit("src/a.js"), cwd: repo }, env);
   assert.equal(decision(out), "deny");
-  assert.match(reason(out), /Approving this edit approves the design/);
+  assert.match(reason(out), /Approving this edit approves the spec/);
   assert.match(reason(out), /cannot ask/);
   assert.match(reason(out), /\/praxis:approve x/);
   approve("x");
@@ -692,10 +693,12 @@ test("a deny copies the templates into the project and refers to them relatively
   for (const f of ["design.md", "implementation.md", "AGENTS.md", "CLAUDE.md"]) {
     assert.ok(fsExists(join(repo, "specs/_templates", f)), `specs/_templates/${f} not placed`);
   }
-  assert.match(reason(out), /Read specs\/_templates\/design\.md, then Write specs\/<change>\/design\.md/);
+  // The form to READ flips from design.md to spec.md when the plugin ships that template (T05);
+  // the file to WRITE is spec.md either way.
+  assert.match(reason(out), /Read specs\/_templates\/(spec|design)\.md, then Write specs\/<change>\/spec\.md/);
   assert.doesNotMatch(reason(out), new RegExp(ROOT.replace(/\/$/, "")), "the plugin path must not appear: the model cannot read it");
   assert.doesNotMatch(reason(out), /\bcp\b/, "the model writes with its Write tool; it is not told to run cp");
-  assert.match(reason(out), /Technical Design/, "the shape is repeated for a model that still cannot read");
+  assert.match(reason(out), /Acceptance \(runnable checks/, "the shape is repeated for a model that still cannot read");
   // Idempotent: a second deny does not touch an existing copy.
   writeFileSync(join(repo, "specs/_templates/design.md"), "local edit\n");
   hook("pre-tool-use", edit(join(repo, "src/b.js")));
@@ -709,13 +712,13 @@ test("an allowed edit never writes into the project", () => {
   assert.ok(!fsExists(join(repo, "specs/_templates")), "templates were placed on an allow");
 });
 
-test("pre-tool-use in full denies while design.md is missing, whatever the ledger says", () => {
+test("pre-tool-use in full denies while the spec is missing, whatever the ledger says", () => {
   const { repo, hook, write } = floorRepo({ mode: "full" });
   for (const stage of ["new", "designed", "planned"]) {
     write("specs/x/implementation.md", ledger(stage));
     const out = hook("pre-tool-use", edit(join(repo, "src/a.js")));
-    assert.equal(decision(out), "deny", `stage ${stage} without a design`);
-    assert.match(reason(out), /specs\/x\/design\.md does not exist/);
+    assert.equal(decision(out), "deny", `stage ${stage} without a spec`);
+    assert.match(reason(out), /specs\/x\/spec\.md does not exist/);
     assert.match(reason(out), /stage: designed/, "the deny names the exact transition");
   }
 });
@@ -1124,7 +1127,7 @@ test("PRAXIS_COMMENTS=off lifts the comment pass alone; PRAXIS_FLOOR=off lifts b
   const bare = floorRepo({ mode: "full" });
   const out = bare.hook("pre-tool-use", wrote(bare.repo, "src/a.js", "x\n"), { PRAXIS_COMMENTS: "off" });
   assert.equal(decision(out), "deny");
-  assert.match(reason(out), /design\.md/);
+  assert.match(reason(out), /spec\.md/);
 });
 
 test("the comment pass fails open on anything it cannot read", () => {
@@ -1162,4 +1165,291 @@ test("the decoded body is byte-exact: backslashes survive, lines stay separate",
   const out = hook("pre-tool-use", wrote(repo, "src/a.js", `const a = 1;\nconst b = 2;\n${line}\n`));
   assert.equal(decision(out), "deny");
   assert.ok(reason(out).includes(line), `the quoted line was corrupted in decoding:\n${reason(out)}`);
+});
+
+// ── The cycle's limits: barrier, round cap, ship gate, escalation record ──────────────────────
+//
+// specs/factory-cycle, design.md appendix. Every input these gates decide on is a file under
+// specs/<change>/; the fixtures write those files and nothing else, so a test here never
+// depends on what a model said. Mutation-tested before trusting: disable the round-cap
+// branch in `hooks/pre-tool-use` and the cap test goes red while the barrier tests stay
+// green — the run is pasted in specs/factory-cycle/implementation.md under T01.
+
+function cycleRepo({ mode = "full", round = 0, builder = "agent-b1", lenses = "correctness, security, tests" } = {}) {
+  const fixture = floorRepo({ mode });
+  fixture.write("specs/x/spec.md", "# x\n");
+  fixture.write(
+    "specs/x/implementation.md",
+    `---\ntitle: x\nstage: built\nround: ${round}     # 0 = no review yet\nbuilder: ${builder}\nlenses: ${lenses}\nowner: o\n---\n\n## Tasks\n`,
+  );
+  fixture.write(".praxis/active-change", "x\n");
+  fixture.approve("x");
+  const lens = (r, name, verdict) =>
+    fixture.write(
+      `specs/x/review/round-${r}/${name}.md`,
+      `---\nlens: ${name}\nround: ${r}\nverdict: ${verdict}\n---\n\n## Findings\n\n## What I tried to break\n- a → b\n`,
+    );
+  const lensList = (r, names) => fixture.write(`specs/x/review/round-${r}/lenses`, `${names.join("\n")}\n`);
+  const recordDecision = (verdict, r = round) =>
+    fixture.write("specs/x/decision.md", `---\nverdict: ${verdict}\nround: ${r}\n---\n\n## Checks run\n- x → y\n## Reason\n`);
+  return { ...fixture, lens, lensList, recordDecision };
+}
+
+const dispatchBuilder = (subagent_type = "praxis:builder") =>
+  ({ tool_name: "Agent", tool_input: { subagent_type, prompt: "build it", description: "builder" } });
+const messageTo = (to) => ({ tool_name: "SendMessage", tool_input: { to, message: "fix these" } });
+const bash = (command) => ({ tool_name: "Bash", tool_input: { command, description: "ship" } });
+
+test("builder dispatch at round 0 is allowed: no review has run, nothing to wait for", () => {
+  const { hook } = cycleRepo({ round: 0 });
+  assert.equal(decision(hook("pre-tool-use", dispatchBuilder())), "allow");
+  assert.equal(decision(hook("pre-tool-use", dispatchBuilder("builder"))), "allow", "the bare name, as a host without the namespace sends it");
+  assert.equal(decision(hook("pre-tool-use", messageTo("agent-b1"))), "allow");
+});
+
+test("the barrier: a builder dispatch is denied while a lens file is missing, naming the missing lens", () => {
+  const { hook, lens, lensList } = cycleRepo({ round: 1 });
+  lensList(1, ["correctness", "security", "tests"]);
+  lens(1, "correctness", "PASS");
+  lens(1, "tests", "CHANGES");
+  for (const payload of [dispatchBuilder(), dispatchBuilder("Builder"), dispatchBuilder("praxis:Builder")]) {
+    const out = hook("pre-tool-use", payload);
+    assert.equal(decision(out), "deny", JSON.stringify(payload.tool_input.subagent_type));
+    assert.match(reason(out), /barrier: waiting for security\b/, "the deny names exactly the lens that has not written");
+    assert.doesNotMatch(reason(out), /waiting for [^—]*(correctness|tests)/, "a lens that has written is not waited for");
+    assert.match(reason(out), /PRAXIS_FLOOR=off/);
+  }
+  // A dispatch of anything but the builder is not the barrier's business.
+  assert.equal(decision(hook("pre-tool-use", dispatchBuilder("praxis:refuter-tests"))), "allow");
+  // The barrier opens the moment the last file lands; CHANGES at round 1 is the one fix round.
+  lens(1, "security", "PASS");
+  assert.equal(decision(hook("pre-tool-use", dispatchBuilder())), "allow");
+});
+
+test("the barrier reads SendMessage to the builder id the ledger records, and to nobody else", () => {
+  const { hook, lens, lensList } = cycleRepo({ round: 1, builder: "agent-b1" });
+  lensList(1, ["correctness", "security"]);
+  lens(1, "correctness", "PASS");
+  const out = hook("pre-tool-use", messageTo("agent-b1"));
+  assert.equal(decision(out), "deny");
+  assert.match(reason(out), /barrier: waiting for security/);
+  assert.equal(decision(hook("pre-tool-use", messageTo("agent-other"))), "allow", "a message to another agent is not a builder resume");
+  lens(1, "security", "PASS");
+  assert.equal(decision(hook("pre-tool-use", messageTo("agent-b1"))), "allow", "complete and all PASS");
+});
+
+test("the round cap: a builder dispatch that would open round 3 is denied", () => {
+  const { hook, lens, lensList } = cycleRepo({ round: 2 });
+  lensList(2, ["correctness", "security", "tests"]);
+  lens(2, "correctness", "PASS");
+  lens(2, "security", "CHANGES");
+  lens(2, "tests", "PASS");
+  const out = hook("pre-tool-use", dispatchBuilder());
+  assert.equal(decision(out), "deny");
+  assert.match(reason(out), /round cap: 2 rounds done → approver \/ ESCALATE/);
+  assert.match(reason(out), /security: CHANGES/, "the deny says which lens is not PASS");
+  // SKIP is not PASS either, and the resume path hits the same cap.
+  lens(2, "security", "SKIP");
+  assert.match(reason(hook("pre-tool-use", messageTo("agent-b1"))), /round cap/);
+  // Round 2 with every lens PASS: nothing to fix, nothing to cap.
+  lens(2, "security", "PASS");
+  assert.equal(decision(hook("pre-tool-use", dispatchBuilder())), "allow");
+  // Round 1 complete with CHANGES is the fix round the cycle allows.
+  const first = cycleRepo({ round: 1 });
+  first.lensList(1, ["correctness"]);
+  first.lens(1, "correctness", "CHANGES");
+  assert.equal(decision(first.hook("pre-tool-use", dispatchBuilder())), "allow", "round 1 → round 2 is the one fix round");
+});
+
+test("the round's lens list is review/round-N/lenses, else the ledger's lenses: field, else a closed barrier", () => {
+  const { hook, lens } = cycleRepo({ round: 1, lenses: "correctness, tests" });
+  lens(1, "correctness", "PASS");
+  const out = hook("pre-tool-use", dispatchBuilder());
+  assert.equal(decision(out), "deny");
+  assert.match(reason(out), /waiting for tests\b/);
+  lens(1, "tests", "PASS");
+  assert.equal(decision(hook("pre-tool-use", dispatchBuilder())), "allow");
+
+  const bare = cycleRepo({ round: 1, lenses: "" });
+  const none = bare.hook("pre-tool-use", dispatchBuilder());
+  assert.equal(decision(none), "deny", "a round nobody is listed for is not an open barrier");
+  assert.match(reason(none), /review\/round-1\/lenses/, "the deny names the file the orchestrator writes");
+});
+
+test("the ship gate: gh pr create and git push of praxis/<c> are denied without decision.md", () => {
+  const { hook, lens, lensList } = cycleRepo({ round: 1 });
+  lensList(1, ["correctness"]);
+  lens(1, "correctness", "PASS");
+  for (const cmd of ["gh pr create --fill", "git push -u origin praxis/x", 'git commit -m "done" && git push origin praxis/x']) {
+    const out = hook("pre-tool-use", bash(cmd));
+    assert.equal(decision(out), "deny", cmd);
+    assert.match(reason(out), /ship gate: specs\/x\/decision\.md does not exist/);
+    assert.match(reason(out), /\/praxis:approve x/, "the deny names the person's way out");
+  }
+  // Other Bash is not the gate's business, nor is a push of another branch.
+  for (const cmd of ["node --test tests/*.test.mjs", "git push origin feature/y", "git status", "gh pr view 12"]) {
+    assert.equal(decision(hook("pre-tool-use", bash(cmd))), "allow", cmd);
+  }
+});
+
+test("the ship gate: ESCALATE denies, APPROVE (human) allows, APPROVE needs every lens PASS", () => {
+  const { hook, lens, lensList, recordDecision } = cycleRepo({ round: 1 });
+  lensList(1, ["correctness", "security"]);
+  lens(1, "correctness", "PASS");
+  lens(1, "security", "PASS");
+
+  recordDecision("ESCALATE");
+  let out = hook("pre-tool-use", bash("gh pr create"));
+  assert.equal(decision(out), "deny");
+  assert.match(reason(out), /verdict ESCALATE/);
+  assert.match(reason(out), /\/praxis:approve x/);
+
+  recordDecision("APPROVE (human)");
+  assert.equal(decision(hook("pre-tool-use", bash("gh pr create"))), "allow", "the human override ships");
+
+  recordDecision("APPROVE");
+  assert.equal(decision(hook("pre-tool-use", bash("git push origin praxis/x"))), "allow", "APPROVE + all PASS");
+
+  lens(1, "security", "CHANGES");
+  out = hook("pre-tool-use", bash("gh pr create"));
+  assert.equal(decision(out), "deny", "APPROVE with one CHANGES does not ship");
+  assert.match(reason(out), /lenses not all PASS/);
+  assert.match(reason(out), /security: CHANGES/);
+  recordDecision("APPROVE (human)");
+  assert.equal(decision(hook("pre-tool-use", bash("gh pr create"))), "allow", "the human override ships whatever the lenses say");
+
+  // APPROVE with no review round at all is not "round complete, all PASS".
+  const unreviewed = cycleRepo({ round: 0 });
+  unreviewed.recordDecision("APPROVE");
+  out = unreviewed.hook("pre-tool-use", bash("gh pr create"));
+  assert.equal(decision(out), "deny");
+  assert.match(reason(out), /round is 0/);
+});
+
+test("the cycle gates stay silent with no ledger, in fast, and under PRAXIS_FLOOR=off", () => {
+  const empty = floorRepo({ mode: "full" });
+  assert.equal(decision(empty.hook("pre-tool-use", dispatchBuilder())), "allow", "no change opened");
+  assert.equal(decision(empty.hook("pre-tool-use", bash("gh pr create"))), "allow");
+
+  const capped = cycleRepo({ round: 2 });
+  capped.lensList(2, ["correctness"]);
+  capped.lens(2, "correctness", "CHANGES");
+  assert.equal(decision(capped.hook("pre-tool-use", dispatchBuilder())), "deny", "the control");
+  assert.equal(decision(capped.hook("pre-tool-use", bash("gh pr create"))), "deny", "the control");
+  assert.equal(decision(capped.hook("pre-tool-use", dispatchBuilder(), { PRAXIS_FLOOR: "off" })), "allow");
+  assert.equal(decision(capped.hook("pre-tool-use", bash("gh pr create"), { PRAXIS_FLOOR: "off" })), "allow");
+
+  // `fast` is the trivial path, unchanged: it has no rounds and no decision to wait for.
+  const fast = cycleRepo({ mode: "fast", round: 2 });
+  fast.lensList(2, ["correctness"]);
+  fast.lens(2, "correctness", "CHANGES");
+  assert.equal(decision(fast.hook("pre-tool-use", dispatchBuilder())), "allow");
+  assert.equal(decision(fast.hook("pre-tool-use", bash("gh pr create"))), "allow");
+});
+
+test("the floor keys on spec.md, and accepts a legacy design.md in its place", () => {
+  const modern = floorRepo({ mode: "full" });
+  modern.write("specs/x/spec.md", "# x\n");
+  modern.write("specs/x/implementation.md", ledger("designed"));
+  let out = modern.hook("pre-tool-use", edit(join(modern.repo, "src/a.js")));
+  assert.equal(decision(out), "ask", "spec.md written, not yet approved: the one stop");
+  assert.match(reason(out), /specs\/x\/spec\.md is written/);
+  modern.approve("x");
+  assert.equal(decision(modern.hook("pre-tool-use", edit(join(modern.repo, "src/a.js")))), "allow");
+
+  const legacy = floorRepo({ mode: "full" });
+  legacy.write("specs/x/design.md", "# x\n");
+  legacy.write("specs/x/implementation.md", ledger("designed"));
+  out = legacy.hook("pre-tool-use", edit(join(legacy.repo, "src/a.js")));
+  assert.equal(decision(out), "ask");
+  assert.match(reason(out), /specs\/x\/design\.md is written/, "the legacy file is named as what awaits approval");
+  legacy.approve("x");
+  assert.equal(decision(legacy.hook("pre-tool-use", edit(join(legacy.repo, "src/a.js")))), "allow");
+
+  // post-tool-use records the approval for a spec.md change too.
+  const post = floorRepo({ mode: "full" });
+  post.write("specs/x/spec.md", "# x\n");
+  post.write("specs/x/implementation.md", ledger("designed"));
+  post.hook("post-tool-use", edit(join(post.repo, "src/a.js")));
+  assert.ok(post.approved("x"), "the marker is written for a spec.md change");
+});
+
+test("post-tool-use writes .praxis/needs-human/<c> on ESCALATE and removes it on APPROVE", () => {
+  const { repo, hook, write, recordDecision } = cycleRepo({ round: 2 });
+  const marker = join(repo, ".praxis/needs-human/x");
+  const wroteDecision = () => hook("post-tool-use", edit(join(repo, "specs/x/decision.md")));
+  // A .praxis/.gitignore written before these entries existed gets them appended.
+  write(".praxis/.gitignore", "active-change\napproved/\nsession-started\n");
+
+  recordDecision("ESCALATE");
+  assert.equal(wroteDecision().trim(), "", "post-tool-use never speaks");
+  assert.ok(fsExists(marker), "ESCALATE must leave a record a hook can read");
+  const ignore = fsRead(join(repo, ".praxis/.gitignore"), "utf8");
+  assert.match(ignore, /^needs-human\/$/m);
+  assert.match(ignore, /^worktrees\/$/m);
+  assert.match(ignore, /^approved\/$/m, "the existing lines are kept");
+
+  recordDecision("APPROVE (human)");
+  wroteDecision();
+  assert.ok(!fsExists(marker), "the human approval clears the escalation");
+
+  recordDecision("ESCALATE");
+  wroteDecision();
+  assert.ok(fsExists(marker));
+  recordDecision("APPROVE");
+  wroteDecision();
+  assert.ok(!fsExists(marker), "APPROVE clears it too");
+
+  // Another change's decision is not the active change's record.
+  const other = cycleRepo({ round: 1 });
+  other.write("specs/y/decision.md", "---\nverdict: ESCALATE\n---\n");
+  other.hook("post-tool-use", edit(join(other.repo, "specs/y/decision.md")));
+  assert.ok(!fsExists(join(other.repo, ".praxis/needs-human/y")));
+  assert.ok(!fsExists(join(other.repo, ".praxis/needs-human/x")));
+});
+
+test("pre-tool-use denies Edit/Write to the escalation record, in every mode", () => {
+  for (const mode of ["fast", "full", "deep"]) {
+    const { repo, hook } = floorRepo({ mode });
+    const out = hook("pre-tool-use", { tool_name: "Write", tool_input: { file_path: join(repo, ".praxis/needs-human/x") } });
+    assert.equal(decision(out), "deny", mode);
+    assert.match(reason(out), /escalation record/);
+    assert.match(reason(out), /never by the model/);
+  }
+});
+
+test("the main thread may write a review file only with verdict: SKIP; a lens writes its own", () => {
+  const { repo, hook } = cycleRepo({ round: 1 });
+  const review = (content, extra = {}) =>
+    ({ tool_name: "Write", tool_input: { file_path: join(repo, "specs/x/review/round-1/security.md"), content }, ...extra });
+  const pass = "---\nlens: security\nround: 1\nverdict: PASS\n---\n";
+  const skip = "---\nlens: security\nround: 1\nverdict: SKIP\n---\n## Reason\n- never returned\n";
+  const out = hook("pre-tool-use", review(pass));
+  assert.equal(decision(out), "deny", "a PASS the lens never wrote");
+  assert.match(reason(out), /verdict: SKIP/);
+  assert.equal(decision(hook("pre-tool-use", review(skip))), "allow");
+  // Inside a subagent the payload carries agent_id (Claude Code hooks reference, common input
+  // fields); the lens writes its own file freely.
+  assert.equal(decision(hook("pre-tool-use", review(pass, { agent_id: "agent-l1", agent_type: "praxis:refuter-security" }))), "allow");
+  // An Edit that flips a verdict from the main thread is caught the same way.
+  const flip = { tool_name: "Edit", tool_input: { file_path: join(repo, "specs/x/review/round-1/security.md"), old_string: "verdict: SKIP", new_string: "verdict: PASS" } };
+  assert.equal(decision(hook("pre-tool-use", flip)), "deny");
+  // Every other spec-side write by the main thread stays free, the lens list included.
+  assert.equal(decision(hook("pre-tool-use", edit(join(repo, "specs/x/implementation.md")))), "allow");
+  assert.equal(decision(hook("pre-tool-use", edit(join(repo, "specs/x/review/round-1/lenses")))), "allow", "the lens list is the orchestrator's file");
+  // Codex documents no agent_id on PreToolUse, so there the rule stays out rather than deny a lens its file.
+  const env = { PLUGIN_ROOT: ROOT, PLUGIN_DATA: codexData(repo) };
+  assert.equal(decision(hook("pre-tool-use", { ...review(pass), cwd: repo }, env)), "allow");
+});
+
+test("the PreToolUse matcher reaches every tool the cycle gates read", () => {
+  const claudeMatcher = JSON.parse(readFileSync(join(ROOT, "hooks/hooks.json"), "utf8")).hooks.PreToolUse[0].matcher.split("|");
+  for (const tool of ["Edit", "Write", "MultiEdit", "Agent", "SendMessage", "Bash"]) {
+    assert.ok(claudeMatcher.includes(tool), `hooks.json PreToolUse misses ${tool}`);
+  }
+  // Codex reports its shell as `Bash` and `spawn_agent` as `Agent`; it has no SendMessage.
+  const codexMatcher = JSON.parse(readFileSync(join(ROOT, "hooks/hooks-codex.json"), "utf8")).hooks.PreToolUse[0].matcher.split("|");
+  for (const tool of ["apply_patch", "Agent", "Bash"]) {
+    assert.ok(codexMatcher.includes(tool), `hooks-codex.json PreToolUse misses ${tool}`);
+  }
 });

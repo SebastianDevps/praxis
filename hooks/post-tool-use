@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# PostToolUse hook — writes the approval record (specs/hook-owned-approval, ADR-001).
+# PostToolUse hook — writes the approval record (specs/hook-owned-approval, ADR-001) and the
+# escalation record (specs/factory-cycle).
 #
-# The floor's approval stop is the host's `ask` on the first source edit of a designed
+# The floor's approval stop is the host's `ask` on the first source edit of a specified
 # change. The one thing the model cannot do is answer its own permission prompt, so the
 # durable trace of that answer is written HERE, after the edit ran: `.praxis/approved/<change>`.
 # `pre-tool-use` gates on that marker — not on `stage:`, which the model owns and, measured in
@@ -9,11 +10,19 @@
 #
 # Written when, and only when: the edit targeted a source-side path, the mode is full or deep
 # (in fast nothing asks, so an edit there is not an approval of anything), the active change
-# has `design.md`, and no marker exists yet. Empty file; its existence is the record.
+# has its spec (`spec.md`, or the legacy `design.md`), and no marker exists yet. Empty file;
+# its existence is the record.
+#
+# The second record rides on the same event. When the edit wrote `specs/<change>/decision.md`
+# for the active change, the file is read back: `verdict: ESCALATE` creates
+# `.praxis/needs-human/<change>`; `APPROVE` or `APPROVE (human)` removes it. The marker is
+# what makes "needs a human" a state the Run Card reports from a file, not from prose, and
+# what `/praxis:approve` and `/praxis:rework` clear. It is written from the file's content in
+# every mode: the approver's verdict is a fact about the change, not about the dial.
 #
 # The first time this creates `.praxis/`, it also writes `.praxis/.gitignore` excluding
-# `active-change` and `approved/`: per-machine session state, same rule as the memory
-# store's `sessions.jsonl`.
+# `active-change`, `approved/`, `needs-human/` and `worktrees/`: per-machine session state,
+# same rule as the memory store's `sessions.jsonl`.
 #
 # LOOSENESS, stated: the hook fires after any edit the host let through. On Claude Code that
 # means the person answered the ask — or an `acceptEdits` permission mode auto-approved it,
@@ -51,15 +60,43 @@ cwd="$(praxis_json_string "$payload" cwd)"
 root="$(praxis_project_root "${CLAUDE_PROJECT_DIR:-${CODEX_PROJECT_DIR:-$cwd}}")"
 [ -n "$root" ] || exit 0
 
+change="$(praxis_active_change "$root")"
+
+# The escalation record, from the decision the approver just wrote.
+decision_record() {
+  [ -n "$change" ] || return 0
+  local rel hit=0 verdict marker
+  while IFS= read -r rel; do
+    [ "$rel" = "specs/${change}/decision.md" ] && hit=1
+  done <<EOF
+$(praxis_project_targets "$root" "$cwd" "$paths")
+EOF
+  [ "$hit" = 1 ] || return 0
+  verdict="$(praxis_decision_verdict "$root" "$change")"
+  marker="$(praxis_needs_human_marker "$root" "$change")"
+  case "$verdict" in
+    ESCALATE)
+      praxis_ensure_praxis_dir "$root" || note "cannot create ${root}/.praxis"
+      mkdir -p "${root}/.praxis/needs-human" 2>/dev/null || note "cannot create .praxis/needs-human"
+      : > "$marker" 2>/dev/null || note "cannot write the needs-human marker for ${change}"
+      praxis_trace "PostToolUse" "needs-human ${change}"
+      ;;
+    APPROVE|"APPROVE (human)")
+      [ -f "$marker" ] && { rm -f "$marker" 2>/dev/null || note "cannot remove the needs-human marker for ${change}"; }
+      praxis_trace "PostToolUse" "decision ${verdict} ${change}"
+      ;;
+  esac
+}
+decision_record
+
 target="$(praxis_source_target "$root" "$cwd" "$paths")"
 [ -n "$target" ] || exit 0
-case "$target" in .praxis/approved/*) exit 0 ;; esac
+case "$target" in .praxis/approved/*|.praxis/needs-human/*) exit 0 ;; esac
 
 case "$(praxis_mode)" in full|deep) ;; *) exit 0 ;; esac
 
-change="$(praxis_active_change "$root")"
 [ -n "$change" ] || exit 0
-[ -f "${root}/specs/${change}/design.md" ] || exit 0
+[ -n "$(praxis_spec_file "$root" "$change")" ] || exit 0
 praxis_approved "$root" "$change" && exit 0
 
 praxis_ensure_praxis_dir "$root" || note "cannot create ${root}/.praxis"
