@@ -1,8 +1,8 @@
 # Praxis — Agent Source of Truth
 
 Praxis is a portable, self-learning, clarity-first framework for authoring inspectable agent workflows.
-It is a **kit**, not a bundle: authors define skills in Markdown, pipelines compose them, and the
-framework learns from experience by authoring new skills. It runs on any host
+It is a **kit**, not a bundle: authors define skills in Markdown, the cycle (`docs/cycle.md`) and
+the commands compose them, and the framework learns from experience by authoring new skills. It runs on any host
 (Claude Code, Codex, Cursor, Gemini, Copilot) through thin per-host adapters.
 
 ---
@@ -15,8 +15,9 @@ framework learns from experience by authoring new skills. It runs on any host
   context and never block. Two more hold the one invariant that priming alone did not (measured:
   0/8 Run Cards in `full`): every change leaves `specs/<change>/`, and the mode dial decides how
   much of it is mandatory, never whether it exists. `pre-tool-use` denies a source edit until the
-  mode's minimum spec file exists and asks once for the design's approval; `post-tool-use` records
-  that approval where the model cannot write it; `stop` blocks once until `implementation.md`
+  mode's minimum spec file exists and asks once for the spec's approval; it also holds the cycle's
+  limits — the review barrier, the round cap, the ship gate; `post-tool-use` records the approval,
+  and an ESCALATE, where the model cannot write them; `stop` blocks once until `implementation.md`
   records the work. Nothing else gates. `PRAXIS_FLOOR=off` is the only override, and it is documented, not hidden.
 - **Brevity as a constraint.** Terse beats thorough. Default to short; expand only when the task
   genuinely requires it.
@@ -37,9 +38,10 @@ tooling; hosts do NOT route on it. Because description-matching alone is unrelia
 **SessionStart router** (`using-praxis`) primes each session so the model reaches for the right
 skill — see Activation.
 
-### Pipelines → Run Cards
+### The cycle → Run Cards
 
-A pipeline is a sequence of phases. At runtime each pipeline renders as an inspectable **Run Card**:
+A substantial change runs the cycle (`docs/cycle.md`) in phases. At runtime each phase renders as
+an inspectable **Run Card**:
 
 | Field | What it holds |
 |---|---|
@@ -80,13 +82,13 @@ the craft arrives as context, nothing gates the agent's actions. See `crafts/` f
 
 ## Intensity
 
-`fast | full | deep`, default `full`, set with `/praxis:mode` and held in a flag file so it holds
-every turn rather than being re-judged. `fast` drops the Run Card and keeps only
-`specs/<change>/implementation.md`; `full` adds `design.md` and one stop for your approval; `deep`
-adds mandatory research, explicit approach comparison, an adversarial review pass, and the full
-spec folder (ADRs, `AGENTS.md`, `docs/`). The dial governs ceremony only — crafts, the ladder, and
-the safety carve-outs are identical at every level. The active level travels into dispatched
-specialists. Minimums per mode: `skills/spec-lifecycle`.
+`fast | full`, default `full`, set with `/praxis:mode` and held in a flag file so it holds every
+turn rather than being re-judged. `fast` drops the Run Card and keeps only
+`specs/<change>/implementation.md`; `full` runs the cycle — `spec.md`, one stop for your approval,
+the builder, the lenses, the approver, a PR. `deep` was removed (ADR-004): review and ship are
+always on, and the diff decides which lenses run. The dial governs ceremony only — crafts, the
+ladder, and the safety carve-outs are identical at both levels. The active level travels into
+dispatched roles. Minimums per mode: `skills/spec-lifecycle`.
 
 ---
 
@@ -106,9 +108,9 @@ Three priming events, pure context injection, plus three that hold the spec floo
 |---|---|---|
 | `session-start` | the thin `using-praxis` router + this project's learned memory | orientation, once |
 | `user-prompt-submit` | the compact operating contract (`hooks/context/contract.md`) | anti-drift — a router read at turn 1 is buried by turn 40 |
-| `subagent-start` | the contract + the dispatched agent's required crafts | session context is parent-thread only; without it a delegated agent runs Praxis-unaware |
-| `pre-tool-use` | denies `Edit`/`Write` outside spec-side paths until the mode's minimum spec file exists (`fast`: `implementation.md`; `full`/`deep`: `design.md`); in `full`/`deep` it answers the first source edit with `ask` until `.praxis/approved/<change>` exists, and denies any `Edit`/`Write` to that marker | the one invariant priming did not hold; the deny names the exact local file to create, and copies `specs/_templates/` in if missing |
-| `post-tool-use` | writes `.praxis/approved/<change>` when the approved source edit actually ran | the approval is a record the model cannot write — measured: 3/3 unattended runs advanced `stage:` themselves when the stage was the gate. `/praxis:approve <change>` writes the same record where no prompt exists |
+| `subagent-start` | the dispatched agent's role kernel (`hooks/context/roles/`, ≤15 lines) + the spec path, plus its required crafts; lenses and the approver also get the project rules | session context is parent-thread only; without it a delegated agent runs Praxis-unaware — and a builder given the whole contract spends its attention on process |
+| `pre-tool-use` | denies `Edit`/`Write` outside spec-side paths until the mode's minimum spec file exists (`fast`: `implementation.md`; `full`: `spec.md`, legacy `design.md` accepted); in `full` it answers the first source edit with `ask` until `.praxis/approved/<change>` exists, and denies any `Edit`/`Write` to that marker or to `.praxis/needs-human/`; denies a builder resume while a lens file is missing and the dispatch that would open a third round; gates `git push` / `gh pr create` for `praxis/<change>` on `decision.md: APPROVE` + every lens `PASS` | the one invariant priming did not hold; the deny names the exact local file to create, and copies `specs/_templates/` in if missing |
+| `post-tool-use` | writes `.praxis/approved/<change>` when the approved source edit actually ran; writes `.praxis/needs-human/<change>` when `decision.md` records ESCALATE | the approval is a record the model cannot write — measured: 3/3 unattended runs advanced `stage:` themselves when the stage was the gate. `/praxis:approve <change>` writes the same record where no prompt exists |
 | `stop` | blocks once when source changed and no `specs/*/implementation.md` did | the record is written while the evidence is fresh, not remembered later |
 
 `subagent-stop` captures a memory row and never speaks to the model. The floor runs on Claude Code
@@ -145,16 +147,19 @@ Every change is a folder, `specs/<change>/`, copied from `specs/_templates/` —
 borrowed from `calcom/cal.diy` and scaled by the mode dial:
 
 ```
-implementation.md   the ledger: stage · tasks · completed · blocked      (every mode)
-design.md           the source of truth, reviewed before source is edited (full · deep)
-decisions.md        ADRs, written when the decision is made               (when weighed · deep)
-future-work.md      deferred follow-ups                                   (when captured · deep)
-AGENTS.md · docs/   change-specific instructions, user-facing docs        (deep)
+implementation.md   the ledger: stage · round · lenses · tasks · completed · blocked   (every mode; orchestrator only)
+spec.md             what to build and how it is accepted, approved before source is edited (full)
+review/round-N/     one file per lens: PASS | CHANGES, findings, what it tried to break      (full)
+decision.md         the approver's APPROVE | ESCALATE with every check it ran               (full)
+decisions.md        ADRs, written when the decision is made                                 (when a decision passes the three gates)
+future-work.md · AGENTS.md · docs/   deferred follow-ups, change-specific instructions, docs  (optional)
 ```
 
 ```
-new → designed → planned → implemented → shipped
+new → designed → planned → implemented → shipped   ·   needs-human → rework | approve
 ```
+
+`design.md` is the legacy name of `spec.md`; existing changes keep it and the floor accepts either.
 
 `/praxis:init` scaffolds the project side the same way: `AGENTS.md` (+ `CLAUDE.md` symlink),
 `agents/rules/` with a category-prefix convention, `agents/knowledge-base.md`, `agents/commands.md`,
@@ -168,13 +173,12 @@ Supporting constructs:
 - **EAG (Executable Acceptance Gate)** — acceptance criteria expressed as runnable checks, not
   prose. The gate is green or red; not "should work."
 
-Lifecycle files live under `skills/` (`agentic-lifecycle`, `spec-lifecycle`, `autonomous-loop`). Pointers only here.
+Lifecycle files live under `skills/` (`factory`, `agentic-lifecycle`, `spec-lifecycle`, `autonomous-loop`). Pointers only here.
 
 Assessment of a target Praxis does **not** own — a repo, a package, an architecture, a capability —
-runs the same way: `skills/` holds the four methods (`project-teardown`, `dependency-adoption`,
-`architecture-evaluation`, `buy-vs-build`), `pipelines/investigation.md` composes them
-(`scope → sweep → assess → synthesize → verdict`), `/praxis:investigate` triggers it, and the
-`analyst` agent carries it — read-mostly, and the one agent that returns a verdict rather than
+is not the cycle: `skills/` holds the four methods (`project-teardown`, `dependency-adoption`,
+`architecture-evaluation`, `buy-vs-build`), `/praxis:investigate` composes them
+(`scope → sweep → assess → synthesize → verdict`), and the `analyst` agent carries it — read-mostly, and the one agent that returns a verdict rather than
 facts, which is why it is not `researcher`. Its deliverable is a dossier whose every section is
 cited evidence, `SKIP` with the reason it could not run, or `GAP` with what it had nothing to check
 against.
@@ -218,7 +222,7 @@ Adding a new host: write one adapter file that points here. No framework changes
 
 ## Verification
 
-The runtime floor is two hooks; everything else is priming. The gates that matter most are at
+The runtime floor is three hooks; everything else is priming. The gates that matter most are at
 author time — the claims in this file are tested, not asserted:
 
 ```bash

@@ -12,85 +12,76 @@ od:
 
 Praxis speaks in **actions**, not tool names: you *invoke a skill*, *dispatch a subagent*, *read a
 file*, *search the repo*, *emit a Run Card / todo*. Each host wires those actions to its own tools —
-see `references/<host>-tools.md` (`claude-code`, `codex`, `cursor`, `gemini`, `copilot`) for the exact
-mapping and any host quirks. Always express intent as an action; let the reference resolve it.
+see `references/<host>-tools.md` (`claude-code`, `codex`, `cursor`, `gemini`, `copilot`). Always
+express intent as an action; let the reference resolve it.
 
 This environment has **Praxis** — a clarity-first agent framework. Its value is HOW work runs:
 visibly, in phases, with research and verification — not one silent inline blob. A vague prompt is
-not a license to skip the method; it is exactly when the method matters most, because the model has
-the least to go on.
+not a license to skip the method; it is when the method matters most.
 
-**Kernel and router.** The operating contract (`hooks/context/contract.md`) is injected on every
-turn and into every dispatched subagent; this file loads only when the skill activates, which a
-dispatched subagent may never do. So the kernel carries what must hold at turn 40 and inside every
-subagent, this file carries what needs explaining once, and where both need a rule the kernel owns
-it and this file points at it.
+**Kernel, router, cycle.** The operating contract (`hooks/context/contract.md`, ≤40 lines) is
+injected every turn; a dispatched role receives its role kernel (`hooks/context/roles/`) and paths
+instead. This file explains once; `factory` carries the cycle and loads when a change opens. Where
+two surfaces need a rule, the kernel owns it and the others point at it.
 
 ## Classify first
 
-- **Answer** — a question, with no request to change files → answer it. Research only what you do
-  not already know. There is no ceremony to scale, so no dial applies.
-- **Trivial** — one file, no new behavior, no design surface → just edit + verify. Skip the loop.
+- **Answer** — a question, no request to change files → answer it; research only what you do not
+  already know. No ceremony to scale, so no dial applies.
+- **Trivial** — one file, no new behavior, no design surface → the fast path. Skip the cycle.
 - **Substantial** — build / replicate / redesign / feature / debug / multi-file / unclear scope →
-  run the visible loop below. Unresolved ambiguity escalates to step 3, never to more process:
-  guessing bigger is not the same as knowing more.
+  invoke `factory` and open a change. Unresolved ambiguity escalates to one question, never to
+  more process: guessing bigger is not the same as knowing more.
+- **Research first**, on either path — read the reference or screenshot closely, invoke `scout` for
+  prior art in this repo, invoke `docs-seeker` for an unfamiliar API. Never decide on stale assumptions.
+- **Clarify** — material ambiguity still open after looking → invoke `brainstorming`: ask ONE
+  question and STOP before building; never guess silently on substantial work.
 
-## The visible loop (run it OUT LOUD for substantial work)
+## The fast path
 
-Each step is shown to the user, never implicit. This visibility IS the product. The `/praxis:mode`
-dial governs how much of it appears: in `fast` mode the Run Card and the task lines are dropped — the
-ceremony, never the crafts, the research, or the verification. Substantial work leaves a folder,
-`specs/<change>/`, whatever the mode; in `fast` a change writes `specs/<change>/implementation.md`
-— Status, Completed, verify evidence — before you stop. For the files and their minimums, see
-`spec-lifecycle`. The floor is mechanical: `hooks/pre-tool-use` denies source edits until the
-mode's minimum spec file exists and asks until `.praxis/approved/<change>` exists — a record the
-model cannot write — and `hooks/stop` blocks once until `implementation.md` records the work;
-`PRAXIS_FLOOR=off` is the only override.
+- Edit + verify, inline or through one specialist from the table below. Work leaves a folder in
+  every mode; in `fast` a change writes `specs/<change>/implementation.md` — Status, Completed,
+  verify evidence — before you stop.
+- Verify: run the acceptance gate; Red → fix → re-verify; never "should work". For web output,
+  invoke `frontend-design` and run its Ship Gate (font ≠ Inter, Baseline table, a11y, motion). A
+  check that ran and had nothing to fail on is a GAP, not a PASS — the kernel carries the four states.
+- Work that turns out substantial reclassifies: say so, then invoke `factory`.
 
-1. **Determine** — restate the task and the plan in one or two lines.
-2. **Research first** — look before building: read the reference/screenshot closely, invoke
-   `scout` for prior art in this repo, invoke `docs-seeker` for unfamiliar APIs. Never decide on
-   stale assumptions.
-3. **Clarify** — if anything material is still ambiguous after looking (scope, framework, data,
-   key behavior), invoke `brainstorming`: ask the user ONE question at a time and STOP before
-   building.
-   Do not guess silently on substantial work — you would build what you imagined, not what they
-   want. A faithful replica answers most of itself; ask only what the reference cannot tell you.
-4. **Run Card** — BEFORE building, emit this block; update it at each phase:
-   ```
-   RUN CARD — <task>
-   spec:     specs/<change>/   (stage: <stage>)
-   phase:    <define | plan | build | verify | review | ship — `Needs your decision` when stopped and waiting on you>
-   approach: <inline | delegate → design / engineer / backend / security / platform / researcher>
-   research: <what you checked>
-   verify:   <the acceptance gate — how you will prove it is right>
-   ```
-   Phases, task states, and the ledger's shape are defined once in `docs/task-model.md` — read it
-   there rather than inventing a vocabulary here. The `spec:` line names the change the card is
-   about (`.praxis/active-change`); on "continue <change>", read `specs/<change>/implementation.md`
-   first.
-5. **Design, get the one approval, then delegate** — write `specs/<change>/design.md` and set the
-   Run Card to `Needs your decision`; the first source edit will ask — the host's permission
-   prompt is the one approval per change. The approval is a record the model cannot write:
-   `.praxis/approved/<change>`, written by `hooks/post-tool-use` when the approved edit ran, or
-   by the person with `/praxis:approve <change>`. After approval set `stage: planned` in
-   `implementation.md` — the human-readable record, it unlocks nothing — keep it current per
-   task, and the floor is silent. Then **do NOT write all the files inline in the main thread**, and two+ disjoint
-   tasks fan out in one parallel wave. Once the user accepts, invoke `writing-plans` to break it
-   into bite-sized independently-testable tasks in the ledger — never a vague 4-bullet plan — then
-   invoke `subagent-driven-development` and execute task-by-task: one implementer subagent per
-   task, review between, progress in the ledger. A file count is not an acceptance; a ledger
-   nobody agreed to is ceremony charged to the wrong person. For an unattended iterate-until-done
-   run, use `/praxis:loop`, which invokes `autonomous-loop` — guardrails outside the model.
-6. **Verify** — run the acceptance gate. For web output, invoke `frontend-design` and run its
-   Ship Gate (font ≠ Inter, mandatory Baseline table, a11y, motion). Red → fix → re-verify. Never "should work."
-   A check that ran and had nothing to fail on is a GAP, not a PASS — the kernel carries the four
-   result states and the words to report them in.
-7. **Synthesize** — state what changed and why; if a reusable pattern emerged, suggest `/learn`.
-   This step is the orchestrator's alone: a subagent reports its result and never proposes `/learn`,
-   which is why the kernel does not carry it.
+## The cycle (substantial work, `full`)
+
+`factory` runs it: `spec-writer` writes `specs/<change>/spec.md` → one approval → `builder` in a
+worktree → the lenses in one wave behind a barrier → `approver` re-runs the checks → a PR. The
+limits are hooks: `hooks/pre-tool-use` denies source edits until `specs/<change>/spec.md`
+exists and asks until `.praxis/approved/<change>` exists — a record the model cannot write — and
+`hooks/stop` blocks once until `implementation.md` records the work; `PRAXIS_FLOOR=off` is the only
+override. Once `specs/<change>/spec.md` is written, set the Run Card to `Needs your decision`; the
+first source edit will ask — the host's permission prompt is the one approval per change. The
+approval is a record the model cannot write: `.praxis/approved/<change>`, written by
+`hooks/post-tool-use` when the approved edit ran, or by the person with `/praxis:approve <change>`.
+After approval set `stage: planned` in `implementation.md` — the human-readable record, it unlocks
+nothing. Do NOT build inline in the main thread: dispatch a role and pass it paths, never content.
+Files and stages: `spec-lifecycle`; the cycle for a reader: `docs/cycle.md`.
+
+## The Run Card
+
+Rendered at every phase change and on every `Needs your decision` — one shape on every host:
+
+```
+RUN CARD — <task>
+spec:     specs/<change>/   (stage: <stage>)
+phase:    <define | plan | build | verify | review | ship — `Needs your decision` when stopped and waiting on you>
+approach: <inline | delegate → spec-writer / builder / design / engineer / backend / security / platform / researcher>
+research: <what you checked>
+verify:   <the acceptance gate — how you will prove it is right>
+```
+
+Phases, task states, and the ledger's shape are defined once in `docs/task-model.md` — read it there
+rather than inventing a vocabulary here. The `spec:` line names the change the card is about
+(`.praxis/active-change`); on "continue <change>", read `specs/<change>/implementation.md` first.
 
 ## Route by task
+
+`factory` dispatches the cycle's roles; these specialists serve the fast path and research:
 
 | Task | Specialist agent | Discipline skill |
 |---|---|---|
@@ -101,7 +92,7 @@ model cannot write — and `hooks/stop` blocks once until `implementation.md` re
 | Bug or failing test | `engineer` | `systematic-debugging` |
 | Approach unclear (2+ options) | — | `strategy-compare` (decide before building) |
 | A consequential decision needs attacking before commitment | — | `decision-challenge` |
-| Substantial change is green and about to be called done | `refuter-correctness` + `refuter-security` + `refuter-tests` (one wave) | — |
+| A change built outside the cycle is green and about to be called done | `refuter-correctness` + `refuter-security` + `refuter-tests` (one wave) | — |
 | Take apart a codebase someone else owns | `analyst` | `project-teardown` |
 | Whether to take on a package, Action or plugin | `analyst` | `dependency-adoption` |
 | Will this architecture hold under its quality requirements | `analyst` | `architecture-evaluation` |
@@ -112,7 +103,6 @@ model cannot write — and `hooks/stop` blocks once until `implementation.md` re
 ## How activation works
 
 Skills activate by their `description` — invoke the matching one rather than working from training
-memory; it carries the non-obvious delta, which is the whole point of Praxis. **Crafts**
-(`anti-slop`, `a11y-baseline`, `motion-discipline`, `minimalism`, `orchestration`,
-`evidence-discipline`) are always-on for the work each governs
-taste disciplines every output honors, whether or not the user names them.
+memory; it carries the non-obvious delta. **Crafts** (`anti-slop`, `a11y-baseline`,
+`motion-discipline`, `minimalism`, `orchestration`, `evidence-discipline`) are always-on for the work
+each governs — honored whether or not the user names them, reaching only the roles that declare them.

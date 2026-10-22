@@ -1,7 +1,7 @@
 # {Change Name} — Design
 
-<!-- Source of truth. `full`: Overview, Problem, Scope, Technical Design, Acceptance.
-     `deep`: everything. The user reviews this file before any source file is edited. -->
+<!-- Legacy name — new changes use spec.md (specs/_templates/spec.md). Existing changes keep this
+     file: the floor accepts either, and the person reviews it before any source file is edited. -->
 
 ## Overview
 {What this change does, in 2-3 sentences.}

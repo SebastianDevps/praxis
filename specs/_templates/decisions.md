@@ -1,8 +1,8 @@
 # {Change Name} — Decisions
 
 <!-- One ADR per decision where an alternative was rejected. Written at the moment the
-     decision is made, not after. `deep`: at least one ADR is mandatory, and refuter
-     verdicts that changed a decision are recorded here.
+     decision is made, not after. No mode requires one: the three gates below decide, and a
+     lens finding that changed a decision is recorded here.
 
      Three gates, all three or skip the ADR:
        1. Hard to reverse — changing your mind later costs something real.

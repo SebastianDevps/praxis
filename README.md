@@ -4,9 +4,10 @@
 
 Your agent stops guessing, works out loud, and remembers what your project already decided.
 
-It plans before it builds, stops for your approval, verifies what it claims, and leaves the
-reasoning in your repo. [Every claim on this page is measured](#measured-not-asserted), and every
-gate is mutation-tested.
+Hand it a feature and it comes back with a PR that was specified, built, reviewed by lenses that
+did not write it, and approved by a role that re-ran the checks — with one approval from you, and a
+visible stop when it needs you. [Every claim on this page is measured](#measured-not-asserted), and
+every gate is mutation-tested.
 
 ```
 /plugin marketplace add SebastianDevps/praxis
@@ -23,65 +24,109 @@ Also runs on **Codex · Cursor · Gemini CLI · Copilot**.
 Ask for something substantial and the work becomes visible before a line is written:
 
 ```
-RUN CARD — add rate limiting to the public API
-spec:     specs/api-rate-limiting/   (stage: designed)
-phase:    plan — Needs your decision
-approach: delegate → backend
-research: scanned src/middleware (no limiter), Redis already a dependency
-verify:   npm test api → 429 after 100 req/min, headers present
+RUN CARD — export invoices to CSV
+spec:     specs/export-invoices-csv/   (stage: designed)
+phase:    define — Needs your decision
+approach: delegate → spec-writer
+research: invoices module, tenant guard, existing exporters; one question asked, answered
+verify:   the spec's Acceptance — GET /invoices/export → 200 CSV; cross-tenant request → 403
 ```
 
-It stops there. You say go, and only then does it build.
+It stops there. You approve the spec, and only then does it build.
 
 Nothing was invented, nothing was guessed, and if your context is wiped mid-build
 the ledger on disk still knows where it left off.
 
 ---
 
+## The cycle
+
+Every substantial change runs the same five roles, each in a fresh context, talking only through
+files:
+
+```
+            spec-writer done          person approves            builder done
+  new ───────────────────► designed ───────────────────► planned ─────────────► built
+                                   (ask | approve.sh writes                        │
+                                    .praxis/approved/<c>)                           │ round 1
+                                                                                    ▼
+                                                        ┌────────────── review/round-N ──────────────┐
+                                                        │ barrier: every lens file present           │
+                                                        │   all PASS ──────────────► approver        │
+                                                        │   any CHANGES, N<3 ──────► builder resume ─┘ round N+1
+                                                        │   N would be 3 ──────────► ESCALATE (hook)
+                                                        └────────────────────────────────────────────┘
+                                                                     │                    │
+                                                           decision APPROVE        decision ESCALATE
+                                                                     │                    │
+                                                                     ▼                    ▼
+                                                                  shipped            needs-human
+                                                              (push + PR)      ┌──── /praxis:rework ──► built (round 1)
+                                                                               └──── /praxis:approve ─► shipped
+```
+
+- **spec-writer** turns your request into `spec.md`: goal, scope, runnable acceptance checks, and a
+  `[NEEDS CLARIFICATION]` for every ambiguity the repo cannot answer. You get one question at a time.
+- **builder** works in its own worktree on `praxis/<change>`, reads the spec and nothing else,
+  test-first.
+- **lenses** — correctness, security, tests, and UI when the diff touches UI paths — review in one
+  parallel wave, each in a fresh context, and each must write what it tried to break even when it
+  passes.
+- **approver** re-runs every acceptance check itself before writing APPROVE or ESCALATE. The
+  builder's own test report is never evidence.
+- **ship** pushes the branch and opens a PR. Main is never written by the cycle; you merge.
+
+Two fix rounds at most, then it escalates to you: `/praxis:rework <change> "<note>"` sends it back
+to the builder, `/praxis:approve <change>` ships it as is. [The cycle for a reader](docs/cycle.md).
+
+## The limits are hooks, not prose
+
+What must hold whatever the model does is decided by shell, below the model:
+
+| limit | mechanism |
+|---|---|
+| no source edit before an approved spec | `pre-tool-use` denies until `spec.md` exists and asks until `.praxis/approved/<change>` exists — a record only your answer, or `/praxis:approve`, can write |
+| the builder waits for every lens | `pre-tool-use` denies a builder resume while a review file is missing |
+| at most two fix rounds | `pre-tool-use` denies the dispatch that would open round 3 |
+| nothing ships without APPROVE and every lens PASS | `pre-tool-use` gates `git push` and `gh pr create` on `decision.md` |
+| the stop is a record | `post-tool-use` writes `.praxis/needs-human/<change>` on ESCALATE |
+
+`PRAXIS_FLOOR=off` is the only override, and the README says so instead of hiding it. The floor
+runs on Claude Code and Codex; on Cursor, Gemini and Copilot the same rules arrive as prose.
+
 ## You set the intensity
 
-The model does not decide how much process to run. You do.
-
 ```
-/praxis:mode fast     rename, typo, one-file fix
-/praxis:mode full     ordinary feature work            ← default
-/praxis:mode deep     auth, migrations, anything you won't revisit
+/praxis:mode fast     rename, typo, one-file fix — edit + verify, a five-line ledger
+/praxis:mode full     everything else — the cycle                            ← default
 ```
 
-| | `fast` | `full` | `deep` |
-|---|---|---|---|
-| a question | answered | answered | answered |
-| `specs/<change>/` | `implementation.md` | + `design.md` | + ADRs, `AGENTS.md`, `docs/` |
-| Run Card | — | ✓ | ✓ |
-| stops for your approval | — | ✓ once, after `design.md` | ✓ |
-| mandatory research | — | — | ✓ |
-| approach comparison | — | — | ✓ |
-| adversarial review | — | — | ✓ |
-
-The dial holds across turns and travels into every dispatched specialist. It changes
-the **ceremony** only — the taste rules, the simplicity ladder and the safety
-carve-outs are identical at every level.
+The dial holds across turns and travels into every dispatched role. It changes the **ceremony**
+only — the taste rules, the simplicity ladder and the safety carve-outs are identical at both
+levels. There is no third level: review and ship are always on, and the diff — not a dial —
+decides which lenses run.
 
 ## Every change leaves a folder
 
-`specs/<change>/` — design, decisions, implementation, future work — copied from a template and
-committed with your code. The convention comes from [cal.diy](https://github.com/calcom/cal.diy/tree/main/specs);
-Praxis makes it the floor instead of an opt-in. Its `implementation.md` is the ledger that
-survives a context wipe:
+`specs/<change>/` — committed with your code, one writer per file:
+
+```
+spec.md              spec-writer writes · you approve · builder, lenses, approver read
+implementation.md    the ledger — orchestrator only: stage, round, lenses, tasks, session notes
+review/round-N/      one file per lens: PASS | CHANGES, findings with file:line, what it tried to break
+decision.md          approver: APPROVE | ESCALATE, with every check it ran and its output
+decisions.md         ADRs, only when a decision passes the three gates
+```
+
+The convention comes from [cal.diy](https://github.com/calcom/cal.diy/tree/main/specs); Praxis
+makes it the floor instead of an opt-in. Its `implementation.md` is the ledger that survives a
+context wipe:
 
 ```
 - [ ] T04 · phase: build · state: blocked(user) · Add POST /login route
       files:  src/routes/auth.ts
       verify: npm test auth
       note:   session store or JWT? your call — both work here
-```
-
-Six phases, and the dial decides which ones a task passes through:
-
-```
-fast    build → verify
-full    plan → build → verify → review
-deep    define → plan → build → verify → review → ship
 ```
 
 A skipped phase is skipped, never faked. A file count never escalates the work —
@@ -100,14 +145,14 @@ define    grill the frontier — facts come from subagents, decisions from you, 
 plan      design at the seam: deep modules, few seams, the interface is the test surface
 build     red before green, one vertical slice at a time, no refactor inside the loop
 verify    a red command before any bug hypothesis; PASS · FAIL · SKIP · GAP, never silence
-review    Standards and Spec in separate contexts, findings cite a smell or a spec line, never blended
-ship      rollback path, post-deploy evidence, the smallest increment
+review    lenses that did not write the code, each forced to say what it tried to break
+ship      a PR behind APPROVE and every lens PASS; main is yours
 ```
 
 `/praxis:init` gives the project the shape the method expects: `AGENTS.md` (+ `CLAUDE.md`
 symlink), `CONTEXT.md` (domain glossary with the synonyms to avoid), `agents/rules/` by category,
-`agents/knowledge-base.md`, `agents/commands.md`, `specs/_templates/`. The rules reach the
-reviewer and never the builders, so they cost nothing on the build turns.
+`agents/knowledge-base.md`, `agents/commands.md`, `specs/_templates/`. The rules reach the lenses
+and the approver and never the builder, so they cost nothing on the build turns.
 
 ## Comments a senior would keep
 
@@ -149,23 +194,23 @@ incomplete investigation is the failure this contract exists to prevent.
 ## Why Praxis
 
 - **Taste, enforced.** A Ship Gate refuses Inter/Roboto, AI-purple gradients and zero-a11y output. Every web deliverable gets a font check, a Baseline table and an a11y/motion pass — even when you don't ask.
-- **It engineers like a senior.** Seams agreed before the first test, red before green, vertical slices sized to one fresh context, a red command before any bug hypothesis, and a review that runs Standards and Spec in separate contexts and never blends them. The method is Matt Pocock's; the floor that makes it stick is ours.
-- **It asks before it guesses.** A vague prompt gets one question back, not a wall of code built from what the model imagined.
-- **It stops for your approval.** And the stop is written to a file, so a resumed session still knows it is waiting on a person.
+- **It engineers like a senior.** Seams agreed before the first test, red before green, vertical slices sized to one fresh context, a red command before any bug hypothesis. The method is Matt Pocock's; the floor that makes it stick is ours.
+- **It asks before it guesses.** A vague prompt gets one question back, not a wall of code built from what the model imagined — the spec-writer marks every ambiguity the repo cannot answer, and you get them one at a time.
+- **It is reviewed by something that did not write it.** Three lenses in fresh contexts, each forced to write what it tried to break; an approver that re-runs the checks instead of reading the builder's report. Diversity comes from lenses and contexts, not from a bigger panel.
+- **It stops for your approval — once.** Before code, on the spec; and again only when two review rounds could not converge. Both stops are written to files, so a resumed session still knows it is waiting on a person.
 - **A question gets an answer.** Not a process. The dial scales ceremony, and a question has none to scale.
 - **It learns per project.** Recurring lessons land in `.praxis/memory/` as plain Markdown, committed to your repo, read back every session.
-- **A floor, not a ceiling.** Two hooks hold one invariant: a change leaves `specs/<change>/`, and the dial decides how much of it. In `full` that is one stop, after `design.md`: the first source edit asks for your permission, and saying yes is recorded by a hook as `.praxis/approved/<change>` — a record the model cannot write, so it cannot approve itself; then it builds without interruption. Without a prompt (Codex, unattended runs), you approve with `/praxis:approve <change>`. Nothing else gates. `PRAXIS_FLOOR=off` turns it off, and the README says so instead of hiding it. The floor runs on Claude Code and Codex; on Cursor, Gemini and Copilot the same rules arrive as prose.
+- **A floor, not a ceiling.** The approval, the review barrier, the round cap and the ship gate are hook decisions; everything else is text the model reads. Saying yes to the first source edit is recorded by a hook as `.praxis/approved/<change>` — a record the model cannot write, so it cannot approve itself. Without a prompt (Codex, unattended runs), you approve with `/praxis:approve <change>`.
 - **Your project gets a scaffold.** `/praxis:init` writes `AGENTS.md` (+ `CLAUDE.md` symlink), `agents/rules/` with a category-prefix convention, `agents/knowledge-base.md` and `agents/commands.md` — the shape cal.diy uses — creating only what is missing.
 
 ## What's inside
 
-| | | |
-|---|---|---|
-| **44** skills | taste, process, adversarial review, foreign-artifact assessment, per-project memory |
-| **12** agents | design · engineer · backend · platform · security · reviewer · researcher · analyst · orchestrator · a three-lens refuter panel |
+| | |
+|---|---|
+| **45** skills | taste, process, the cycle, adversarial review, foreign-artifact assessment, per-project memory |
+| **16** agents | spec-writer · builder · approver · lens-ui · design · engineer · backend · platform · security · reviewer · researcher · analyst · orchestrator · a three-lens refuter panel |
 | **6** crafts | always-on disciplines, each injected into the dispatches it governs |
-| **5** pipelines | named phase sequences, rendered as Run Cards |
-| **10** commands | `/praxis:init` `:approve` `:design` `:feature` `:bug` `:refactor` `:investigate` `:loop` `:learn` `:mode` |
+| **11** commands | `/praxis:init` `:approve` `:rework` `:design` `:feature` `:bug` `:refactor` `:investigate` `:loop` `:learn` `:mode` |
 
 ## Team memory, in your repo
 
@@ -190,23 +235,29 @@ Measured: **~12× fewer tokens** on facts the project already decided
 
 ## The autonomous loop
 
-`/praxis:loop` runs a build to completion, fresh context each iteration, with every guardrail
-**outside the model**: max iterations, wall clock, no-progress detection, and a verifier-integrity
-guard that halts if a test file is touched.
+`/praxis:loop` runs the same cycle unattended, fresh context each iteration, with every guardrail
+**outside the model**: max iterations, wall clock, no-progress detection, a verifier-integrity
+guard that halts if a test file is touched, and a stop at `needs-human`. `--approve` pre-approves
+the spec; the ship gate still needs APPROVE in a file.
 
 ---
 
 ## Measured, not asserted
 
-Every claim on this page has a harness behind it. Eleven write-ups and the code that produced them
+Every claim on this page has a harness behind it. The write-ups and the code that produced them
 live on the [`measurement`](https://github.com/SebastianDevps/praxis/tree/measurement) branch —
 `main` ships what serves the agent.
 
 - **~12× fewer tokens** on facts the project had already decided
   ([the learning A/B](https://github.com/SebastianDevps/praxis/blob/measurement/evals/2026-06-26-learning-ab.md)).
-- **`design.md` before the first source edit in 3/3 runs; 0/3 without the floor** (`evals/floor/`).
+- **The spec before the first source edit in 3/3 runs; 0/3 without the floor** (`evals/floor/`,
+  measured on `design.md`, the spec's former name).
 - **Self-approval 3/3 → 0/3** once the approval became a record only a hook can write.
 - **Vertical slices 3/3 vs 0/3** when the TDD method is loaded (`evals/value/`).
+- **Fan-out 0/72** before the cycle: parallel review existed in prose and in no transcript
+  (`docs/eval-data/`). The barrier is now a hook decision; the cycle's own numbers — dispatch
+  count, barrier order, round cap, token cost — are `evals/cycle`'s to publish, and until it runs
+  they are design, not measurement.
 
 Every gate is mutation-tested — made to fail on purpose, then restored — so none of them can pass
 vacuously. That is how a routing table pointing at two agents that never existed was caught.

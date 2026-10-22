@@ -90,7 +90,7 @@ touched, so `lens-ui` does not join).
    │               │                                                           │ controller GET /invoices/export · tenant guard
    │               │                                                           │ commits on praxis/export-invoices-csv
    │               │◄──────────────────────────────────────────────────────────┤ handback: report + commit range
-   │               │ ledger: stage built · round 1 · builder: <agent-id>
+   │               │ ledger: stage implemented · round 1 · builder: <agent-id>
    │               │ writes review/round-1/lenses = correctness, security, tests
    │               │ ONE message · 3 Agent calls (paths: spec.md, diff main...praxis/<c>, rules)
    │               ├───────────────────────────────────────────────────────────────────►│
@@ -137,7 +137,7 @@ The same request on the ESCALATE path:
 
 ```
             spec-writer done          person approves            builder done
-  new ───────────────────► designed ───────────────────► planned ─────────────► built
+  new ───────────────────► designed ───────────────────► planned ─────────────► implemented
                                    (ask | approve.sh writes                        │
                                     .praxis/approved/<c>)                           │ round 1
                                                                                     ▼
@@ -152,7 +152,7 @@ The same request on the ESCALATE path:
                                                                      │                    │
                                                                      ▼                    ▼
                                                                   shipped            needs-human
-                                                              (push + PR)      ┌──── /praxis:rework ──► built (round 1)
+                                                              (push + PR)      ┌──── /praxis:rework ──► implemented (round 1)
                                                                                └──── /praxis:approve ─► shipped
 ```
 

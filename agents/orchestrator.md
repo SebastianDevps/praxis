@@ -68,7 +68,7 @@ Shared files between dispatched writers → sequential; disjoint → one paralle
 
 `specs/<change>/implementation.md`, frontmatter `stage:`, `round:`, `base:`, `builder:`, `lenses:`,
 `owner:`, body Tasks · Completed · Blocked · Session Notes. You advance `stage:` one step at a time
-as the record of what happened — `new → designed → planned → built → shipped`, or `needs-human` —
+as the record of what happened — `new → designed → planned → implemented → shipped`, or `needs-human` —
 and it unlocks nothing: the markers and the review files do. The person writes it too, through
 `scripts/approve.sh` and `scripts/rework.sh` (`stage:`, `round:`); nobody else. You never write a
 review or a decision; the one exception is `verdict: SKIP` for a lens that never returned. You never

@@ -52,7 +52,7 @@ verify:   <the acceptance gate — the spec's Acceptance lines, re-run by the ap
 4. **Build.** Run `scripts/worktree.sh <change> <base>` (`.praxis/worktrees/<change>`, branch
    `praxis/<change>` from the ledger's `base:`). Dispatch `builder` with the worktree path, the base
    branch and the spec path — never the spec's content. Record `builder: <agent id>` in the ledger.
-   On its handback: `stage: built`.
+   On its handback: `stage: implemented`.
 5. **Round N.** Set `round: N`. Add `ui` to `lenses:` when `git diff --name-only <base>...praxis/<change>`
    touches `components/`, `*.tsx`, `*.vue`, `*.css` or `*.html`. Write `specs/<change>/review/round-N/lenses`
    (one lens name per line) BEFORE dispatching. Then, in ONE message, dispatch every lens —

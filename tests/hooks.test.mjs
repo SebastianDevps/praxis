@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync, accessSync, constants, mkdtempSync } from "node:fs";
+import { readFileSync, accessSync, constants, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -1502,6 +1502,44 @@ test("an edit inside the builder's worktree is judged by the worktree, not as th
   assert.equal(decision(fromWt(join(wt, "src/x.ts"))), "allow");
   // The main checkout keeps its own state: no marker there, so an edit there still asks.
   assert.equal(decision(hook("pre-tool-use", edit(join(repo, "src/a.js")))), "ask");
+});
+
+// The discriminating form of the test above. "Seeded → allow" cannot tell a floor that passed
+// from a floor that was skipped — a check that cannot fail is a GAP. So the worktree is the one
+// scripts/worktree.sh really makes, and the floor is driven through all three answers by
+// removing what it keys on: the marker (→ ask), then the spec (→ deny).
+test("a worktree made by scripts/worktree.sh is judged by the floor: ask, allow and deny are all reachable", () => {
+  const { repo, hook, write, commit, approve } = floorRepo({ mode: "full" });
+  write("README.md", "x\n");
+  commit();
+  write("specs/x/spec.md", "# x\n");
+  write("specs/x/implementation.md", ledger("planned"));
+  write(".praxis/active-change", "x\n");
+  approve("x");
+  const made = spawnSync("bash", [join(ROOT, "scripts", "worktree.sh"), "x"], { cwd: repo, env: CLEAN, encoding: "utf8", timeout: 20_000 });
+  assert.equal(made.status, 0, made.stderr);
+  const wt = made.stdout.trimEnd().split("\n").at(-1);
+  assert.ok(fsExists(join(wt, ".praxis/approved/x")), "worktree.sh seeds the marker — the test removes it on purpose");
+  assert.ok(fsExists(join(wt, "specs/x/spec.md")), "worktree.sh seeds the spec");
+  const forms = [join(wt, "src/a.js"), "src/a.js"];
+  const fromWt = (file_path) => hook("pre-tool-use", { tool_name: "Edit", cwd: wt, tool_input: { file_path } });
+
+  rmSync(join(wt, ".praxis/approved/x"));
+  for (const path of forms) {
+    const out = fromWt(path);
+    assert.equal(decision(out), "ask", `${path}: no marker in the worktree must ask, not pass`);
+    assert.match(reason(out), /specs\/x\/spec\.md is written/);
+  }
+  writeFileSync(join(wt, ".praxis/approved/x"), "");
+  for (const path of forms) assert.equal(decision(fromWt(path)), "allow", path);
+
+  rmSync(join(wt, ".praxis/approved/x"));
+  rmSync(join(wt, "specs/x/spec.md"));
+  for (const path of forms) {
+    const out = fromWt(path);
+    assert.equal(decision(out), "deny", `${path}: no spec in the worktree must deny`);
+    assert.match(reason(out), /specs\/x\/spec\.md does not exist/);
+  }
 });
 
 test("the ship gate: ESCALATE denies, APPROVE (human) allows, APPROVE needs every lens PASS", () => {
