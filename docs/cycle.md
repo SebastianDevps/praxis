@@ -112,18 +112,29 @@ and SKIP is not PASS, so the change escalates.
 | `Stop` | block once when source changed and no `implementation.md` did |
 
 ```
-open cycle of <c>  ⇔  implementation.md exists, stage ≠ shipped, and the ledger has `round:` or
-                       `builder:`, or specs/<c>/review/ exists. A pre-0.10 ledger is never open.
+open cycle of <c>  ⇔  implementation.md exists, NOT closed, and (`builder:` non-empty OR `round:` ≥ 1
+                       OR specs/<c>/review/ exists). The template's `round: 0` and empty `builder:`
+                       are not a cycle; a pre-0.10 ledger is never open.
+closed             ⇔  stage: shipped AND .praxis/ship/<c> exists; a shipped ledger without the
+                       marker is still open.
+what is a ship: only a command that publishes — a `git push` that updates a branch (not
+  --dry-run/-n, not a tag refspec, not a deletion: a deletion is read by the trunk rule alone);
+  `gh pr create`; `gh pr merge`; `gh api` with a writing method (-X POST|PUT|PATCH|DELETE, or
+  -f/-F/--field/--raw-field/--input, which imply POST) on pulls|merges|git/refs; a GraphQL mutation
+  naming mergePullRequest|createPullRequest. GET reads are free.
 change a ship command is about:
   pushed or PR head branch praxis/<c>  → <c>
   any other branch                     → .praxis/active-change, only if it is an open cycle
   neither                              → not a ship → allow
-ship (`git push`, `gh pr create`, `gh api …pulls|merge` about <c>):
-  .praxis/ship/<c> exists and decision.md verdict is APPROVE or APPROVE (human) → allow
+ship of <c>:
+  .praxis/ship/<c> AND (decision.md APPROVE (human) OR decision.md APPROVE with the current
+  round complete and every lens PASS, checked at push time)                      → allow
   anything else                                                                  → deny with the reason
-trunk rule: push destination main, master or the ledger's `base:` while ANY change is an open
-  cycle → deny "the cycle never pushes trunk"; `--all`, `--mirror`, `--branches` likewise.
-  No open cycle → not Praxis's call → allow.
+fresh clone: scripts/approve.sh on a change whose decision.md already says APPROVE re-arms
+  .praxis/ship/<c> and changes nothing else — never rewrites the approver's APPROVE as APPROVE (human).
+trunk rule: push destination main, master or the ledger's `base:` (a deletion included) while
+  ANY change is an open cycle → deny "the cycle never pushes trunk"; `--all`, `--mirror`,
+  `--branches` likewise. No open cycle → not Praxis's call → allow.
 `stage: shipped` written to the ledger of an open cycle before .praxis/ship/<c> exists → deny
   (otherwise writing the stage would close the cycle and free the push it was meant to gate).
 builder dispatch (Agent subagent_type ~ builder) or resume (SendMessage to = ledger.builder):
@@ -144,7 +155,9 @@ Bash touching those directories (after normalising `//`, `/./`, `./`, a precedin
 Bash executing a Praxis hook (hooks/<name> as the command word or the script of sh|bash|zsh|dash,
   through env/sudo/time/timeout/nohup/exec/`bash -c`) → deny; reading a hook → allow
 scripts/approve.sh, scripts/rework.sh → need the person's intent token; reading them is allowed
-Codex apply_patch → each path in the patch is classified on its own; one denied path denies the patch
+Codex apply_patch → each path in the patch is classified on its own, `*** Move to:` targets
+  included; `*** Delete File:` (or a move away) of a ledger, decision.md, lens file or record is a
+  write to it; one denied path denies the patch
 ```
 
 `PRAXIS_FLOOR=off` lifts the floor, the barrier, the cap and the ship gate together — the only

@@ -708,17 +708,30 @@ praxis_session_marker() { printf '%s/.praxis/session-started' "$1"; }
 
 # The file paths an edit tool call targets, one per line, from the host payload.
 # Claude Code: tool_input.file_path (MultiEdit carries the same key; NotebookEdit calls it
-# notebook_path). Codex apply_patch: every `*** Add/Update/Delete File:` header; JSON keeps
-# the patch on one line, so a header ends at the escaped newline or the closing quote.
+# notebook_path). Codex apply_patch: every `*** Add/Update/Delete File:` header and every
+# `*** Move to:` target — a rename writes its destination like an Add (security lens, round 1);
+# JSON keeps the patch on one line, so a header ends at the escaped newline or the closing quote.
 praxis_edit_paths() {
   local paths; paths="$(praxis_json_string "$1" file_path)"
   [ -n "$paths" ] || paths="$(praxis_json_string "$1" notebook_path)"
   if [ -z "$paths" ]; then
     paths=$(printf '%s' "$1" \
-      | grep -oE '\*\*\* (Add|Update|Delete) File: [^"\\]+' \
-      | sed -E 's/^\*\*\* (Add|Update|Delete) File: //')
+      | grep -oE '\*\*\* ((Add|Update|Delete) File|Move to): [^"\\]+' \
+      | sed -E 's/^\*\*\* ((Add|Update|Delete) File|Move to): //')
   fi
   printf '%s' "$paths"
+}
+
+# The paths a Codex patch removes, one per line: each `*** Delete File:`, and each
+# `*** Update File:` followed by `*** Move to:` (the rename takes the file away from there).
+praxis_deleted_paths() {
+  printf '%s' "$1" \
+    | grep -oE '\*\*\* ((Add|Update|Delete) File|Move to): [^"\\]+' \
+    | awk '
+        /^\*\*\* Delete File: / { sub(/^\*\*\* Delete File: /, ""); print; last = ""; next }
+        /^\*\*\* Update File: / { sub(/^\*\*\* Update File: /, ""); last = $0; next }
+        /^\*\*\* Move to: / { if (last != "") print last; last = ""; next }
+        { last = "" }'
 }
 
 # Every one of those paths that lies inside <root>, relative to it, one per line.
@@ -796,27 +809,30 @@ praxis_active_change_file() {
   return 0
 }
 
-# Whether a ledger file is an open cycle (design.md, Round-3 amendments): its `stage:` is not
-# shipped, and it carries the cycle's own keys — `round:` or `builder:`, empty or not — or its
-# change has a review/ folder. A pre-0.10 ledger has none of them and is never an open cycle, so
-# the gates leave that project's unrelated PRs, pushes and dispatches alone.
+# Whether a ledger file is an open cycle (design.md, "Round-3 amendments, lens round 1"): the
+# cycle has really started — a non-empty `builder:`, a `round:` of 1 or more, or a review/
+# folder — and it is not closed. Closed is `stage: shipped` AND `.praxis/ship/<c>`: a stage the
+# model writes, by any spelling, closes nothing without the marker only a hook or the person's
+# script writes. The template's `round: 0` and empty `builder:` are not a cycle, and a pre-0.10
+# ledger has neither key, so the gates leave a trivial change's and a legacy project's PRs alone.
 #   praxis_ledger_is_open <ledger file>
 praxis_ledger_is_open() {
-  local flags
+  local flags dir
   [ -f "${1:-}" ] || return 1
+  dir="${1%/implementation.md}"
   flags="$(awk '
+    function val(s) { sub(/^[^:]*:[ \t]*/, "", s); sub(/[ \t]*#.*$/, "", s); sub(/[ \t]+$/, "", s); return s }
     { sub(/\r$/, "") }
     NR == 1 { fm = ($0 ~ /^---[ \t]*$/); if (fm) next }
     fm && /^---[ \t]*$/ { exit }
-    !seen && index($0, "stage:") == 1 {
-      v = $0; sub(/^[^:]*:[ \t]*/, "", v); sub(/[ \t]*#.*$/, "", v); sub(/[ \t]+$/, "", v)
-      seen = 1; if (tolower(v) == "shipped") shipped = 1
-    }
-    index($0, "round:") == 1 || index($0, "builder:") == 1 { cycle = 1 }
+    !st && index($0, "stage:") == 1 { st = 1; if (tolower(val($0)) == "shipped") shipped = 1 }
+    !rd && index($0, "round:") == 1 { rd = 1; r = val($0); sub(/[^0-9].*$/, "", r); if (r != "" && r + 0 >= 1) cycle = 1 }
+    !bd && index($0, "builder:") == 1 { bd = 1; if (val($0) != "") cycle = 1 }
     END { printf "%d%d", shipped, cycle }
   ' "$1")"
-  case "$flags" in 1*) return 1 ;; 01) return 0 ;; esac
-  [ -d "${1%/implementation.md}/review" ]
+  case "$flags" in ?0) [ -d "${dir}/review" ] || return 1 ;; esac
+  case "$flags" in 1?) [ -f "${dir%/specs/*}/.praxis/ship/${dir##*/}" ] && return 1 ;; esac
+  return 0
 }
 
 # The same, for a change by name.

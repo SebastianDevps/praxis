@@ -54,11 +54,16 @@
 #                                  review; must name correctness, security and tests
 #   specs/<c>/implementation.md    the main thread only; `round:` never goes down — rework.sh,
 #                                  run by the person, is the only way down; `stage: shipped` on
-#                                  an open cycle only once .praxis/ship/<c> exists
+#                                  an open cycle only once .praxis/ship/<c> exists; a Codex
+#                                  patch never deletes it or moves it away
+# A Codex patch writes every `*** Add|Update|Delete File:` path and every `*** Move to:` target;
+# a Delete File of any record above is a write to it.
 #
-# An OPEN CYCLE is a change whose ledger exists, whose `stage:` is not shipped, and which carries
-# `round:` or `builder:` in its frontmatter or has a review/ folder (praxis_ledger_is_open). A
-# ledger written before the cycle existed is never one, so it never gates an unrelated PR.
+# An OPEN CYCLE is a change whose ledger exists, that has really started — a non-empty
+# `builder:`, a `round:` of 1 or more, or a review/ folder — and that is not CLOSED: `stage:
+# shipped` AND .praxis/ship/<c> (praxis_ledger_is_open). The template's `round: 0` and empty
+# `builder:` are not a cycle, and a ledger written before the cycle existed is never one, so
+# neither gates an unrelated PR; a `stage: shipped` without the marker closes nothing.
 # The lenses a round waits for are its review/round-N/lenses (else the ledger's `lenses:`),
 # always unioned with correctness, security and tests.
 #
@@ -80,20 +85,27 @@
 #                  is the larger of the ledger's `round:` and the highest `review/round-N/` that
 #                  holds a review, so a field written back to 0 reopens nothing.
 #   Bash         read segment by segment as the shell would (below):
-#     ship       `git push`, `gh pr create|merge`, `gh api …pulls…|…/merge…|…git/refs…` or a
-#                GraphQL create/mergePullRequest. The change it is about: a pushed refspec
-#                SOURCE (else destination) or a PR head `praxis/<c>` → c, case-folded, a
-#                rev-expression cut off (`praxis/c~0`); any other branch → the change in
-#                .praxis/active-change, only when it is an open cycle (never the newest-ledger
-#                fallback); neither, or `git push --tags` with no refspec → not a ship, allow.
-#                Every segment of the command is judged. A change ships only while
-#                .praxis/ship/<c> exists AND its decision.md says APPROVE or APPROVE (human);
-#                no ledger for the name → deny ("no change record for praxis/<c>").
+#     ship       only a command that publishes: a `git push` that updates a branch — not
+#                `--dry-run`/`-n`, not a tag (`refs/tags/…`, or a name git resolves only as a
+#                tag), not a deletion (`:x`, `--delete`, `-d`; read by the trunk rule alone), not
+#                `--tags` with no refspec — `gh pr create`, `gh pr merge`, and `gh api` with a
+#                writing method (`-X|--method POST|PUT|PATCH|DELETE`, or `-f|-F|--field|
+#                --raw-field|--input`, which imply POST) on pulls|merges|git/refs, or a GraphQL
+#                mutation naming createPullRequest|mergePullRequest. A GET is a read and free.
+#                The change it is about: a pushed refspec SOURCE (else destination) or a PR head
+#                `praxis/<c>` → c, case-folded, a rev-expression cut off (`praxis/c~0`); any
+#                other branch → the change in .praxis/active-change, only when it is an open
+#                cycle (never the newest-ledger fallback); neither → not a ship, allow. Every
+#                segment of the command is judged. A change ships only while .praxis/ship/<c>
+#                exists AND its decision.md says APPROVE (human), or APPROVE with the CURRENT
+#                round complete and every lens PASS, read at push time; no ledger for the name
+#                → deny ("no change record for praxis/<c>"). On a fresh clone the deny names
+#                /praxis:approve <c>, which re-arms the marker over a committed APPROVE.
 #     trunk      a push whose destination is main, master or an open cycle's `base:`
-#                (case-folded; `HEAD:main`, `x:refs/heads/Main`, `:main`, a SHA or a
-#                rev-expression as source), a `gh api …git/refs/heads/<trunk>`, or `--all`,
-#                `--mirror`, `--branches`, while ANY change is an open cycle → deny. No open
-#                cycle → not Praxis's call, allow.
+#                (case-folded; `HEAD:main`, `x:refs/heads/Main`, `:main`, `--delete main`, a SHA
+#                or a rev-expression as source), a writing `gh api …git/refs/heads/<trunk>`, or
+#                `--all`, `--mirror`, `--branches`, while ANY change is an open cycle → deny. No
+#                open cycle → not Praxis's call, allow.
 #     records    a pipeline naming .praxis/{approved,needs-human,intent,ship}/ — or `.praxis`
 #                itself, or a glob over its entries — after normalising `//`, `/./`, a leading
 #                `./`, `..`, and a preceding `cd .praxis[/<dir>]` (or a cwd inside it), is denied
@@ -132,7 +144,16 @@
 #   - wrappers outside the list above (`ionice`, `chrt`, `pushd`, `bash < file`), and the
 #     value-taking options of the listed ones that are not listed
 #   - Bash writes to the records under specs/<c>/ (decision.md, review files, the lens list,
-#     the ledger) are not read; the ship marker is why a decision.md forged that way ships nothing
+#     the ledger) are not read; the ship marker is why a decision.md forged that way ships
+#     nothing, and a ledger's `stage: shipped` closes nothing without it — but DELETING the ledger
+#     from Bash (`rm`, `mv`, `git rm`) ends the cycle, so the host rules also deny
+#     `Bash(*implementation.md*)` and `Bash(*/review/*)`
+#   - a record reached through a symlink alias (`ln -s decision.md d.md`, then Write d.md) is
+#     classified by the alias's name
+#   - a copy or a symlink of scripts/approve.sh under another name, or `bash -s` fed the script
+#     on stdin, is not the person's script by name and needs no token
+#   - `git push --repo=<remote> …`, a glob refspec (`refs/heads/*:…`), `git send-pack`, and a
+#     `gh api` write outside pulls|merges|git/refs (`…/contents`) are not read as ships
 #   - the floor is keyed on the change NAME: `.praxis/active-change` pointed at another,
 #     already approved change satisfies the floor for a source edit (approval is per change);
 #     pointed at a change that is not an open cycle, a push of a non-change branch is no ship
@@ -286,9 +307,11 @@ cap_gate() {
   decide deny "PRAXIS round cap: 2 rounds done → approver / ESCALATE. Round ${round} of specs/${c} is complete and not all PASS (${not_pass}). Until the person runs /praxis:rework ${c} \"<note>\", no SendMessage and no builder, engineer, backend, design or platform dispatch goes out, whichever change .praxis/active-change names. Dispatch the approver, which records ESCALATE in specs/${c}/decision.md; the person then decides with /praxis:approve ${c} or /praxis:rework ${c} \"<note>\". ${override}"
 }
 
-# A ship of one change: its decision.md says APPROVE or APPROVE (human), and .praxis/ship/<c> —
-# written only by post-tool-use over the approver's APPROVE, or by the person's approve.sh —
-# exists. Returns on allow; denies with the reason otherwise.
+# A ship of one change (design.md, "Round-3 amendments, lens round 1"): .praxis/ship/<c> exists —
+# written only by post-tool-use over the approver's APPROVE, or by the person's approve.sh — AND
+# decision.md says APPROVE (human), or APPROVE with the CURRENT round complete and every lens PASS,
+# read now: a round that failed after the marker was written does not ship on the old approval.
+# Returns on allow; denies with the reason otherwise.
 #   ship_gate <change>
 ship_gate() {
   local c="$1" verdict round not_pass
@@ -298,15 +321,19 @@ ship_gate() {
     APPROVE|"APPROVE (human)") ;;
     *) decide deny "PRAXIS ship gate: specs/${c}/decision.md verdict ${verdict} — only APPROVE (with every lens PASS) or APPROVE (human) ships. ESCALATE means the person decides: /praxis:approve ${c} to ship, /praxis:rework ${c} \"<note>\" to send it back to the builder. ${override}" ;;
   esac
-  [ -f "$(praxis_ship_marker "$root" "$c")" ] && return 0
-  [ "$verdict" = APPROVE ] || decide deny "PRAXIS ship gate: specs/${c}/decision.md says APPROVE (human) but .praxis/ship/${c} does not exist. That verdict ships only as scripts/approve.sh writes it, with the marker, when the person runs /praxis:approve ${c}; a decision.md written any other way ships nothing. Stop and ask the person. ${override}"
-  round="$(praxis_effective_round "$root" "$c")"
-  [ "$round" -gt 0 ] || decide deny "PRAXIS ship gate: specs/${c}/decision.md records APPROVE but the round is 0 — no review round ran, so .praxis/ship/${c} was never written. APPROVE ships only with every lens of the current round at PASS; without a round the person decides with /praxis:approve ${c}. ${override}"
-  if ! praxis_round_all_pass "$root" "$c" "$round"; then
-    not_pass="$(praxis_round_not_pass "$root" "$c" "$round" | tr '\n' ' ')"; not_pass="${not_pass% }"
-    decide deny "PRAXIS ship gate: lenses not all PASS in round ${round} of specs/${c}: ${not_pass}. APPROVE ships only with every lens at PASS, each with its 'What I tried to break' — only then does post-tool-use write .praxis/ship/${c}. A CHANGES, SKIP or no-evidence PASS goes back to the builder (round < 2) or to the approver for ESCALATE. The person can override with /praxis:approve ${c}. ${override}"
+  if [ "$verdict" = APPROVE ]; then
+    round="$(praxis_effective_round "$root" "$c")"
+    [ "$round" -gt 0 ] || decide deny "PRAXIS ship gate: specs/${c}/decision.md records APPROVE but the round is 0 — no review round ran. APPROVE ships only with every lens of the current round at PASS; without a round the person decides with /praxis:approve ${c}. ${override}"
+    if ! praxis_round_all_pass "$root" "$c" "$round"; then
+      not_pass="$(praxis_round_not_pass "$root" "$c" "$round" | tr '\n' ' ')"; not_pass="${not_pass% }"
+      decide deny "PRAXIS ship gate: lenses not all PASS in round ${round} of specs/${c}: ${not_pass}. APPROVE ships only while every lens of the current round is at PASS, each with its 'What I tried to break' — read at every push, not when the approval was written. A CHANGES, SKIP or no-evidence PASS goes back to the builder (round < 2) or to the approver for ESCALATE. The person can override with /praxis:approve ${c}. ${override}"
+    fi
   fi
-  decide deny "PRAXIS ship gate: .praxis/ship/${c} does not exist. post-tool-use writes it when the approver Writes specs/${c}/decision.md with APPROVE over a complete all-PASS round; a decision.md written any other way ships nothing. Dispatch the approver to record its decision. ${override}"
+  [ -f "$(praxis_ship_marker "$root" "$c")" ] && return 0
+  if [ "$verdict" = APPROVE ]; then
+    decide deny "PRAXIS ship gate: .praxis/ship/${c} does not exist. post-tool-use writes it when the approver Writes specs/${c}/decision.md with APPROVE over a complete all-PASS round; a decision.md written any other way ships nothing. On a fresh clone or a wiped .praxis/, where the approver's APPROVE is committed and the marker is not, the person runs /praxis:approve ${c}: it re-arms the marker and leaves the approver's APPROVE as it is. Otherwise dispatch the approver to record its decision. ${override}"
+  fi
+  decide deny "PRAXIS ship gate: specs/${c}/decision.md says APPROVE (human) but .praxis/ship/${c} does not exist. That verdict ships only as scripts/approve.sh writes it, with the marker, when the person runs /praxis:approve ${c} — which also re-arms the marker on a fresh clone; a decision.md written any other way ships nothing. Stop and ask the person. ${override}"
 }
 
 # A ship about a change named by a branch: its record must exist, then the ship gate.
@@ -362,18 +389,39 @@ trunk_deny() {
   decide deny "PRAXIS ship gate: the cycle never pushes trunk — ${1} while specs/${open_list%%$'\n'*}/ is an open cycle. A change ships as a PR from praxis/<change> behind its decision; trunk is merged by the person, never pushed by the model. ${override}"
 }
 
-# A `gh` segment: pr create|merge, or api touching pulls, merges, git refs or a GraphQL PR
-# mutation. argv from index $1, dir $2. Denies, or returns.
+# A `gh` segment that publishes (design.md, "Round-3 amendments, lens round 1"): `pr create`,
+# `pr merge`, or `api` with a writing method — `-X|--method POST|PUT|PATCH|DELETE`, or
+# `-f|-F|--field|--raw-field|--input`, which imply POST — on pulls, merges or git/refs, or a
+# GraphQL mutation naming createPullRequest|mergePullRequest. A GET is a read: reading the review
+# comments of the PR being fixed is the honest fix round. argv from index $1, dir $2.
 gh_ship() {
-  local i="$1" dir="$2" n=${#argv[@]} sub t branch="" args="" c
+  local i="$1" dir="$2" n=${#argv[@]} sub t j branch="" args="" method="" fields=0 c
   while [ "$i" -lt "$n" ]; do
     case "${argv[$i]}" in -R|--repo|--hostname) i=$((i + 2)) ;; -*) i=$((i + 1)) ;; *) break ;; esac
   done
   sub="${argv[$i]:-}"; i=$((i + 1))
   case "$sub" in
     pr)  case "${argv[$i]:-}" in create|merge) ;; *) return 0 ;; esac ;;
-    api) args="$(praxis_lower "${argv[*]:$i}")"
-         case "$args" in *pulls*|*/merge*|*mergepullrequest*|*createpullrequest*|*git/refs*) ;; *) return 0 ;; esac ;;
+    api)
+      j="$i"
+      while [ "$j" -lt "$n" ]; do
+        t="${argv[$j]}"
+        case "$t" in
+          -X|--method) method="${argv[$((j + 1))]:-}"; j=$((j + 1)) ;;
+          --method=*)  method="${t#--method=}" ;;
+          -X?*)        method="${t#-X}" ;;
+          -f|-F|--field|--raw-field|--input|-f?*|-F?*|--field=*|--raw-field=*|--input=*) fields=1 ;;
+        esac
+        j=$((j + 1))
+      done
+      [ -n "$method" ] || [ "$fields" = 0 ] || method=POST
+      case "$(praxis_lower "$method")" in post|put|patch|delete) ;; *) return 0 ;; esac
+      args="$(praxis_lower "${argv[*]:$i}")"
+      case "$args" in
+        *graphql*) case "$args" in *mutation*mergepullrequest*|*mutation*createpullrequest*) ;; *) return 0 ;; esac ;;
+        *pulls*|*/merge*|*git/refs*) ;;
+        *) return 0 ;;
+      esac ;;
     *)   return 0 ;;
   esac
   load_cycles
@@ -399,9 +447,18 @@ gh_ship() {
   return 0
 }
 
+# Whether a ref names a tag rather than a branch: `refs/tags/…`, or a name git resolves only as a tag.
+#   is_tag <ref> <dir>
+is_tag() {
+  case "$(praxis_lower "$1")" in refs/tags/*) return 0 ;; refs/*|"") return 1 ;; esac
+  git -C "$2" show-ref --verify -q "refs/tags/$1" 2>/dev/null
+}
+
 # A `git … push …` segment: argv from index $1 (the `git` token), dir $2. Denies, or returns.
+# Only a push that updates a branch is a ship (design.md, "Round-3 amendments, lens round 1"): not
+# `--dry-run`/`-n`, not a tag, not a deletion — a deletion is read by the trunk rule alone.
 git_ship() {
-  local i="$1" gitdir="$2" n=${#argv[@]} pos=0 all=0 tags=0 ref src dst branch c="" cs other=0 trunk=""
+  local i="$1" gitdir="$2" n=${#argv[@]} pos=0 all=0 tags=0 dry=0 del=0 deleting ref src dst branch c="" cs other=0 trunk=""
   local -a refs=()
   i=$((i + 1))
   while [ "$i" -lt "$n" ]; do
@@ -418,12 +475,15 @@ git_ship() {
     case "${argv[$i]}" in
       --all|--mirror|--branches) all=1 ;;
       --tags) tags=1 ;;
+      --dry-run|-n) dry=1 ;;
+      --delete|-d) del=1 ;;
       -o|--push-option|--receive-pack|--exec|--repo) i=$((i + 1)) ;;
       -*) ;;
       *) pos=$((pos + 1)); [ "$pos" -lt 2 ] || refs+=("${argv[$i]}") ;;
     esac
     i=$((i + 1))
   done
+  [ "$dry" = 0 ] || return 0                                                  # publishes nothing
   [ "${#refs[@]}" -gt 0 ] || [ "$tags" = 0 ] || [ "$all" = 1 ] || return 0   # `--tags` alone pushes no branch
   load_cycles
   if [ "$all" = 1 ]; then
@@ -433,15 +493,18 @@ git_ship() {
   branch="$(on_branch_of "$gitdir")"
   [ "${#refs[@]}" -gt 0 ] || refs=("")                # no refspec: the current branch, to its name
   for ref in "${refs[@]}"; do
-    ref="${ref#+}"
+    ref="${ref#+}"; deleting="$del"
     case "$ref" in
       "")  src="$branch"; dst="$branch" ;;
+      :*)  src=""; dst="${ref#:}"; deleting=1 ;;
       *:*) src="${ref%%:*}"; dst="${ref#*:}" ;;
       *)   src="$ref"; dst="$ref" ;;
     esac
     [ "$src" != HEAD ] || src="$branch"
     [ "$dst" != HEAD ] || dst="$branch"
     case "$trunk_list" in *" $(ref_branch "$dst") "*) [ -z "$dst" ] || trunk="$dst" ;; esac
+    [ "$deleting" = 0 ] || continue                     # removes a branch: only trunk matters
+    if is_tag "$src" "$gitdir" || is_tag "$dst" "$gitdir"; then continue; fi
     cs="$(ref_change "$src")"; [ -n "$cs" ] || cs="$(ref_change "$dst")"
     if [ -n "$cs" ]; then [ -n "$c" ] || c="$cs"; else other=1; fi
   done
@@ -675,6 +738,8 @@ paths="$(praxis_edit_paths "$payload")"
 # worktree under <root>/.praxis/worktrees/<name>/ while the host's project dir stays on the main
 # checkout, and a Codex patch may touch both.
 entries="$(praxis_path_roots "$root" "$cwd" "$paths")"
+deleted=""
+[ "$tool" != apply_patch ] || deleted="$(praxis_path_roots "$root" "$cwd" "$(praxis_deleted_paths "$payload")")"
 
 # --- The records: who writes what ------------------------------------------------------------
 
@@ -727,6 +792,10 @@ ledger_gate() {   # <rel>
   target="$rel"
   [ "$is_main" = 1 ] || decide deny "PRAXIS ledger: ${rel} is the orchestrator's; a subagent (${role:-unnamed}) does not write it. Report in your handback and the orchestrator records it. ${override}"
   c="${rel#*/}"; c="${c%%/*}"
+  case $'\n'"${deleted}"$'\n' in
+    *$'\n'"${root}"$'\t'"${rel}"$'\n'*)
+      decide deny "PRAXIS ledger: this patch deletes or moves away ${rel}, the ledger of specs/${c}. Without it there is no change record — the round, the barrier and the trunk rule would read nothing. A change is closed by 'stage: shipped' once .praxis/ship/${c} exists, or sent back by /praxis:rework ${c}, never by removing its ledger. ${override}" ;;
+  esac
   new="$(new_content | praxis_frontmatter_read round)"
   if [ -n "$new" ]; then
     new="$(praxis_round_number "$new")"

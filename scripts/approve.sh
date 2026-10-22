@@ -24,6 +24,11 @@
 #    ledger `stage: needs-human` is a field the model writes, and a model-written field
 #    unlocks nothing (ADR-005).
 #
+# 3. The re-arm. Without the needs-human marker, when decision.md already says APPROVE (the
+#    approver's, committed) or APPROVE (human) — a fresh clone, a wiped `.praxis/` — the script
+#    writes `.praxis/ship/<change>` and changes nothing else; the approver's verdict is never
+#    rewritten as the person's.
+#
 # Refuses a change with neither spec file: there is nothing to approve, and a marker without a
 # spec would let the floor through on a change that never had one.
 #
@@ -81,7 +86,23 @@ praxis_ensure_praxis_dir "$root" || { echo "error: cannot create ${root}/.praxis
 mkdir -p "${root}/.praxis/approved"
 : > "$(praxis_approved_marker "$root" "$change")"
 
-[ -f "$marker" ] || { printf 'approved %s → .praxis/approved/%s (spec: %s)\n' "$change" "$change" "$spec"; exit 0; }
+if [ ! -f "$marker" ]; then
+  # A fresh clone, or a wiped .praxis/: decision.md is committed, the gitignored ship marker is not.
+  # Re-arm the marker and change nothing else — an approver's APPROVE is never rewritten as the
+  # person's (design.md, "Round-3 amendments, lens round 1").
+  verdict="$(praxis_decision_verdict "$root" "$change")"
+  case "$verdict" in
+    APPROVE|"APPROVE (human)")
+      ship="$(praxis_ship_marker "$root" "$change")"
+      mkdir -p "${ship%/*}"
+      : > "$ship"
+      printf 'approved %s → .praxis/approved/%s (spec: %s); re-armed .praxis/ship/%s — specs/%s/decision.md (verdict: %s) left as it is\n' \
+        "$change" "$change" "$spec" "$change" "$change" "$verdict"
+      exit 0 ;;
+  esac
+  printf 'approved %s → .praxis/approved/%s (spec: %s)\n' "$change" "$change" "$spec"
+  exit 0
+fi
 
 # --- The ship override ------------------------------------------------------------------------
 

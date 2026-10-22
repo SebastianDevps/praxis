@@ -1920,7 +1920,7 @@ test("the ship gate reads refspecs by their source, strips redirections, unwraps
   execFileSync("git", ["checkout", "-q", "-b", "praxis/x"], { cwd: repo });
   const gated = [
     "git push origin praxis/x:main", "git push origin +praxis/x:main", "git push origin refs/heads/praxis/x",
-    "git push origin refs/heads/praxis/x:refs/heads/praxis/x", "git push origin :praxis/x",
+    "git push origin refs/heads/praxis/x:refs/heads/praxis/x",
     "git push origin 2>&1", "git push origin >/dev/null", "git push origin praxis/x 2>/dev/null", "git push origin >>log 2>&1",
     "env GIT_TRACE=1 git push origin praxis/x", "sudo git push origin praxis/x", "command git push origin praxis/x",
     "time git push origin praxis/x", "nohup git push origin praxis/x", "nice -n 5 git push origin praxis/x",
@@ -1937,7 +1937,7 @@ test("the ship gate reads refspecs by their source, strips redirections, unwraps
   assert.match(reason(hook("pre-tool-use", bash("git push --all origin", repo))), /Push the branch explicitly/);
   const free = [
     "echo 'git push origin praxis/x'", "sh -c 'echo git push origin praxis/x'", "gh pr view 12", "gh api repos/o/r/issues",
-    "git -C /tmp log --oneline",
+    "git -C /tmp log --oneline", "git push origin :praxis/x",
   ];
   for (const cmd of free) assert.equal(decision(hook("pre-tool-use", bash(cmd, repo))), "allow", cmd);
   // Round 3: another branch pushed while x is the active open cycle is x's ship, redirections or not.
@@ -2221,9 +2221,10 @@ test("round 3: a PR or push off a branch outside any open cycle is free — lega
   const fast = legacyRepo();
   fast.hook("user-prompt-submit", { prompt: "/praxis fast" });
   assert.equal(decision(fast.hook("pre-tool-use", bash("gh pr create --base main", fast.repo))), "allow", "fast mode, legacy ledger");
-  // stage: shipped closes the cycle: the next, unrelated PR is not its business.
+  // stage: shipped with the ship marker closes the cycle: the next, unrelated PR is not its business.
   const shipped = cycleRepo({ round: 1 });
   shipped.write("specs/x/implementation.md", "---\ntitle: x\nstage: shipped\nround: 1\nbuilder: agent-b1\n---\n");
+  shipped.write(".praxis/ship/x", "");
   onBranch(shipped, "feature/y");
   assert.equal(decision(shipped.hook("pre-tool-use", bash("gh pr create --base main", shipped.repo))), "allow");
 });
@@ -2239,12 +2240,13 @@ test("round 3: while the active change is an open cycle, a PR or push off any ot
     assert.equal(decision(out), "deny", cmd);
     assert.match(reason(out), /ship gate: specs\/x\/decision\.md does not exist/, cmd);
   }
-  // Open = a ledger with round: or builder:, or a review/ folder, and stage not shipped — round 0 too.
+  // A cycle starts with a recorded builder, a round of 1 or more, or a review folder. The
+  // template's round 0 alone is not one (Round-3 amendments, lens round 1).
   const fresh = floorRepo({ mode: "full" });
   fresh.write("specs/x/spec.md", "# x\n");
   fresh.write("specs/x/implementation.md", "---\ntitle: x\nstage: planned\nround: 0\n---\n");
   fresh.write(".praxis/active-change", "x\n");
-  assert.equal(decision(fresh.hook("pre-tool-use", bash("gh pr create --base main", fresh.repo))), "deny", "round: 0 is an open cycle");
+  assert.equal(decision(fresh.hook("pre-tool-use", bash("gh pr create --base main", fresh.repo))), "allow", "round: 0 alone is the template, not a cycle");
   const reviewed = floorRepo({ mode: "full" });
   reviewed.write("specs/x/spec.md", "# x\n");
   reviewed.write("specs/x/implementation.md", ledger("built"));
