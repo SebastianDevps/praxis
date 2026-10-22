@@ -121,3 +121,37 @@ orchestrator reads it.
 ### Consequences
 - More files per change, each read by exactly the roles that need it.
 - The orchestrator's context stays thin: paths, verdicts, and the ledger.
+
+## ADR-007: The floor stops drift; adversarial resistance belongs to the host's permission rules
+
+### Context
+Round 2 of the lenses showed that Bash can forge `decision.md` with one redirection, mint the
+intent token by running `hooks/user-prompt-submit` directly, or wrap `scripts/approve.sh` in
+`bash -c`. A PreToolUse hook sees one command string and no history, and a shell has unbounded
+spellings for the same action: aliases, `$(…)`, variables, wrapper scripts, `GIT_DIR`. Each
+hardening round closes some spellings and opens false denies on honest ones — round 2's
+`gh pr create` regression on legacy ledgers is one. The threat the floor was built for is
+measured elsewhere: `evals/floor` v2 saw 3/3 unattended runs stop with zero bypass attempts, and
+in this change the orchestrator stopped at the round cap and asked for `/praxis:rework` instead
+of minting the token. The floor's adversary is a model that drifts, not one that attacks.
+
+### Options Considered
+1. Keep growing the tokenizer toward a shell parser — unbounded surface, a new spelling every
+   round, false denies on the honest path.
+2. State the threat model as drift: the hook denies the direct spellings a drifting model
+   produces (Write/Edit on records, `scripts/*.sh` without the token, a push whose destination
+   is trunk, a direct write to `decision.md`), documents the open forms in its header, and the
+   host's permission rules — outside the model, applied to every command — carry adversarial
+   resistance: `Bash(*hooks/*)`, `Bash(*.praxis/*)`, `Bash(*decision.md*)` denied in the
+   project's `.claude/settings.json`, the equivalent in Codex `permissions`.
+3. Drop the Bash gates and rely on the host alone — no drift resistance on hosts without rules.
+
+### Decision
+Option 2. Round 3 fixes the direct spellings the lenses listed and stops there; `docs/cycle.md`
+and the README carry the deny rules the person installs.
+
+### Consequences
+- A finding "Bash spelling X reaches a record" is in scope only when X is a spelling a drifting
+  model produces; otherwise the fix is a line in the host's settings, not in the hook.
+- The honest path is never denied: a branch outside a cycle opens a PR freely.
+- Cursor, with one hook and no rules, keeps drift resistance only (ADR-002 already says so).
