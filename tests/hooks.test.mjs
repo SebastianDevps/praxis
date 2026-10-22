@@ -1424,6 +1424,86 @@ test("the ship gate reads the current branch when the push names no refspec, or 
   assert.equal(decision(hook("pre-tool-use", bash("git push", elsewhere))), "allow", "no repo under cwd: nothing to compare, allow");
 });
 
+// The worktree flow makes `git -C <wt> push` and `cd <wt> && git push` the natural commands, and a
+// substring match read neither: the first has no `git push` in it, the second's branch is not
+// the one in the payload's cwd. The command is tokenized instead, and `-C` and `cd` move the
+// directory the branch is read from.
+test("the ship gate tokenizes the command: git -C and cd set the directory the branch is read from", () => {
+  const { repo, hook, write, commit } = cycleRepo({ round: 1 });
+  write("src/a.js", "1\n");
+  commit();
+  const wt = join(repo, ".praxis/worktrees/x");
+  const other = join(repo, ".praxis/worktrees/other");
+  execFileSync("git", ["worktree", "add", "-q", "-b", "praxis/x", wt], { cwd: repo });
+  execFileSync("git", ["worktree", "add", "-q", "-b", "feature/y", other], { cwd: repo });
+  const gated = [
+    `git -C ${wt} push -u origin praxis/x`,
+    `git -C ${wt} push -u origin HEAD`,
+    `git -C "${wt}" push origin HEAD:praxis/x`,
+    `git -C .praxis/worktrees/x push --force-with-lease origin HEAD`,
+    `cd ${wt} && git push -u origin HEAD`,
+    `cd ${wt}; git push`,
+    `cd .praxis/worktrees/x && git status && git push`,
+    `git -C ${wt} -c push.default=current push`,
+    `GIT_TRACE=1 git -C ${wt} push`,
+  ];
+  for (const cmd of gated) {
+    const out = hook("pre-tool-use", bash(cmd, repo));
+    assert.equal(decision(out), "deny", cmd);
+    assert.match(reason(out), /ship gate/);
+  }
+  const free = [
+    `git -C ${other} push -u origin HEAD`,
+    `cd ${other} && git push`,
+    `git -C ${wt} status && git -C ${other} push`,
+    `git -C ${wt} log --oneline`,
+    `echo "git push origin praxis/x"`,
+    `git push origin praxis/xy`,
+  ];
+  for (const cmd of free) {
+    assert.equal(decision(hook("pre-tool-use", bash(cmd, repo))), "allow", cmd);
+  }
+});
+
+// The host's project dir is the main checkout even when the builder works in its worktree.
+// Without re-rooting, `<main>/.praxis/worktrees/x/src/a.ts` is `.praxis/…` — session state —
+// and every gate is silent for the builder. The test runs the hook exactly as the host does:
+// CLAUDE_PROJECT_DIR = main checkout, cwd = the worktree.
+test("an edit inside the builder's worktree is judged by the worktree, not as the main checkout's session state", () => {
+  const { repo, hook, write, commit } = floorRepo({ mode: "full" });
+  write("README.md", "x\n");
+  commit();
+  write("specs/x/spec.md", "# x\n");
+  write("specs/x/implementation.md", ledger("planned"));
+  write(".praxis/active-change", "x\n");
+  const wt = join(repo, ".praxis/worktrees/x");
+  execFileSync("git", ["worktree", "add", "-q", "-b", "praxis/x", wt], { cwd: repo });
+  const fromWt = (file_path) => hook("pre-tool-use", { tool_name: "Edit", cwd: wt, tool_input: { file_path } });
+
+  // Nothing seeded: the floor applies to the worktree, and the worktree has no change open.
+  let out = fromWt("src/x.ts");
+  assert.equal(decision(out), "deny", "an unseeded worktree is not a free zone");
+  assert.match(reason(out), /has no spec yet/);
+
+  // What scripts/worktree.sh seeds, minus the marker: the spec is there, the approval is not.
+  write(".praxis/worktrees/x/.praxis/active-change", "x\n");
+  write(".praxis/worktrees/x/specs/x/spec.md", "# x\n");
+  out = fromWt("src/x.ts");
+  assert.equal(decision(out), "ask", "spec in the worktree, ledger in the main checkout, no marker: the one stop");
+  assert.match(reason(out), /specs\/x\/spec\.md is written/);
+  assert.equal(decision(fromWt(join(wt, "specs/x/spec.md"))), "allow", "the worktree's spec is spec-side");
+  const forged = fromWt(join(wt, ".praxis/approved/x"));
+  assert.equal(decision(forged), "deny", "the worktree's marker is still the person's");
+  assert.match(reason(forged), /approval record/);
+
+  // With the seeded marker the floor opens — for a relative path and an absolute one alike.
+  write(".praxis/worktrees/x/.praxis/approved/x", "");
+  assert.equal(decision(fromWt("src/x.ts")), "allow");
+  assert.equal(decision(fromWt(join(wt, "src/x.ts"))), "allow");
+  // The main checkout keeps its own state: no marker there, so an edit there still asks.
+  assert.equal(decision(hook("pre-tool-use", edit(join(repo, "src/a.js")))), "ask");
+});
+
 test("the ship gate: ESCALATE denies, APPROVE (human) allows, APPROVE needs every lens PASS", () => {
   const { hook, lens, lensList, recordDecision } = cycleRepo({ round: 1 });
   lensList(1, ["correctness", "security"]);

@@ -1,19 +1,18 @@
 // Dependency-free resource validator for Praxis.
 // Pure Node stdlib — no pnpm, no TypeScript build, no js-yaml.
-// Checks each agent/skill/craft/pipeline .md for valid frontmatter:
+// Checks each agent/skill/craft .md for valid frontmatter:
 //   - starts with a --- frontmatter block
 //   - name: present + kebab-case
 //   - description: present + non-empty
-//   - kind: one of skill | agent | craft | pipeline
-//   - pipeline: has a phases: list
+//   - kind: one of skill | agent | craft
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "..");
-const DIRS = ["agents", "skills", "pipelines", "crafts"];
-const VALID_KINDS = new Set(["skill", "agent", "craft", "pipeline"]);
+const DIRS = ["agents", "skills", "crafts"];
+const VALID_KINDS = new Set(["skill", "agent", "craft"]);
 const KEBAB_CASE_RE = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/;
 
@@ -73,10 +72,7 @@ function validate(content) {
 
   const kind = topLevelValue(fm, "kind");
   if (!kind || !VALID_KINDS.has(kind))
-    throw new Error(`invalid or missing kind: "${kind}"; must be skill, agent, craft, or pipeline`);
-
-  if (kind === "pipeline" && !hasTopLevelList(fm, "phases"))
-    throw new Error("pipeline requires a phases field containing a non-empty list");
+    throw new Error(`invalid or missing kind: "${kind}"; must be skill, agent, or craft`);
 }
 
 let pass = 0;

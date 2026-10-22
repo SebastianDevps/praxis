@@ -40,13 +40,14 @@ well enough specified that the spec-writer should have no open question.
    | 0 | the ledger says `stage: shipped` — or `NO MORE TASKS` / `COMPLETE` confirmed |
    | 1 | `ABORT` — the agent was blocked; or `claude` itself failed |
    | 2 | usage error; also `--approve` with no spec to approve |
-   | 3 | a test file changed during an iteration — verifier integrity guard |
+   | 3 | a test file changed during an iteration — verifier integrity guard, legacy mode only (in the cycle the builder writes tests by design, on its own branch; the tests lens and the approver judge them) |
    | 4 | stopped without completion: iteration cap, wall-clock, cost cap, or no progress |
-   | 5 | `.praxis/needs-human/<change>` appeared — the approver recorded ESCALATE |
+   | 5 | `.praxis/needs-human/<change>` exists — the hook-written record of the approver's ESCALATE; a ledger `stage: needs-human` alone does not stop the loop |
 
    On 5 the script prints the two ways on, both the person's: `/praxis:rework <change> "<note>"`
    sends it back to the builder with the round counter reset; `/praxis:approve <change>` ships
-   it as is. Do not run either yourself.
+   it as is — or the person reruns the loop with `--approve`, which does the same and then
+   continues. Do not run either yourself.
 
    `HANG ON A SECOND` is not a stop: the step was split and the smaller chunk done; the loop
    continues and the log says so. A signal is read only on its own line — a mention inside prose

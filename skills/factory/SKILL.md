@@ -16,7 +16,9 @@ are enforced by `hooks/pre-tool-use`; this file is how to run inside them.
 ## Rules that hold for the whole cycle
 
 - You are the only writer of `specs/<change>/implementation.md`. Roles report in their handback;
-  you record. Its frontmatter carries `stage:`, `round:`, `builder:`, `lenses:`.
+  you record. Its frontmatter carries `stage:`, `round:`, `base:`, `builder:`, `lenses:`. The one
+  other writer is the person: `scripts/approve.sh` and `scripts/rework.sh` write `stage:` and
+  `round:` as the person's action.
 - You pass paths, never content. A role reads `spec.md`, the diff and the reviews itself.
 - You never write a review or a decision — the one exception is a lens file with `verdict: SKIP`
   for a lens that never returned. You never edit source during the cycle.
@@ -36,7 +38,9 @@ verify:   <the acceptance gate — the spec's Acceptance lines, re-run by the ap
 ## The cycle
 
 1. **Open.** Write the change name to `.praxis/active-change`; create `specs/<change>/implementation.md`
-   from `specs/_templates/` with `stage: new`, `round: 0`, `lenses: correctness, security, tests`.
+   from `specs/_templates/` with `stage: new`, `round: 0`, `lenses: correctness, security, tests`, and
+   `base: <branch>` — the branch the change starts from (`git rev-parse --abbrev-ref HEAD`). Every
+   diff below is `git diff <base>...praxis/<change>` with that value substituted; never assume a trunk name.
 2. **Spec.** Dispatch `spec-writer` with the request and the paths it reads (`AGENTS.md`,
    `agents/rules/`); it writes `specs/<change>/spec.md`. Read its handback, not the file:
    - `trivial: true` → the fast path: edit + verify, record it in the ledger, no cycle files.
@@ -45,15 +49,16 @@ verify:   <the acceptance gate — the spec's Acceptance lines, re-run by the ap
    - `ready: true` → `stage: designed`; Run Card `Needs your decision`; STOP.
 3. **Approval.** The person approves — `/praxis:approve <change>`, or by answering the ask the first
    source edit raises. Either writes `.praxis/approved/<change>`; when it exists, `stage: planned`.
-4. **Build.** Run `scripts/worktree.sh <change>` (`.praxis/worktrees/<change>`, branch `praxis/<change>`).
-   Dispatch `builder` with the worktree path and the spec path — never the spec's content. Record
-   `builder: <agent id>` in the ledger. On its handback: `stage: built`.
-5. **Round N.** Set `round: N`. Add `ui` to `lenses:` when `git diff --name-only main...praxis/<change>`
+4. **Build.** Run `scripts/worktree.sh <change> <base>` (`.praxis/worktrees/<change>`, branch
+   `praxis/<change>` from the ledger's `base:`). Dispatch `builder` with the worktree path, the base
+   branch and the spec path — never the spec's content. Record `builder: <agent id>` in the ledger.
+   On its handback: `stage: built`.
+5. **Round N.** Set `round: N`. Add `ui` to `lenses:` when `git diff --name-only <base>...praxis/<change>`
    touches `components/`, `*.tsx`, `*.vue`, `*.css` or `*.html`. Write `specs/<change>/review/round-N/lenses`
    (one lens name per line) BEFORE dispatching. Then, in ONE message, dispatch every lens —
    `refuter-correctness`, `refuter-security`, `refuter-tests`, and `lens-ui` when `ui` is listed —
    each told its round number, its output path `specs/<change>/review/round-N/<lens>.md`, the spec
-   path and the worktree.
+   path, the worktree and the diff command `git diff <base>...praxis/<change>` with the real base.
 6. **Barrier.** Wait until every name in `lenses` has its file; the hook denies a builder resume
    before that. A lens that never returns: write its file yourself with `verdict: SKIP` and the
    reason — the only review write you may do. Read the `verdict:` lines, nothing else.
@@ -64,21 +69,23 @@ verify:   <the acceptance gate — the spec's Acceptance lines, re-run by the ap
    - any `CHANGES` or `SKIP`, N = 2 → do not resume the builder (the hook denies a third round);
      go to step 8.
    - all `PASS` → step 8.
-8. **Approve.** Dispatch `approver` with the spec path, the worktree and `specs/<change>/review/round-*/`.
-   It re-runs the checks itself and writes `specs/<change>/decision.md`.
+8. **Approve.** Dispatch `approver` with the spec path, the worktree, the same diff command and
+   `specs/<change>/review/round-*/`. It re-runs the checks itself and writes `specs/<change>/decision.md`.
 9. **Ship or escalate.** Read its `verdict:` line.
    - `APPROVE` → `git push -u origin praxis/<change>` and `gh pr create` (title from the spec's
      Goal; body links `specs/<change>/spec.md` and `specs/<change>/decision.md`). The hook allows
      this only with APPROVE and every lens PASS. `stage: shipped`, PR URL in the ledger; Run Card
      phase `ship`.
    - `ESCALATE` → the hook writes `.praxis/needs-human/<change>`. Set `stage: needs-human`; Run Card
-     `Needs your decision`, saying what each command does: `/praxis:rework <change> "<note>"` sends
-     the note to the builder and resets the round; `/praxis:approve <change>` ships with
-     `verdict: APPROVE (human)`. STOP.
+     `Needs your decision`, saying what each command does: `/praxis:rework <change> "<note>"`
+     (`scripts/rework.sh`) records the note, resets `round:` and clears `needs-human` — the person
+     writing the ledger — then you resume the builder with the note; `/praxis:approve <change>`
+     (`scripts/approve.sh`) writes `decision.md` with `verdict: APPROVE (human)` and the ledger's
+     `stage:` — your next step is then the ship commands above, nothing in between. STOP.
 
 ## Resume
 
-On "continue <change>": read `specs/<change>/implementation.md` first — `stage:`, `round:`,
+On "continue <change>": read `specs/<change>/implementation.md` first — `stage:`, `round:`, `base:`,
 `builder:`, `lenses:` — and resume at the step those fields name, never from the conversation. A
 missing lens file under `review/round-N/` means step 6; a `decision.md` present means step 9.
 

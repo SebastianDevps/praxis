@@ -2,8 +2,8 @@
 # loop.sh — guarded autonomous runner ("ralph") for the Praxis cycle (`/praxis:loop`).
 #
 # Re-invokes `claude -p` on a FRESH context each iteration. Each iteration is told to continue
-# ONE change through the `factory` skill — spec → build → review → approve → ship — and to do
-# exactly one step of it. The loop's memory is the filesystem: the change's ledger,
+# ONE change through the `factory` skill and to do exactly one step of its cycle (the sequence
+# is stated once, in the prompt below). The loop's memory is the filesystem: the change's ledger,
 # specs/<change>/implementation.md (ADR-002; PROGRESS.md is only the index of changes), the
 # cycle's files under specs/<change>/ and .praxis/, and the loop's own git commits. ALL
 # stop-limits are enforced HERE, in bash, OUTSIDE the model — a runner safety bound on an
@@ -21,13 +21,23 @@
 #
 # Two states of the cycle are read from files, not from the model, after every iteration
 # (specs/factory-cycle): `stage: shipped` in the ledger ends the run with 0; the escalation
-# record `.praxis/needs-human/<change>` (or `stage: needs-human`) ends it with 5 and prints the
-# two commands the person has — /praxis:rework and /praxis:approve. An unattended run cannot
-# answer the floor's ask, so `--approve` runs scripts/approve.sh before the first iteration:
-# the person approves the spec by starting the loop with that flag.
+# record `.praxis/needs-human/<change>` ends it with 5 and prints the two commands the person
+# has — /praxis:rework and /praxis:approve. The marker, never `stage: needs-human`: the stage
+# is a field the model writes, and a model-written field decides nothing here (ADR-005). An
+# unattended run cannot answer the floor's ask, so `--approve` runs scripts/approve.sh before
+# the first iteration: the person approves the spec by starting the loop with that flag — and
+# on an escalated change, ships it (approve.sh clears the marker and sets stage: implemented),
+# so the same flag resumes a stopped run.
 #
-# Exit codes: 0 complete · 1 ABORT or claude error · 2 usage · 3 verifier tampered ·
-# 4 a guardrail stopped the run without completion (iteration cap, wall-clock, cost,
+# Two modes, decided by whether a change resolves. CYCLE mode (a change): the builder commits
+# on praxis/<change> inside its worktree, and it is SUPPOSED to write tests — TDD; the tests
+# lens and the approver own test quality — so the verifier-integrity guard below is OFF: the
+# main checkout it diffs never sees the builder's commits, and a test file written there is the
+# cycle working, not a model gaming its own gate. LEGACY mode (no spec folder, PROGRESS.md as
+# the ledger): one agent edits and verifies in the same checkout, and the guard stays ON.
+#
+# Exit codes: 0 complete · 1 ABORT or claude error · 2 usage · 3 verifier tampered (legacy
+# mode) · 4 a guardrail stopped the run without completion (iteration cap, wall-clock, cost,
 # no progress) · 5 the change needs a human. Each guardrail below is commented with WHY.
 
 set -euo pipefail
@@ -76,8 +86,8 @@ Usage: bash scripts/loop.sh [--task "<goal>"] [--approve] [options]
   --history N             Previous loop commits shown to each iteration (default: 10).
   -h, --help              Show this help.
 
-Each iteration continues the change through the `factory` skill: one step of
-spec → build → review → approve → ship, on a fresh context.
+Each iteration continues the change through the `factory` skill: exactly one step of its
+cycle, on a fresh context.
 
 Signals, each alone on its own line of the agent's output (a mention inside prose is not a signal):
   NO MORE TASKS / COMPLETE   the change is shipped → exit 0
@@ -88,17 +98,19 @@ Exit codes:
   0  complete: the ledger says stage: shipped, or NO MORE TASKS / COMPLETE confirmed
   1  ABORT, or claude exited non-zero
   2  usage error (also: --approve with nothing to approve)
-  3  verifier-integrity guard: a test file was modified this iteration
+  3  verifier-integrity guard: a test file was modified this iteration (legacy mode only —
+     in the cycle the builder writes tests by design and commits them on its own branch)
   4  a guardrail stopped the run without completion: iteration cap, wall-clock,
      cost cap, or no progress
   5  the change needs a human: .praxis/needs-human/<change> exists (the approver
      recorded ESCALATE). /praxis:rework <change> "<note>" sends it back to the
-     builder; /praxis:approve <change> ships it as is.
+     builder; /praxis:approve <change> ships it as is (or: rerun with --approve).
 
 Stop-limits are enforced in bash, OUTSIDE the model. Guardrails:
   hard iteration cap · wall-clock timeout · best-effort cost cap · no-progress detection
-  · completion confirmation · verifier-integrity guard (halts if a test file is touched)
-  · human checkpoint on stall or escalation (diagnostics written to the ledger, no thrashing).
+  · completion confirmation · verifier-integrity guard (legacy mode: halts if a test file
+  is touched) · human checkpoint on stall or escalation (diagnostics written to the ledger,
+  no thrashing).
 EOF
 }
 
@@ -216,22 +228,24 @@ recent_loop_commits() {
 
 # WHY: the two end states of the cycle are files, not claims. Read before the first iteration
 # (a shipped or escalated change has nothing for the loop to do) and after every one. The
-# escalation record is written by the hook when the approver records ESCALATE; the person,
-# not the next iteration, decides what happens then — so the run stops and says how.
+# escalation record is the hook-written marker and only that: `stage: needs-human` in the
+# ledger is the model's mirror of it and decides nothing (ADR-005) — which is also what lets
+# `--approve` resume a stopped run: approve.sh removes the marker and sets stage: implemented.
+# The person, not the next iteration, decides what happens after an ESCALATE — so the run
+# stops and says how.
 #   cycle_state_exit <where>
 cycle_state_exit() {
   [[ -n "$CHANGE" ]] || return 0
-  local stage; stage="$(praxis_ledger_stage "$LEDGER")"
-  if [[ -f "$(praxis_needs_human_marker "$PROJECT_ROOT" "$CHANGE")" ]] || [[ "$stage" == needs-human ]]; then
+  if [[ -f "$(praxis_needs_human_marker "$PROJECT_ROOT" "$CHANGE")" ]]; then
     log_diag "STOP: ${CHANGE} needs a human — the approver recorded ESCALATE (${1})"
     cat <<EOF
 [loop] STOP: ${CHANGE} needs a human — .praxis/needs-human/${CHANGE} exists (the approver recorded ESCALATE in specs/${CHANGE}/decision.md). Two ways on, both typed by a person:
   /praxis:rework ${CHANGE} "<note>"   archive the review rounds and the decision, reset the round counter, resume the builder with your note
-  /praxis:approve ${CHANGE}           ship as is: decision.md APPROVE (human), push praxis/${CHANGE}, open the PR
+  /praxis:approve ${CHANGE}           ship as is: decision.md APPROVE (human), push praxis/${CHANGE}, open the PR — or rerun this loop with --approve
 EOF
     exit 5
   fi
-  if [[ "$stage" == shipped ]]; then
+  if [[ "$(praxis_ledger_stage "$LEDGER")" == shipped ]]; then
     echo "[loop] DONE: ${CHANGE} is shipped — the ledger says stage: shipped (${1})"; exit 0
   fi
 }
@@ -324,8 +338,9 @@ for (( iter=1; iter<=MAX_ITERATIONS; iter++ )); do
   fi
 
   # WHY: verifier-integrity guard runs BEFORE accepting the iteration. If tests were touched,
-  # every subsequent green is untrustworthy — halt immediately.
-  if touched_test_file "$iter_start_head"; then
+  # every subsequent green is untrustworthy — halt immediately. Legacy mode only: in the cycle
+  # the builder writes tests by design, on its own branch, and the lenses judge them (header).
+  if [[ -z "$CHANGE" ]] && touched_test_file "$iter_start_head"; then
     log_diag "HALT: a test file was modified/deleted this iteration — reward-hacking guard tripped"
     echo "[loop] HALT: test file changed — verifier integrity compromised" >&2; exit 3
   fi

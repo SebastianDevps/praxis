@@ -43,12 +43,15 @@ const design = (dir, change) => {
 };
 const spec = (dir, change) => {
   mkdirSync(join(dir, "specs", change), { recursive: true });
-  writeFileSync(join(dir, "specs", change, "spec.md"), "---\ntitle: x\nready: true\n---\n# x — Spec\n");
+  writeFileSync(
+    join(dir, "specs", change, "spec.md"),
+    `---\ntitle: x\nready: true\n---\n# x — Spec\n## Goal\nExport invoices to CSV, scoped by tenant — "fast" & $afe\n\nMore prose.\n## Scope\n`,
+  );
 };
-const ledger = (dir, change, { stage = "built", round = 2 } = {}) =>
+const ledger = (dir, change, { stage = "built", round = 2, base = "" } = {}) =>
   writeFileSync(
     join(dir, "specs", change, "implementation.md"),
-    `---\ntitle: ${change}\nstage: ${stage}\nround: ${round}     # 0 = no review yet\nbuilder: agent-b1\nlenses: correctness, security, tests\n---\n\n## Tasks\n`,
+    `---\ntitle: ${change}\nstage: ${stage}     # new → designed → planned\nround: ${round}     # 0 = no review yet\nbuilder: agent-b1\n${base ? `base: ${base}\n` : ""}lenses: correctness, security, tests\n---\n\n## Tasks\n`,
   );
 const needsHuman = (dir, change) => {
   mkdirSync(join(dir, ".praxis", "needs-human"), { recursive: true });
@@ -141,10 +144,10 @@ test("approve resolves the project root from a subdirectory of the repo", () => 
 
 // The ESCALATE path of the cycle (specs/factory-cycle/architecture.md §2). The approver wrote
 // ESCALATE, post-tool-use wrote the marker, the person decides to ship anyway.
-test("approve on a needs-human change writes decision.md APPROVE (human), clears the marker, prints the ship commands", () => {
+test("approve on a needs-human change writes decision.md APPROVE (human), clears the marker, sets stage: implemented, prints the ship commands", () => {
   const dir = project();
   spec(dir, "x");
-  ledger(dir, "x", { stage: "needs-human", round: 2 });
+  ledger(dir, "x", { stage: "needs-human", round: 2, base: "develop" });
   writeFileSync(join(dir, "specs/x/decision.md"), "---\nverdict: ESCALATE\nround: 2\n---\n## Checks run\n- a → b\n## Reason\nstuck\n");
   needsHuman(dir, "x");
   const { status, stdout } = approve(dir, "x");
@@ -157,23 +160,57 @@ test("approve on a needs-human change writes decision.md APPROVE (human), clears
 
   assert.ok(!existsSync(join(dir, ".praxis/needs-human/x")), "the escalation record must go with the override");
   assert.ok(existsSync(join(dir, ".praxis/approved/x")), "the spec approval is implied by shipping");
+
+  // The person's script may write the ledger (design.md appendix): the next step is ship.
+  const led = readFileSync(join(dir, "specs/x/implementation.md"), "utf8");
+  assert.match(led, /^stage: implemented     # new → designed → planned$/m, "stage set, comment kept");
+  assert.match(led, /^round: 2     # 0 = no review yet$/m, "round untouched");
+
   assert.match(stdout, /APPROVE \(human\)/);
   assert.match(stdout, /round 2/);
+  assert.match(stdout, /ledger stage: implemented/);
   assert.match(stdout, /^ship:$/m, "the orchestrator is told what to run next");
   assert.match(stdout, /^\s+git push -u origin praxis\/x$/m);
-  assert.match(stdout, /^\s+gh pr create .*praxis\/x/m);
+  // The PR line as the orchestrator pastes it: base from the ledger, title from the spec's
+  // Goal (first line, shell-escaped), body linking the two files.
+  const pr = stdout.split("\n").find((l) => l.includes("gh pr create"));
+  assert.ok(pr, "no gh pr create line");
+  assert.match(pr, /--base develop --head praxis\/x /);
+  assert.match(pr, /--title "Export invoices to CSV, scoped by tenant — \\"fast\\" & \\\$afe" /, "Goal's first line, quotes and $ escaped");
+  assert.match(pr, /--body "Spec: specs\/x\/spec\.md · Decision: specs\/x\/decision\.md \(APPROVE \(human\), round 2\)"$/);
+  assert.doesNotMatch(pr, /--fill/);
 });
 
-test("the ledger's stage: needs-human triggers the override even when the marker is gone", () => {
+// ADR-005: a model-written field unlocks nothing. `stage: needs-human` is the orchestrator's
+// mirror of the marker; without the marker there was no ESCALATE a hook recorded.
+test("the ledger's stage: needs-human alone does NOT trigger the override — only the hook-written marker does", () => {
   const dir = project();
   spec(dir, "x");
   ledger(dir, "x", { stage: "needs-human", round: 1 });
   const { status, stdout } = approve(dir, "x");
   assert.equal(status, 0, stdout);
-  const decision = readFileSync(join(dir, "specs/x/decision.md"), "utf8");
-  assert.match(decision, /^verdict: APPROVE \(human\)$/m);
-  assert.match(decision, /^round: 1$/m);
-  assert.match(stdout, /^ship:$/m);
+  assert.ok(!existsSync(join(dir, "specs/x/decision.md")), "a decision written on the model's say-so");
+  assert.doesNotMatch(stdout, /ship:/);
+  assert.match(readFileSync(join(dir, "specs/x/implementation.md"), "utf8"), /^stage: needs-human/m, "the ledger is not touched either");
+  assert.match(stdout, /^approved x → \.praxis\/approved\/x/);
+});
+
+test("the PR's base comes from the branch config worktree.sh records, before the ledger, before HEAD", () => {
+  const dir = project();
+  spec(dir, "x");
+  ledger(dir, "x", { stage: "needs-human", round: 1, base: "develop" });
+  needsHuman(dir, "x");
+  execFileSync("git", ["config", "branch.praxis/x.praxisBase", "release/2"], { cwd: dir });
+  const { stdout } = approve(dir, "x");
+  assert.match(stdout, /gh pr create --base release\/2 --head praxis\/x /);
+
+  // No config, no ledger base: the main checkout's branch (an unborn one still has a name).
+  const bare = project();
+  spec(bare, "x");
+  ledger(bare, "x", { stage: "needs-human", round: 1 });
+  needsHuman(bare, "x");
+  execFileSync("git", ["symbolic-ref", "HEAD", "refs/heads/trunk"], { cwd: bare });
+  assert.match(approve(bare, "x").stdout, /gh pr create --base trunk --head praxis\/x /);
 });
 
 test("without needs-human, approve writes no decision and prints no ship commands", () => {

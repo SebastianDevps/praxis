@@ -209,7 +209,6 @@ test("the README resource table matches what is on disk", () => {
     skills: dirNames("skills").length,
     agents: readdirSync(join(ROOT, "agents")).filter((f) => f.endsWith(".md")).length,
     crafts: dirNames("crafts").length,
-    pipelines: readdirSync(join(ROOT, "pipelines")).filter((f) => f.endsWith(".md")).length,
     commands: readdirSync(join(ROOT, "commands")).filter((f) => f.endsWith(".md")).length,
   };
   for (const [kind, n] of Object.entries(actual)) {

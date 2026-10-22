@@ -27,15 +27,18 @@ and continue the cycle (`factory` skill): worktree, builder.
 
 ## 2. The ship override — the change is in needs-human
 
-When `.praxis/needs-human/<change>` exists (the approver recorded ESCALATE and the hook wrote
-the marker) or the ledger says `stage: needs-human`, the person is deciding to ship anyway. The
-script writes `specs/<change>/decision.md` with `verdict: APPROVE (human)` and the ledger's
-round, removes the marker, and prints a `ship:` block with two commands. Then:
+When `.praxis/needs-human/<change>` exists — the approver recorded ESCALATE and the hook wrote
+the marker; a ledger `stage: needs-human` alone is not it, that field is yours and unlocks
+nothing — the person is deciding to ship anyway. The script writes `specs/<change>/decision.md`
+with `verdict: APPROVE (human)` and the ledger's round, removes the marker, sets
+`stage: implemented` in the ledger, and prints a `ship:` block with two commands. Then:
 
-1. Run the two commands it printed, in the project directory:
-   `git push -u origin praxis/<change>` and `gh pr create --head praxis/<change> …` (fill the
-   title and body from `spec.md`'s Goal and the decision). The ship gate in `hooks/pre-tool-use`
-   allows both on `APPROVE (human)`, whatever the lenses recorded.
+1. Run the two commands it printed, in the project directory, as printed:
+   `git push -u origin praxis/<change>` and `gh pr create --base <base> --head praxis/<change>
+   --title "<the spec's Goal, first line>" --body "<links to spec.md and decision.md>"`. The base
+   is the branch the worktree was cut from (recorded by `scripts/worktree.sh`, else the ledger's
+   `base:`). The ship gate in `hooks/pre-tool-use` allows both on `APPROVE (human)`, whatever the
+   lenses recorded.
 2. Set `stage: shipped` in `specs/<change>/implementation.md` with the PR URL on the same line
    or under Session Notes. The ledger is yours; the two markers and `decision.md` were not.
 3. Run Card: ship — the PR, the rounds, and that the approval was the person's override.

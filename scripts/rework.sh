@@ -29,6 +29,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "${SCRIPT_DIR}/../hooks/lib.sh"
+. "${SCRIPT_DIR}/ledger-field.sh"
 
 change="${1:-}"
 note="${2:-}"
@@ -38,28 +39,6 @@ case "$change" in */*|*..*|_templates|.*) echo "error: '${change}' is not a chan
 root="$(praxis_project_root "$PWD")"
 ledger="${root}/specs/${change}/implementation.md"
 [ -f "$ledger" ] || { echo "error: specs/${change}/implementation.md does not exist — nothing to rework" >&2; exit 1; }
-
-# Set one frontmatter field, keeping its trailing comment and every other line. A missing key is
-# added before the closing `---`; a file without a block gets one. Temp file plus `mv`, so a
-# ledger is never left half-written.
-set_frontmatter_field() {
-  local file="$1" key="$2" value="$3" tmp="$1.tmp.$$"
-  awk -v KEY="$key" -v VAL="$value" '
-    NR == 1 {
-      fm = ($0 ~ /^---[ \t]*$/)
-      if (fm) { print; next }
-      print "---"; print KEY ": " VAL; print "---"; done = 1
-    }
-    fm && !done && /^---[ \t]*$/ { if (!seen) print KEY ": " VAL; done = 1; print; next }
-    fm && !done && index($0, KEY ":") == 1 {
-      rest = $0; sub(/^[^:]*:[ \t]*/, "", rest)
-      comment = ""; if (match(rest, /[ \t]*#.*$/)) comment = substr(rest, RSTART)
-      print KEY ": " VAL comment; seen = 1; next
-    }
-    { print }
-    END { if (NR == 0) { print "---"; print KEY ": " VAL; print "---" } }
-  ' "$file" > "$tmp" && mv "$tmp" "$file"
-}
 
 review="${root}/specs/${change}/review"
 k=0
@@ -87,8 +66,8 @@ if [ -f "${root}/specs/${change}/decision.md" ]; then
 fi
 printf -- '---\nrework: %s\narchived_round: %s\n---\n%s\n' "$k" "$round_before" "$note" > "${archive}/note.md"
 
-set_frontmatter_field "$ledger" round 0
-set_frontmatter_field "$ledger" stage planned
+praxis_set_frontmatter_field "$ledger" round 0
+praxis_set_frontmatter_field "$ledger" stage planned
 
 marker="$(praxis_needs_human_marker "$root" "$change")"
 cleared="absent"

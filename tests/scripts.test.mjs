@@ -15,7 +15,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -204,15 +204,12 @@ test("worktree reuses a branch that exists without a checkout, instead of failin
 // The floor runs inside the worktree: `git rev-parse --show-toplevel` there is the worktree,
 // so `hooks/pre-tool-use` reads `.praxis/` and `specs/<c>/` under the builder's cwd. Nothing
 // of that arrives with `git worktree add` — `.praxis/` is gitignored and the spec is not yet on
-// any branch — so the script seeds it. Invoked the way tests/hooks.test.mjs invokes the hook.
-//
-// KNOWN GAP (todo = this suite's xfail; .claude/rules/testing-scope.md): the final assertion is
-// red today. `hooks/pre-tool-use:314` opens the floor only when `implementation.md` is ALSO under
-// the project root, and `:322` denies "has no spec yet" without it — while the ledger must stay
-// in the main checkout (one writer). Measured: copying the ledger into the worktree flips the
-// decision to allow. Either the floor accepts a worktree without a ledger, or worktree.sh seeds
-// a read-only copy. T01 owns the hook; the todo flips green by itself when it lands.
-test("worktree seeds .praxis/active-change, the approval marker and the spec, so the builder's floor opens there", { todo: "hooks/pre-tool-use:314 needs implementation.md under the worktree root; T01" }, () => {
+// any branch — so the script seeds it. The ledger is the one file NOT seeded (one writer, in the
+// main checkout); `praxis_ledger_path` reads it through `git rev-parse --git-common-dir`.
+// Invoked the way tests/hooks.test.mjs invokes the hook, under both envs a host may send:
+// CLAUDE_PROJECT_DIR = the worktree (the floor stands on the seed — remove the marker and it
+// asks) and CLAUDE_PROJECT_DIR = the main checkout.
+test("worktree seeds .praxis/active-change, the approval marker and the spec, so the builder's floor opens there", () => {
   const dir = repo();
   mkdirSync(join(dir, "specs", "x"), { recursive: true });
   writeFileSync(join(dir, "specs", "x", "spec.md"), "---\ntitle: x\nready: true\n---\n# x — Spec\nv1\n");
@@ -241,15 +238,57 @@ test("worktree seeds .praxis/active-change, the approval marker and the spec, so
   const home = mkdtempSync(join(tmpdir(), "praxis-scripts-home-"));
   mkdirSync(join(home, ".claude"), { recursive: true });
   writeFileSync(join(home, ".claude", ".praxis-mode"), "full");
-  const hook = spawnSync("bash", [join(ROOT, "hooks", "pre-tool-use")], {
-    env: { ...CLEAN, CLAUDE_PLUGIN_ROOT: ROOT, CLAUDE_PROJECT_DIR: wt, HOME: home },
-    input: JSON.stringify({ tool_name: "Edit", cwd: wt, tool_input: { file_path: join(wt, "src", "a.js") } }),
-    encoding: "utf8",
-    timeout: 10_000,
-  });
-  assert.equal(hook.status, 0, hook.stderr);
-  const decision = hook.stdout.trim() === "" ? "allow" : JSON.parse(hook.stdout).hookSpecificOutput.permissionDecision;
-  assert.equal(decision, "allow", hook.stdout);
+  const floor = (projectDir) => {
+    const hook = spawnSync("bash", [join(ROOT, "hooks", "pre-tool-use")], {
+      env: { ...CLEAN, CLAUDE_PLUGIN_ROOT: ROOT, CLAUDE_PROJECT_DIR: projectDir, HOME: home },
+      input: JSON.stringify({ tool_name: "Edit", cwd: wt, tool_input: { file_path: join(wt, "src", "a.js") } }),
+      encoding: "utf8",
+      timeout: 10_000,
+    });
+    assert.equal(hook.status, 0, hook.stderr);
+    return hook.stdout.trim() === "" ? "allow" : JSON.parse(hook.stdout).hookSpecificOutput.permissionDecision;
+  };
+  assert.equal(floor(dir), "allow", "CLAUDE_PROJECT_DIR = main checkout, cwd = worktree");
+  assert.equal(floor(wt), "allow", "CLAUDE_PROJECT_DIR = worktree: the seed plus the common-dir ledger fallback");
+  // The seed is load-bearing: without the copied marker the floor asks again.
+  rmSync(join(wt, ".praxis", "approved", "x"));
+  assert.equal(floor(wt), "ask", "with the seeded marker gone the floor must stand");
+});
+
+test("worktree prints base: <branch> before the path, recorded on the branch so re-runs and approve.sh agree", () => {
+  const dir = repo();
+  const created = run(WORKTREE, dir, "x");
+  assert.equal(created.status, 0, created.stderr);
+  const lines = created.stdout.trimEnd().split("\n");
+  assert.equal(lines.at(-2), "base: main", "the line before the path names the base");
+  assert.equal(git(dir, "config", "--get", "branch.praxis/x.praxisBase"), "main");
+  // A re-run reads the record, even when the main checkout has moved to another branch.
+  git(dir, "checkout", "-qb", "elsewhere");
+  const again = run(WORKTREE, dir, "x");
+  assert.equal(again.stdout.trimEnd().split("\n").at(-2), "base: main");
+  assert.equal(lastLine(again.stdout), lastLine(created.stdout));
+});
+
+test("worktree refuses a branch checked out at another path, and prunes a registration whose directory is gone", () => {
+  const dir = repo();
+  git(dir, "branch", "praxis/x");
+  const elsewhere = join(dir, "elsewhere");
+  git(dir, "worktree", "add", "-q", elsewhere, "praxis/x");
+  const refused = run(WORKTREE, dir, "x");
+  assert.equal(refused.status, 1, "git's own 128 must not leak through set -e");
+  assert.match(refused.stderr, /praxis\/x is already checked out at .*elsewhere/);
+  assert.match(refused.stderr, /git worktree remove/);
+  assert.ok(!existsSync(join(dir, ".praxis", "worktrees", "x")));
+
+  // Our own registration with the directory deleted by hand: prune and re-add, not a failure.
+  git(dir, "worktree", "remove", "--force", elsewhere);
+  const first = run(WORKTREE, dir, "x");
+  assert.equal(first.status, 0, first.stderr);
+  rmSync(lastLine(first.stdout), { recursive: true, force: true });
+  const again = run(WORKTREE, dir, "x");
+  assert.equal(again.status, 0, again.stderr);
+  assert.equal(lastLine(again.stdout), lastLine(first.stdout));
+  assert.equal(git(lastLine(again.stdout), "rev-parse", "--abbrev-ref", "HEAD"), "praxis/x");
 });
 
 test("worktree takes an explicit base and refuses a bad name or a repo with no commit", () => {

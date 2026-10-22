@@ -348,10 +348,65 @@ praxis_canonical_path() {
 # the person (via the host's ask, or /praxis:approve), never by the model.
 praxis_is_spec_side() {
   case "$1" in
-    .praxis/approved/*|.praxis/needs-human/*) return 1 ;;
+    .praxis/approved/*|.praxis/needs-human/*|.praxis/worktrees/*) return 1 ;;
     specs/*|.praxis/*|agents/*|AGENTS.md|CLAUDE.md|PROGRESS.md|CONSTRAINTS.md) return 0 ;;
   esac
   return 1
+}
+
+# The builder's checkout is a linked worktree under `<root>/.praxis/worktrees/<name>/`
+# (scripts/worktree.sh), while the host's project dir stays on the main checkout. A path in
+# there belongs to that checkout — its own `.praxis/`, `specs/` and `src/` — not to the main
+# one's session state. Prints the worktree root when <rel> lies inside one, else nothing.
+#   praxis_worktree_root <root> <rel path>
+praxis_worktree_root() {
+  local name
+  case "$2" in
+    .praxis/worktrees/*/*)
+      name="${2#.praxis/worktrees/}"; name="${name%%/*}"
+      case "$name" in ""|.|..) return 0 ;; esac
+      printf '%s/.praxis/worktrees/%s' "$1" "$name" ;;
+  esac
+  return 0
+}
+
+# A shell command as the shell would read it: one segment per line, split on `&&`, `||`,
+# `;`, `|`, `&` and newlines; argv tokens separated by \034, quotes removed (single, and
+# double with `\"`). This is what lets the ship gate see `git -C <dir> push …` and `cd <dir>`
+# as commands rather than find `git push` as a substring — `echo "git push"` is one token of
+# an echo. Variables and substitutions are not expanded: a directory the shell would compute
+# is one git cannot be asked about, and a gate reading it fails open (Bash-path gap class).
+praxis_shell_segments() {
+  printf '%s\n' "$1" | awk '
+    BEGIN { US = sprintf("%c", 28) }
+    function flush_tok() { if (tok != "") { seg = (seg == "" ? tok : seg US tok); tok = "" } }
+    function flush_seg() { flush_tok(); if (seg != "") print seg; seg = "" }
+    {
+      s = $0; n = length(s); i = 1
+      while (i <= n) {
+        c = substr(s, i, 1)
+        if (c == "\047") {
+          j = index(substr(s, i + 1), "\047")
+          if (j == 0) { tok = tok substr(s, i + 1); i = n + 1 } else { tok = tok substr(s, i + 1, j - 1); i += j + 1 }
+          continue
+        }
+        if (c == "\"") {
+          i++
+          while (i <= n) {
+            c = substr(s, i, 1)
+            if (c == "\\" && i < n) { tok = tok substr(s, i + 1, 1); i += 2; continue }
+            if (c == "\"") { i++; break }
+            tok = tok c; i++
+          }
+          continue
+        }
+        if (c == " " || c == "\t") { flush_tok(); i++; continue }
+        if (c == ";") { flush_seg(); i++; continue }
+        if (c == "&" || c == "|") { flush_seg(); i += (substr(s, i + 1, 1) == c) ? 2 : 1; continue }
+        tok = tok c; i++
+      }
+      flush_seg()
+    }'
 }
 
 # The approval marker for a change: `.praxis/approved/<change>`, an empty file whose

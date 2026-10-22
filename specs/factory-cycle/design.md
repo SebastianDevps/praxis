@@ -53,8 +53,8 @@ the task.
   changes); denies builder resume while `review/round-N/` is incomplete; denies a third fix round;
   gates `gh pr create` / `git push` of the change branch on `decision.md: APPROVE` plus every lens
   `PASS`. `post-tool-use` writes `.praxis/needs-human/<change>` when `decision.md` records
-  ESCALATE. `subagent-start` injects a role kernel (≤15 lines) plus the spec path instead of the
-  whole contract, crafts, and skill pointers. `user-prompt-submit` injects a kernel of ≤40 lines;
+  ESCALATE. `subagent-start` injects a role kernel (≤15 lines) plus the change line and the role's
+  declared crafts, instead of the whole contract and the skill pointers. `user-prompt-submit` injects a kernel of ≤40 lines;
   the cycle itself lives in a `factory` skill loaded when a change starts.
 - **Commands**: `/praxis:feature|bug|refactor|design` all enter the cycle with different
   spec-writer briefs. `/praxis:approve <change>` also ships a `needs-human` change.
@@ -208,12 +208,13 @@ ready: false | true                     # true = no open questions left
 ## Open questions
 - [NEEDS CLARIFICATION] <question>        # empty when ready: true
 
-specs/<c>/implementation.md               writer: orchestrator ONLY
+specs/<c>/implementation.md               writer: orchestrator — plus the scripts the person runs (approve.sh, rework.sh)
 ---
 title: <change>
 stage: new | designed | planned | implemented | shipped | needs-human
 round: 0                                  # 0 = no review yet; set to N when round N's lenses are dispatched
 builder: <agent id>                       # set when the builder is dispatched; SendMessage target
+base: <branch>                            # the branch the change starts from; worktree base; lenses and approver diff <base>...praxis/<c>
 lenses: correctness, security, tests      # + ui when the diff touches UI paths
 owner: <who decides>
 ---
@@ -242,7 +243,8 @@ round: N
 
 .praxis/approved/<c>                      empty file · post-tool-use or approve.sh · never Edit/Write
 .praxis/needs-human/<c>                   empty file · post-tool-use on ESCALATE · removed by rework.sh / approve.sh
-.praxis/worktrees/<c>/                    builder checkout · branch praxis/<c> · created by scripts/worktree.sh
+.praxis/worktrees/<c>/                    builder checkout · branch praxis/<c> · created by scripts/worktree.sh (seeds .praxis/ and spec.md)
+specs/<c>/review/rework-<k>/              writer: rework.sh (the person) — the archived round-*/ dirs, decision.md, and note.md
 ```
 
 Hook rules on these files:
@@ -254,7 +256,8 @@ builder dispatch (Agent subagent_type ~ builder) or resume (SendMessage to = led
   round = N, complete, all PASS                → allow
   round = N, complete, any CHANGES, N < 2      → allow  (the fix round)
   round = 2, complete, any CHANGES/SKIP        → deny  "round cap: 2 rounds done → approver / ESCALATE"
-ship (Bash: `gh pr create`, or `git push` naming praxis/<c>):
+ship (Bash: `gh pr create`, or `git push` naming praxis/<c> as a whole token, or an implicit push
+      from that branch; `git -C <dir>` and `cd <dir> &&` are resolved before the branch is read):
   decision.md verdict APPROVE (human)          → allow
   decision.md verdict APPROVE, round complete, all PASS → allow
   anything else                                → deny  with the reason

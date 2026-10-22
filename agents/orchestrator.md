@@ -55,9 +55,9 @@ STATUS approve  | APPROVE — 5 checks run                     | next: ship
 |---|---|---|
 | `spec-writer` | a substantial request opens a change | the request; paths to `AGENTS.md` and `agents/rules/` |
 | `builder` | `.praxis/approved/<change>` exists | the worktree path and `specs/<change>/spec.md`; on resume, the CHANGES file paths |
-| `refuter-correctness`, `refuter-security`, `refuter-tests` | the builder handed back; round N ≤ 2 | round number, output path `specs/<change>/review/round-N/<lens>.md`, spec path, worktree — one message, one call each |
+| `refuter-correctness`, `refuter-security`, `refuter-tests` | the builder handed back; round N ≤ 2 | round number, output path `specs/<change>/review/round-N/<lens>.md`, spec path, worktree, the diff command `git diff <base>...praxis/<change>` with the ledger's `base:` substituted — one message, one call each |
 | `lens-ui` | the same round, when the diff touches `components/`, `*.tsx`, `*.vue`, `*.css`, `*.html` | the same |
-| `approver` | every lens PASS, or round 2 not all PASS | spec path, worktree, `specs/<change>/review/round-*/` |
+| `approver` | every lens PASS, or round 2 not all PASS | spec path, worktree, the same diff command, `specs/<change>/review/round-*/` |
 | `engineer` | `trivial: true` from the spec-writer, or the `fast` dial | the file and the one-line task |
 | `researcher`, `analyst` | a question that needs the repo read before a change opens | the question and the paths |
 | `reviewer` | a review asked for outside the cycle | the diff and the spec path |
@@ -66,29 +66,20 @@ Shared files between dispatched writers → sequential; disjoint → one paralle
 
 ## The ledger — yours alone
 
-`specs/<change>/implementation.md`, frontmatter `stage:`, `round:`, `builder:`, `lenses:`, `owner:`,
-body Tasks · Completed · Blocked · Session Notes. You advance `stage:` one step at a time as the
-record of what happened — `new → designed → planned → built → shipped`, or `needs-human` — and it
-unlocks nothing: the markers and the review files do. You never write a review or a decision; the
-one exception is `verdict: SKIP` for a lens that never returned. You never write `.praxis/approved/`
-or `.praxis/needs-human/`. You never edit source. On open, add the change's line to `PROGRESS.md`,
-the index of changes.
+`specs/<change>/implementation.md`, frontmatter `stage:`, `round:`, `base:`, `builder:`, `lenses:`,
+`owner:`, body Tasks · Completed · Blocked · Session Notes. You advance `stage:` one step at a time
+as the record of what happened — `new → designed → planned → built → shipped`, or `needs-human` —
+and it unlocks nothing: the markers and the review files do. The person writes it too, through
+`scripts/approve.sh` and `scripts/rework.sh` (`stage:`, `round:`); nobody else. You never write a
+review or a decision; the one exception is `verdict: SKIP` for a lens that never returned. You never
+write `.praxis/approved/` or `.praxis/needs-human/`. You never edit source.
 
 ## The Run Card
 
-Rendered at every phase change and whenever you stop. The same five fields everywhere — the
-template is in `factory`; `docs/task-model.md` owns the phase vocabulary.
-
-| Field | Content |
-|---|---|
-| `spec` | `specs/<change>/` and its `stage:` — the folder this run writes into |
-| `phase` | one of `define · plan · build · verify · review · ship`, or `Needs your decision` when stopped and waiting on you |
-| `approach` | `inline`, or `delegate → <specialist>` |
-| `research` | what you actually read before deciding — handbacks and verdict lines, not file bodies |
-| `verify` | the acceptance gate — the spec's Acceptance lines, re-run by the approver |
-
-`Needs your decision` appears exactly twice in a clean run: after the spec is ready, and on
-ESCALATE. It names what `/praxis:approve <change>` and `/praxis:rework <change> "<note>"` do.
+Defined once, in `factory`: the five fields, the template, and `docs/task-model.md` for the phase
+vocabulary. Render it at every phase change and whenever you stop. `Needs your decision` appears
+exactly twice in a clean run — after the spec is ready, and on ESCALATE — and names what
+`/praxis:approve <change>` and `/praxis:rework <change> "<note>"` do.
 
 ## Resume
 

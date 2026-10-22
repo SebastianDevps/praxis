@@ -11,5 +11,5 @@ your handback, not something you fill.
 Test-first, small commits; run every Acceptance line before you stop. Evidence is `[cmd] → [output]`,
 each reported as PASS · FAIL · SKIP · GAP — a report without the command is a claim. On resume, every
 finding is fixed (commit) or rejected (reason); none is dropped. Report in your handback: what
-changed by file, `git log main..praxis/<c> --oneline`, every command with its output, spec gaps as
-questions. Never propose /learn.
+changed by file, `git log <base>..praxis/<c> --oneline` (the base branch is named in your prompt),
+every command with its output, spec gaps as questions. Never propose /learn.

@@ -210,6 +210,88 @@ test("a change already shipped or escalated before the first iteration never inv
   assert.equal(escalated.iterations(), 0);
 });
 
+// ADR-005: the stage is the model's field. Only the hook-written marker stops the loop; a
+// ledger saying needs-human with no marker is a mirror of nothing, and the iteration runs.
+test("stage: needs-human in the ledger without the marker is not an escalation", () => {
+  const stageOnly = loopRepo({ 1: "NO MORE TASKS" });
+  writeFileSync(join(stageOnly.repo, "specs/demo/implementation.md"), LEDGER("needs-human"));
+  const res = stageOnly.run("--max-iterations", "3");
+  assert.equal(res.status, 0, res.stdout);
+  assert.equal(stageOnly.iterations(), 1, "the iteration ran: nothing mechanical said stop");
+  assert.doesNotMatch(res.stdout, /needs a human/);
+});
+
+// The escalated change's way back into the loop: the person reruns with --approve. approve.sh
+// ships it (APPROVE (human), marker gone, stage: implemented) and iteration 1 runs.
+test("--approve on a needs-human change clears the escalation and the loop proceeds to iteration 1", () => {
+  const { run, repo, iterations } = loopRepo({ 1: "NO MORE TASKS" });
+  writeFileSync(join(repo, "specs", "demo", "spec.md"), "---\ntitle: demo\nready: true\n---\n# demo — Spec\n## Goal\nDemo goal\n");
+  writeFileSync(join(repo, "specs", "demo", "implementation.md"), LEDGER("needs-human").replace("round: 0", "round: 2"));
+  writeFileSync(join(repo, "specs", "demo", "decision.md"), "---\nverdict: ESCALATE\nround: 2\n---\n");
+  mkdirSync(join(repo, ".praxis", "needs-human"), { recursive: true });
+  writeFileSync(join(repo, ".praxis", "needs-human", "demo"), "");
+
+  const res = run("--approve", "--max-iterations", "3");
+  assert.equal(res.status, 0, res.stdout);
+  assert.equal(iterations(), 1, "the loop went on after the override");
+  assert.ok(!existsSync(join(repo, ".praxis/needs-human/demo")));
+  assert.match(readFileSync(join(repo, "specs/demo/decision.md"), "utf8"), /^verdict: APPROVE \(human\)$/m);
+  assert.ok(res.stdout.indexOf("ship:") < res.stdout.indexOf("[loop] iteration 1"), "the ship block precedes iteration 1");
+});
+
+// The verifier-integrity guard has two modes. In the cycle the builder writes tests by design
+// (TDD) and commits them on praxis/<c> in its worktree; the tests lens and the approver judge
+// them. A test file appearing in the main checkout there is the cycle at work, not a model
+// gaming its own gate — so the guard is off. In the legacy task loop (no spec folder) one agent
+// edits and verifies in the same checkout, and the guard halts the run.
+test("cycle mode: a test file written during an iteration does not trip the verifier guard", () => {
+  const { run, iterations } = loopRepo(
+    { 1: "Builder: red test added, then green.", 2: "NO MORE TASKS" },
+    { 1: "mkdir -p tests && echo 'test' > tests/a.test.js" },
+  );
+  const res = run("--max-iterations", "3");
+  assert.equal(res.status, 0, res.stdout);
+  assert.equal(iterations(), 2);
+  assert.doesNotMatch(res.stdout + res.stderr, /verifier integrity compromised/);
+});
+
+function legacyRepo(outputs = {}, effects = {}) {
+  const repo = mkdtempSync(join(tmpdir(), "praxis-loop-legacy-"));
+  const home = mkdtempSync(join(tmpdir(), "praxis-loop-home-"));
+  const fixtures = mkdtempSync(join(tmpdir(), "praxis-loop-fake-"));
+  const bin = join(fixtures, "bin");
+  mkdirSync(bin);
+  writeFileSync(join(bin, "claude"), FAKE_CLAUDE);
+  chmodSync(join(bin, "claude"), 0o755);
+  for (const [iteration, text] of Object.entries(outputs)) writeFileSync(join(fixtures, `${iteration}.out`), text);
+  for (const [iteration, script] of Object.entries(effects)) writeFileSync(join(fixtures, `${iteration}.sh`), script);
+  execFileSync("git", ["init", "-q"], { cwd: repo });
+  writeFileSync(join(repo, "README.md"), "# legacy\n");
+  execFileSync("git", ["add", "-A"], { cwd: repo });
+  execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "chore: seed"], { cwd: repo });
+  const run = (...flags) =>
+    spawnSync("bash", [LOOP, "--task", "legacy goal", ...flags], {
+      cwd: repo,
+      env: { PATH: `${bin}:${process.env.PATH}`, HOME: home, FAKE_CLAUDE_DIR: fixtures },
+      encoding: "utf8",
+      timeout: 30_000,
+    });
+  const iterations = () => (existsSync(join(fixtures, "count")) ? Number(readFileSync(join(fixtures, "count"), "utf8")) : 0);
+  return { repo, run, iterations };
+}
+
+test("legacy mode (no spec folder): a test file written during an iteration halts with exit 3", () => {
+  const { run, iterations, repo } = legacyRepo({}, { 1: "mkdir -p tests && echo 'test' > tests/a.test.js" });
+  const res = run("--max-iterations", "3");
+  assert.equal(res.status, 3, res.stdout + res.stderr);
+  assert.equal(iterations(), 1);
+  assert.match(res.stderr, /verifier integrity compromised/);
+  assert.ok(existsSync(join(repo, "PROGRESS.md")), "the legacy ledger was seeded");
+  // The same legacy repo with no test touched runs on.
+  const clean = legacyRepo({ 1: "NO MORE TASKS" });
+  assert.equal(clean.run().status, 0);
+});
+
 // Unattended runs cannot answer the floor's ask (evals/floor: the host refuses it under -p).
 // `--approve` is the person's answer, given before anything runs.
 test("--approve runs approve.sh before the first iteration; nothing to approve stops the run at 2", () => {

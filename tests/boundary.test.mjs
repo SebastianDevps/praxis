@@ -87,9 +87,9 @@ test("an explicit hand-off is not a clash", () => {
 // rewrites to satisfy a regex. What does not move: a real sibling is named.
 //
 // SCOPE — skills and agents, the two kinds `routing-audit.mjs` ranks against one another. Crafts
-// and pipelines are excluded on the evidence, not by preference: 0 of 11 carry a clause, because a
-// craft is always-on and a pipeline is invoked by name, so neither competes for a prompt. Asserting
-// it there would be inventing a convention rather than holding one.
+// are excluded on the evidence, not by preference: 0 of 6 carry a clause, because a craft is
+// always-on and never competes for a prompt. Asserting it there would be inventing a convention
+// rather than holding one.
 
 const ROOT = new URL("..", import.meta.url).pathname;
 

@@ -10,14 +10,16 @@
 #    floor's `ask`; this path is for hosts without a prompt (Codex) and for unattended runs,
 #    where a person — or CI — approves before the run starts.
 #
-# 2. The ship override (specs/factory-cycle, design.md appendix). When the change is in
-#    needs-human — `.praxis/needs-human/<change>` exists, or the ledger says
-#    `stage: needs-human` — the approver recorded ESCALATE and the person is deciding to ship
-#    anyway. The script writes `specs/<change>/decision.md` with `verdict: APPROVE (human)`,
-#    which the ship gate accepts whatever the lenses said, removes the marker, and prints the
-#    two ship commands for the orchestrator to run. It does not run them: push and PR are the
-#    orchestrator's, behind the gate, and the ledger's `stage: shipped` is the orchestrator's
-#    to set once the PR URL exists.
+# 2. The ship override (specs/factory-cycle, design.md appendix). When `.praxis/needs-human/<c>`
+#    exists — the approver recorded ESCALATE and `hooks/post-tool-use` wrote the marker — the
+#    person is deciding to ship anyway. The script writes `specs/<change>/decision.md` with
+#    `verdict: APPROVE (human)`, which the ship gate accepts whatever the lenses said, removes
+#    the marker, sets `stage: implemented` in the ledger (the appendix names this script as a
+#    ledger writer; the person runs it) so the next step is ship, and prints the two ship
+#    commands for the orchestrator to run. It does not run them: push and PR are the
+#    orchestrator's, behind the gate, and `stage: shipped` is the orchestrator's once the PR
+#    URL exists. The marker, and ONLY the marker, triggers this: a ledger `stage: needs-human`
+#    is a field the model writes, and a model-written field unlocks nothing (ADR-005).
 #
 # Refuses a change with neither spec file: there is nothing to approve, and a marker without a
 # spec would let the floor through on a change that never had one.
@@ -26,12 +28,14 @@
 # it on the model's own initiative is the bypass the marker exists to remove, and there is
 # no mechanical way to tell the two apart (documented gap, same class as Bash writes).
 #
-# Zero dependencies beyond bash + coreutils. Exit 1 on refusal, 2 on usage.
+# Zero dependencies beyond bash + coreutils (+ git to name the PR's base). Exit 1 on refusal,
+# 2 on usage.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "${SCRIPT_DIR}/../hooks/lib.sh"
+. "${SCRIPT_DIR}/ledger-field.sh"
 
 change="${1:-}"
 [ -n "$change" ] || { echo "usage: approve.sh <change>   (a folder under specs/)" >&2; exit 2; }
@@ -46,17 +50,45 @@ mkdir -p "${root}/.praxis/approved"
 : > "$(praxis_approved_marker "$root" "$change")"
 
 marker="$(praxis_needs_human_marker "$root" "$change")"
-stage="$(praxis_ledger_field "$root" "$change" stage)"
-if [ -f "$marker" ] || [ "$stage" = needs-human ]; then
-  round="$(praxis_ledger_round "$root" "$change")"
-  decision="${root}/specs/${change}/decision.md"
-  printf -- '---\nverdict: APPROVE (human)\nround: %s\n---\n## Checks run\n- none — human override\n## Reason\napproved by the person via /praxis:approve\n' \
-    "$round" > "$decision"
-  rm -f "$marker"
-  printf 'approved %s → specs/%s/decision.md (verdict: APPROVE (human), round %s); .praxis/needs-human/%s removed\n' \
-    "$change" "$change" "$round" "$change"
-  printf 'ship:\n  git push -u origin praxis/%s\n  gh pr create --head praxis/%s --fill\n' "$change" "$change"
-  exit 0
-fi
+[ -f "$marker" ] || { printf 'approved %s → .praxis/approved/%s (spec: %s)\n' "$change" "$change" "$spec"; exit 0; }
 
-printf 'approved %s → .praxis/approved/%s (spec: %s)\n' "$change" "$change" "$spec"
+# --- The ship override ------------------------------------------------------------------------
+
+# The PR's base: what worktree.sh recorded on the branch when it created it, else the ledger's
+# `base:`, else the branch the main checkout is on, else main.
+pr_base() {
+  local b
+  b="$(git -C "$root" config --get "branch.praxis/${change}.praxisBase" 2>/dev/null || true)"
+  [ -n "$b" ] || b="$(praxis_ledger_field "$root" "$change" base)"
+  [ -n "$b" ] || b="$(git -C "$root" symbolic-ref --short -q HEAD 2>/dev/null || true)"
+  printf '%s' "${b:-main}"
+}
+
+# The PR's title: the first non-empty line under the spec's `## Goal`, its list marker dropped.
+spec_goal() {
+  awk '
+    /^## Goal[ \t]*$/ { want = 1; next }
+    want && /^## /    { exit }
+    want && NF        { sub(/^[ \t]*[-*][ \t]+/, ""); sub(/[ \t]+$/, ""); print; exit }
+  ' "${root}/${spec}"
+}
+
+# Escape for a double-quoted shell string the orchestrator will paste.
+sh_dq() { local s="$1"; s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//\$/\\\$}"; s="${s//\`/\\\`}"; printf '%s' "$s"; }
+
+round="$(praxis_ledger_round "$root" "$change")"
+ledger="${root}/specs/${change}/implementation.md"
+decision="${root}/specs/${change}/decision.md"
+printf -- '---\nverdict: APPROVE (human)\nround: %s\n---\n## Checks run\n- none — human override\n## Reason\napproved by the person via /praxis:approve\n' \
+  "$round" > "$decision"
+rm -f "$marker"
+[ -f "$ledger" ] && praxis_set_frontmatter_field "$ledger" stage implemented
+
+base="$(pr_base)"
+title="$(spec_goal)"; [ -n "$title" ] || title="$change"
+body="Spec: specs/${change}/${spec##*/} · Decision: specs/${change}/decision.md (APPROVE (human), round ${round})"
+
+printf 'approved %s → specs/%s/decision.md (verdict: APPROVE (human), round %s); .praxis/needs-human/%s removed; ledger stage: implemented\n' \
+  "$change" "$change" "$round" "$change"
+printf 'ship:\n  git push -u origin praxis/%s\n  gh pr create --base %s --head praxis/%s --title "%s" --body "%s"\n' \
+  "$change" "$base" "$change" "$(sh_dq "$title")" "$(sh_dq "$body")"

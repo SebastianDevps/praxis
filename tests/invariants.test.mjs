@@ -176,7 +176,9 @@ test("every priming surface enumerates the phase vocabulary where the Run Card f
 // "approach" is an ordinary word that appears in that file's prose. Presence in a file is not
 // presence in a Run Card. This version parses the two real shapes — `field:` inside the fenced
 // block, and `| \`field\` |` as a table row — and asserts against what it actually parsed.
-const RUN_CARD_SURFACES = [...PRIMING_SURFACES.map(RUN_CARD_HOME), "agents/orchestrator.md", "AGENTS.md"];
+// `agents/orchestrator.md` left this list with specs/factory-cycle: the card is defined once, in the
+// `factory` skill, and the orchestrator points at it instead of re-rendering the table.
+const RUN_CARD_SURFACES = [...PRIMING_SURFACES.map(RUN_CARD_HOME), "AGENTS.md"];
 // `spec` joined the card with the spec folder (specs/spec-driven-workflow §3). Its fenced form is
 // `spec:     specs/<change>/   (stage: <stage>)` — a literal path carrying a placeholder rather
 // than a bare `<placeholder>`, so the fenced parser accepts any value that holds one.
@@ -309,6 +311,7 @@ test("every referenced template exists on disk", () => {
   // The spec templates moved to specs/_templates/ (one source; the two old copies diverged and
   // were deleted). spec-lifecycle promises every file in that folder, so every file is pinned.
   const cited = [
+    "specs/_templates/spec.md",
     "specs/_templates/implementation.md",
     "specs/_templates/design.md",
     "specs/_templates/decisions.md",

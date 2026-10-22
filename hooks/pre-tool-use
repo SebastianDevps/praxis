@@ -113,10 +113,16 @@ root="$(praxis_project_root "${CLAUDE_PROJECT_DIR:-${CODEX_PROJECT_DIR:-$cwd}}")
 
 mode="$(praxis_mode)"
 host="$(praxis_host)"
-change="$(praxis_active_change "$root")"
-name="${change:-<change>}"
-ledger="$(praxis_ledger_path "$root" "$change")"   # the main checkout's, from a linked worktree
-spec="$(praxis_spec_file "$root" "$change")"
+
+# The change and its files under the current root. Called again when an edit re-roots into
+# the builder's worktree.
+resolve_change() {
+  change="$(praxis_active_change "$root")"
+  name="${change:-<change>}"
+  ledger="$(praxis_ledger_path "$root" "$change")"   # the main checkout's, from a linked worktree
+  spec="$(praxis_spec_file "$root" "$change")"
+}
+resolve_change
 target=""
 
 # The blank forms, project-local, so the deny points at files the model may read. Copied
@@ -166,40 +172,66 @@ builder_gate() {
   decide deny "PRAXIS round cap: 2 rounds done → approver / ESCALATE. Round ${round} of specs/${change} is complete and not all PASS (${not_pass}). A third fix round never starts: dispatch the approver, which records ESCALATE in specs/${change}/decision.md; the person then decides with /praxis:approve ${change} or /praxis:rework ${change} \"<note>\". ${override}"
 }
 
-# Whether a Bash command ships the change: `gh pr create`; `git push` naming praxis/<change>
-# as a whole token — praxis/xy is not praxis/x; or `git push` with no refspec (or HEAD) while
-# the hook's cwd sits on that branch. Anything git cannot answer (no repo, unborn branch)
-# reads as "not on the branch": fail-open.
-names_branch() {
-  case "$1" in
-    *"praxis/${change}"|*"praxis/${change}"[[:space:]]*|*"praxis/${change}:"*|*"praxis/${change}\""*|*"praxis/${change}'"*) return 0 ;;
-  esac
-  return 1
-}
-# The refspecs of the first `git push`: its non-option tokens after the remote, one per line,
-# up to the next shell operator. Empty means "the current branch".
-push_refspecs() {
-  printf '%s\n' "$1" | awk '
-    {
-      i = index($0, "git push"); if (!i) next
-      s = substr($0, i + 8)
-      if (match(s, /[;&|]/)) s = substr(s, 1, RSTART - 1)
-      n = split(s, t, /[ \t]+/); pos = 0
-      for (k = 1; k <= n; k++) {
-        if (t[k] == "" || t[k] ~ /^-/) continue
-        if (++pos >= 2) print t[k]
-      }
-      exit
-    }'
-}
+# Whether a Bash command ships the change. The command is read as the shell would — segments
+# on `&&`, `||`, `;`, `|`, argv per segment, quotes removed (praxis_shell_segments) — never as
+# a substring: `echo "git push"` is not a push. A segment ships when it is
+#   gh pr create …
+#   git [-C <dir>] [other global options] push [options] [<remote> [<refspec>…]]
+#     with a refspec that is praxis/<change> as a whole token (or `…:praxis/<change>`), or
+#     with no refspec, or HEAD (`HEAD:…`), while the branch checked out in <dir> is praxis/<change>.
+# <dir> starts at the payload's cwd, moves with an earlier `cd <dir>` in the same command, and
+# with `-C`. Anything git cannot answer there — no repo, unborn branch, a `$var` the shell
+# would have expanded — reads as "not on the branch": fail-open.
+on_branch() { [ "$(git -C "$1" rev-parse --abbrev-ref HEAD 2>/dev/null)" = "praxis/${change}" ]; }
+resolve_dir() { case "$1" in "") printf '%s' "$2" ;; /*) printf '%s' "$1" ;; *) printf '%s/%s' "$2" "$1" ;; esac; }
 ship_command() {
-  case "$1" in *"gh pr create"*) return 0 ;; esac
-  case "$1" in *"git push"*) ;; *) return 1 ;; esac
-  names_branch "$1" && return 0
-  case "$(push_refspecs "$1")" in
-    ''|HEAD|HEAD:*) [ "$(git -C "$cwd" rev-parse --abbrev-ref HEAD 2>/dev/null)" = "praxis/${change}" ] ;;
-    *) return 1 ;;
-  esac
+  local seg dir="$cwd" gitdir i n pos refs ref
+  local -a argv
+  while IFS= read -r seg; do
+    [ -n "$seg" ] || continue
+    IFS=$'\034' read -r -a argv <<< "$seg"
+    i=0; n=${#argv[@]}
+    while [ "$i" -lt "$n" ]; do case "${argv[$i]}" in *=*) i=$((i + 1)) ;; *) break ;; esac; done   # VAR=x prefixes
+    case "${argv[$i]:-}" in
+      cd)       dir="$(resolve_dir "${argv[$((i + 1))]:-}" "$dir")"; continue ;;
+      gh)       [ "${argv[$((i + 1))]:-}" = pr ] && [ "${argv[$((i + 2))]:-}" = create ] && return 0; continue ;;
+      git|*/git) ;;
+      *)        continue ;;
+    esac
+    gitdir="$dir"; i=$((i + 1))
+    while [ "$i" -lt "$n" ]; do
+      case "${argv[$i]}" in
+        -C) gitdir="$(resolve_dir "${argv[$((i + 1))]:-}" "$gitdir")"; i=$((i + 2)) ;;
+        -c|--git-dir|--work-tree|--namespace|--exec-path) i=$((i + 2)) ;;
+        -*) i=$((i + 1)) ;;
+        *)  break ;;
+      esac
+    done
+    [ "${argv[$i]:-}" = push ] || continue
+    i=$((i + 1)); pos=0; refs=""
+    while [ "$i" -lt "$n" ]; do
+      case "${argv[$i]}" in
+        -o|--push-option|--receive-pack|--exec|--repo) i=$((i + 2)); continue ;;
+        -*) i=$((i + 1)); continue ;;
+      esac
+      pos=$((pos + 1))
+      [ "$pos" -ge 2 ] && refs="${refs}${argv[$i]}"$'\n'
+      i=$((i + 1))
+    done
+    if [ -z "$refs" ]; then on_branch "$gitdir" && return 0; continue; fi
+    while IFS= read -r ref; do
+      [ -n "$ref" ] || continue
+      case "${ref#+}" in
+        "praxis/${change}"|*":praxis/${change}") return 0 ;;
+        HEAD|HEAD:*) on_branch "$gitdir" && return 0 ;;
+      esac
+    done <<EOF
+$refs
+EOF
+  done <<EOF
+$(praxis_shell_segments "$1")
+EOF
+  return 1
 }
 
 # A push of the change branch or a PR against the approver's decision.
@@ -250,6 +282,17 @@ esac
 
 paths="$(praxis_edit_paths "$payload")"
 [ -n "$paths" ] || allow "no file path in tool input"
+
+# The builder edits in a linked worktree under <root>/.praxis/worktrees/<name>/ while the
+# host's project dir stays on the main checkout. An edit in there is judged by that checkout —
+# its own `.praxis/` and `specs/` (seeded by scripts/worktree.sh; the ledger comes from the main
+# checkout, praxis_ledger_path) and its `src/`. Without this the whole worktree read as `.praxis/`
+# session state, and every gate was silent for the builder.
+worktree="$(praxis_worktree_root "$root" "$(praxis_project_targets "$root" "$cwd" "$paths" | head -n 1)")"
+if [ -n "$worktree" ] && [ -d "$worktree" ]; then
+  root="$worktree"
+  resolve_change
+fi
 
 # A review file is its lens's to write. The main thread may write one only to record a lens
 # that never returned, and only with `verdict: SKIP`. Claude Code puts `agent_id` on every
@@ -330,12 +373,9 @@ Override: PRAXIS_COMMENTS=off lifts this check alone; PRAXIS_FLOOR=off lifts the
 }
 comment_gate
 
-# The spec's shape, repeated in the deny for a model that cannot read the template. The
-# template itself ships with factory-cycle (T05); until the plugin carries spec.md the deny
-# points at design.md as the form to read, and still names spec.md as the file to write.
+# The spec's shape, repeated in the deny for a model that cannot read the template.
 sections="Goal, Scope (In / Out), Acceptance (runnable checks: command → expected output; the approver executes these), Approach (files and the seam, no code), Open questions ([NEEDS CLARIFICATION] items; ready: true when none remain)"
 spec_template="specs/_templates/spec.md"
-[ -f "${PRAXIS_ROOT}/specs/_templates/spec.md" ] || [ -f "${root}/specs/_templates/spec.md" ] || spec_template="specs/_templates/design.md"
 
 case "$mode" in
   fast)
