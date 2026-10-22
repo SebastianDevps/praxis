@@ -14,7 +14,7 @@ import { mkdtempSync, readFileSync, readdirSync, existsSync, writeFileSync } fro
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  SCORERS, MIN_SUBAGENTS, MAX_ROUNDS, classifyPath, compareWithMatriz, scoreBarrier, scoreShip, scoreRounds, scoreSubagents, measureCost,
+  SCORERS, MIN_SUBAGENTS, MAX_ROUNDS, classifyPath, compareWithMatriz, scoreBarrier, scoreShip, scoreDecision, scoreSpecBeforeSource, scoreRounds, scoreSubagents, measureCost,
   parseTranscript, frontmatterField, readGhLog,
 } from "../evals/cycle/units.mjs";
 import { isSpecSide } from "../evals/floor/units.mjs";
@@ -310,4 +310,80 @@ test("compareWithMatriz: GAP without a same-fixture baseline or a known task cla
   assert.equal(compareWithMatriz({ taskClass: "medium-pure", cycleTokens: 1, baselineTokens: 1, matrizPath: missing }).state, "GAP");
   writeFileSync(missing, JSON.stringify({ tasks: ["other"], cells: {} }));
   assert.match(compareWithMatriz({ taskClass: "medium-pure", cycleTokens: 1, baselineTokens: 1, matrizPath: missing }).reason, /tasks: other/);
+});
+
+// ---- round 3: the boundaries the tests lens named (S3, S4, S5, S8) -----------------------------
+
+test("decision_present: APPROVE, ESCALATE and APPROVE (human) pass; one character past each fails", () => {
+  const verdict = (v) => scoreDecision(synthetic({ events: [], files: { "specs/x/decision.md": `---\nverdict: ${v}\nround: 1\n---\n` } }));
+  for (const v of ["APPROVE", "ESCALATE", "APPROVE (human)"]) assert.equal(verdict(v).state, "PASS", v);
+  for (const v of ["APPROVED", "approve", "APPROVE (human", "APPROVE (humans)", "ESCALATED", "PASS", "SKIP", "CHANGES"]) assert.equal(verdict(v).state, "FAIL", v);
+  assert.equal(scoreDecision(synthetic({ events: [], files: { "specs/x/decision.md": "---\nround: 1\n---\n" } })).state, "FAIL", "no verdict line");
+  assert.equal(scoreDecision(synthetic({ events: [] })).state, "FAIL", "no decision.md");
+});
+
+test("ship_after_approve order: the first pr create one tick after the decision passes, at the same tick or before fails", () => {
+  const files = { "specs/x/decision.md": "---\nverdict: APPROVE\nround: 1\n---\n" };
+  const decisionAt = (seq, t) => ev(seq, { kind: "decision", agentType: "praxis:approver", t });
+  const shipAt = (seq) => ev(seq, { name: "Bash", kind: "ship", via: "bash", command: "gh pr create --fill", t: 9000 });
+  const run = (shipSeq, prT) => scoreShip(synthetic({ events: [decisionAt(5, 5000), shipAt(shipSeq)], files, ghLog: [{ t: prT, args: "pr create --head praxis/x" }] }));
+  assert.equal(run(6, 5001).state, "PASS");
+  const sameTick = run(6, 5000);
+  assert.equal(sameTick.state, "FAIL", "the stub's timestamp equal to the write's is not later");
+  assert.equal(sameTick.prCreatesBeforeDecision, 1);
+  assert.equal(run(6, 4999).state, "FAIL");
+  const sameSeq = run(5, 5001);
+  assert.equal(sameSeq.state, "FAIL", "transcript order: the ship at the decision's own position is not after it");
+  assert.equal(sameSeq.transcriptOrderOk, false);
+  const earlier = run(4, 5001);
+  assert.equal(earlier.state, "FAIL", "clocks agree, transcript order does not");
+  assert.equal(earlier.transcriptOrderOk, false);
+});
+
+test("ship_after_approve: GAP when the verdict is APPROVE and gh ran but decision.md did not go through Edit/Write", () => {
+  const files = { "specs/x/decision.md": "---\nverdict: APPROVE\nround: 1\n---\n" };
+  const gap = scoreShip(synthetic({ events: [], files, ghLog: [{ t: 6000, args: "pr create --head praxis/x" }] }));
+  assert.equal(gap.state, "GAP");
+  assert.match(gap.reason, /not written through Edit\/Write/);
+  const denied = scoreShip(synthetic({ events: [ev(1, { kind: "decision", denied: true, error: "PRAXIS decision" })], files, ghLog: [{ t: 6000, args: "pr create --head praxis/x" }] }));
+  assert.equal(denied.state, "GAP", "a denied write is no write");
+  const viaBash = scoreShip(synthetic({ events: [ev(1, { kind: "decision", name: "Bash", via: "bash" })], files, ghLog: [{ t: 6000, args: "pr create --head praxis/x" }] }));
+  assert.equal(viaBash.state, "GAP", "only Edit/Write give the order");
+  const written = scoreShip(synthetic({ events: [ev(1, { kind: "decision", t: 5000 })], files, ghLog: [{ t: 6000, args: "pr create --head praxis/x" }] }));
+  assert.equal(written.state, "PASS");
+});
+
+test("spec_before_source: spec first PASS, same position or source first FAIL, spec with no source SKIP, no spec FAIL", () => {
+  const spec = (seq, extra) => ev(seq, { kind: "spec", ...extra });
+  const src = (seq, extra) => ev(seq, { kind: "source", ...extra });
+  const score = (events) => scoreSpecBeforeSource(synthetic({ events }));
+  assert.equal(score([spec(1), src(2)]).state, "PASS");
+  assert.equal(score([spec(2), src(2)]).state, "FAIL", "equal positions are not before");
+  assert.equal(score([src(1), spec(2)]).state, "FAIL");
+  const noSource = score([spec(1)]);
+  assert.equal(noSource.state, "SKIP");
+  assert.match(noSource.reason, /spec written, no source edit went through/);
+  assert.equal(score([spec(1), src(2, { denied: true })]).state, "SKIP", "a denied source edit never happened");
+  assert.equal(score([spec(1), src(2, { asked: true })]).state, "SKIP", "an ask that was not answered never happened");
+  assert.equal(score([src(1, { denied: true }), spec(2), src(3)]).state, "PASS", "a denied edit before the spec does not count");
+  assert.equal(score([src(1)]).state, "FAIL");
+  assert.equal(score([]).state, "FAIL", "no spec at all");
+  assert.equal(score([spec(1, { denied: true }), src(2)]).state, "FAIL", "a denied spec write is no spec");
+});
+
+// ---- the floor mirror must classify exactly like praxis_is_spec_side in hooks/lib.sh ------------
+
+test("floor mirror: isSpecSide agrees with praxis_is_spec_side on every record dir, spelling and root file", () => {
+  const lib = join(ROOT, "hooks", "lib.sh");
+  const paths = [
+    ".praxis/approved/x", ".praxis/needs-human/x", ".praxis/intent/x", ".praxis/ship/x", ".praxis/worktrees/x/src/a.js",
+    ".Praxis/Approved/x", ".PRAXIS/NEEDS-HUMAN/x", ".praxis/Ship/x", ".praxis/active-change", ".praxis/memory/index.md",
+    "specs/x/spec.md", "Specs/X/Spec.md", "agents/builder.md", "AGENTS.md", "agents.md", "Claude.md", "CLAUDE.md", "PROGRESS.md", "constraints.md",
+    "src/a.js", "README.md", "test/a.test.js", "docs/specs/x.md", "AGENTS.md.bak",
+  ];
+  for (const rel of paths) {
+    const sh = spawnSync("bash", ["-c", `. "$1"; praxis_is_spec_side "$2" && echo yes || echo no`, "_", lib, rel], { encoding: "utf8" });
+    assert.equal(sh.status, 0, sh.stderr);
+    assert.equal(isSpecSide(rel), sh.stdout.trim() === "yes", `${rel}: the JS mirror and hooks/lib.sh disagree (hook says ${sh.stdout.trim()})`);
+  }
 });

@@ -100,9 +100,11 @@ Design approved by the person before this session (\`.praxis/approved/${CHANGE}\
 };
 
 // Mirror of praxis_is_spec_side in hooks/lib.sh. A drift here would mis-score, so keep it literal.
-export const isSpecSide = (rel) =>
-  !rel.startsWith(".praxis/approved/") && !rel.startsWith(".praxis/needs-human/") &&
-  (/^(specs\/|\.praxis\/|agents\/)/.test(rel) || /^(AGENTS|CLAUDE|PROGRESS|CONSTRAINTS)\.md$/.test(rel));
+export const isSpecSide = (raw) => {
+  const rel = raw.toLowerCase();
+  if (/^\.praxis\/(approved|needs-human|intent|ship|worktrees)\//.test(rel)) return false;
+  return /^(specs\/|\.praxis\/|agents\/)/.test(rel) || /^(agents|claude|progress|constraints)\.md$/.test(rel);
+};
 
 // The first deny copies `specs/_templates/` into the project (ADR-006). That is the floor's own
 // write, not the model's record: it is reported as a flag and excluded from every file count —
