@@ -1,8 +1,8 @@
 ---
 title: Factory Cycle
-stage: needs-human  # new → designed → planned → implemented → shipped | needs-human
+stage: planned  # new → designed → planned → implemented → shipped | needs-human
 owner: plugin owner
-round: 2
+round: 0
 lenses: correctness, security, tests
 ---
 
@@ -89,7 +89,7 @@ Three builders in parallel on disjoint files, each reading `review/rework-1/{cor
 - T06 / R03: EAG row "SubagentStart output for `builder` is ≤15 lines plus the spec path" — measured kernel 15 + change line 1, but the builder also receives its two declared crafts (72 lines) per the T03 brief; decide whether the EAG counts crafts, or move the crafts behind a pointer for the builder.
 
 ## Blocked
-state: blocked(user) — round cap reached with CHANGES in every lens. The person chose round 3 ("go de una", 2026-10-22); Wave 5 is planned above and ADR-007 is written. The token that opens it is minted only by the person's own prompt: `/praxis:rework factory-cycle "ronda 3: cerrar los 9 puntos de Session Notes"`. Verified 2026-10-22: at the cap `pre-tool-use` denies every builder-type dispatch and every SendMessage (`builder_gate`, hooks/pre-tool-use:222, :460-481), and `scripts/rework.sh` without `.praxis/intent/rework-factory-cycle` (intent_gate, :407-423); the orchestrator did not mint it. Also: `approver` is dispatched from a fresh `claude` process (S01).
+None. Rework 1 ran 2026-10-22 (`review/rework-1/note.md`): the person typed `/praxis:rework factory-cycle "ronda 3: …"`, the host answered "Unknown command" because this session loads Praxis 0.9.0 from the plugin cache (`~/.claude/plugins/cache/praxis/praxis/0.9.0`, commit c85c361 — no `commands/rework.md`, no `builder_gate`, no `intent_gate`: `rg -c "builder_gate|intent_gate"` on its pre-tool-use → 0), and the orchestrator ran `scripts/rework.sh` on the person's typed order. Correction: an earlier version of this note said the cap and the intent gate were verified to deny in this session; they were read in the repo's code, never exercised here. The gates are exercised by `tests/hooks.test.mjs` and by `evals/cycle` (fresh processes on a snapshot). S01 runs the approver from a fresh process for the same reason.
 
 ## Session Notes
 - Proposed round-3 note (priority order): (1) hook-written ship marker `.praxis/ship/<c>` on the approver's APPROVE, required by the ship gate; Bash denied on `.praxis/{approved,needs-human,intent,ship}` incl. `find -exec`, `fd -x`, `rg --pre`; path normalisation (`//`, `./`, `cd .praxis`). (2) Never push to trunk: deny any push whose destination is main/master/`base:`; case-fold refspecs; rev-expressions and SHA sources; `git \push`, `bash -lc`, `timeout`, `if/then`. (3) `gh pr create` gated only while a cycle is open and the head is not that cycle's branch; non-cycle branches free. (4) Intent gate uses the ship tokenizer (`bash -c` unwrapped), gates execution forms only, denies Bash invoking `hooks/*`. (5) Ledger `lenses:` fallback obeys the three-lens minimum; at the cap deny every SendMessage and every builder dispatch until the approver or rework resolves it. (6) Codex `apply_patch` re-rooted per path. (7) Tests: case-folding at all 6 sites, decision gate for MultiEdit/apply_patch/NotebookEdit, `--mirror`/`--branches`, rework.sh without token, `round: 08`, scorer boundaries S3–S5, S8. (9) Cost: every cell ran a second round — reviewers always found something — and used opus for spec-writer/approver; round-3 must add a per-change cost line to the ledger, make the lens severity threshold explicit (CHANGES only on blocking/important, minors never trigger a round), reference `${CLAUDE_PLUGIN_ROOT}/scripts/worktree.sh` in the factory skill, and re-measure with sonnet lenses vs opus. (8) ADR-007: the floor stops drift, not an adversary with a shell; adversarial resistance belongs to host permission rules (deny `Bash(*hooks/*)`, `Bash(*.praxis/*)`), documented in docs/cycle.md and README.

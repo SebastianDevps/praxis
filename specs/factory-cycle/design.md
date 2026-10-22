@@ -265,3 +265,64 @@ decision.md written with verdict ESCALATE      → post-tool-use creates .praxis
 decision.md written with verdict APPROVE*      → post-tool-use removes .praxis/needs-human/<c>
 Edit/Write to .praxis/approved/* or .praxis/needs-human/*  → deny
 ```
+
+### Round-3 amendments (rework 1, 2026-10-22; threat model: ADR-007)
+
+These rules replace the ship and Bash rows above where they differ. The hooks builder implements
+them; `docs/cycle.md` and the README describe them; the lenses review against them.
+
+```
+open cycle of <c>  ⇔  specs/<c>/implementation.md exists, stage ≠ shipped, and the ledger
+                       frontmatter has a `round:` or `builder:` key, or specs/<c>/review/ exists.
+                       A ledger without those (every pre-0.10 ledger) is never an open cycle.
+
+change a ship command is about:
+  pushed or PR head branch praxis/<c>          → <c>
+  any other branch                             → the change in .praxis/active-change, only if it
+                                                 is an open cycle; never the newest-ledger fallback
+  neither                                      → none: the command is not a ship → allow
+
+ship (`git push` or `gh pr create` / `gh api …pulls|merge` about change <c>):
+  .praxis/ship/<c> exists and decision.md verdict is APPROVE or APPROVE (human)  → allow
+  anything else                                                    → deny with the reason
+push destination main, master, or the ledger's `base:` (case-folded; refspec destination side,
+  `HEAD:main`, `x:refs/heads/Main`, rev-expressions and SHAs as source) while ANY change is an
+  open cycle (active change or the pushed praxis/<c>)                → deny "the cycle never pushes trunk"
+  no open cycle                                                      → not Praxis's call → allow
+`--all`, `--mirror`, `--branches` while an open cycle exists        → deny
+
+.praxis/ship/<c>  empty file · written by post-tool-use when the approver's decision.md says APPROVE
+                  and the last round is complete with every lens PASS; written by scripts/approve.sh
+                  with APPROVE (human); removed by rework.sh · never Edit/Write, never Bash
+Bash touching .praxis/{approved,needs-human,intent,ship}/ — after normalising `//`, `/./`, a
+  leading `./`, and a preceding `cd .praxis` / `cd .praxis/<dir>` in the same command — is denied
+  unless every stage is a plain read; `find -exec|-execdir|-delete|-ok`, `fd -x|-X|--exec*`,
+  `rg --pre` are not plain reads.
+Bash executing a Praxis hook (`hooks/<name>` as the command word or as the script of sh|bash|zsh|
+  dash, after unwrapping env/sudo/command/time/timeout/nohup/nice/exec and `bash -c`/`-lc`/`-ec`)
+  → deny. Reading a hook (bat, rg, cat, head, sed -n) → allow.
+intent gate: the same unwrapping; only an execution of scripts/approve.sh | rework.sh needs the
+  token; reading them is allowed.
+tokenizer: `if/then/else/elif/fi/do/done/while/until/{/}/(/)` are separators; a backslash inside
+  a command word is dropped (`git \push` = `git push`); `timeout <n>` is a wrapper.
+lens list: review/round-N/lenses when present, else the ledger's `lenses:`; either way the list is
+  the union with {correctness, security, tests}.
+at the cap (round 2 complete, not all PASS, no rework since): every SendMessage and every dispatch of
+  builder | engineer | backend | design | platform → deny, until rework.sh runs.
+Codex apply_patch: each path in the patch is re-rooted and classified on its own; one denied path
+  denies the patch.
+Open by design (ADR-007, documented in the pre-tool-use header and docs/cycle.md): git aliases,
+  GIT_DIR/--git-dir, `$(…)`, variables, wrapper scripts, interpreters (python -c, node -e) writing
+  records. The host's permission rules close them.
+```
+
+Ledger, optional section kept by the orchestrator:
+
+```
+## Cost
+- round-<N> | spec | approve: <agents> agents · <tokens> tokens · <tool uses> tool uses   # from each Agent result's usage line
+```
+
+Lens verdict threshold: `CHANGES` only when at least one finding is `blocking` or `important`;
+findings that are all `minor` give `PASS` with the findings listed. The approver applies the same
+threshold when it reads the round.
