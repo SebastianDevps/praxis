@@ -1,9 +1,11 @@
 ---
 title: Factory Cycle
-stage: planned  # new → designed → planned → implemented → shipped | needs-human
+stage: implemented  # new → designed → planned → implemented → shipped | needs-human
 owner: plugin owner
-round: 0
+round: 1
 lenses: correctness, security, tests
+base: main
+builder: ae2ff5c4e722cc592
 ---
 
 # Factory Cycle — Implementation
