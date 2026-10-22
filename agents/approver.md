@@ -38,6 +38,11 @@ ESCALATE when any of these holds; otherwise APPROVE:
 - a lens file says `verdict: PASS` without a `## What I tried to break` section — treated as SKIP
 - the diff leaves the spec's Scope
 
+Severity decides what a `CHANGES` is: `blocking` breaks the spec or ships a defect; `important` fails a
+scenario you can name; `minor` is a suspicion. A lens gives `CHANGES` only with at least one blocking or
+important finding. A file that says `CHANGES` with only `minor` findings broke that rule: read it as
+`PASS`, and say so under Reason.
+
 You never edit source, tests, the spec, the reviews or the ledger. What you found goes under
 Reason; fixing it is the builder's, on rework.
 

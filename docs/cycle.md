@@ -39,6 +39,7 @@ specs/<change>/
   active-change        the change the Run Card is about
   approved/<change>    written by post-tool-use when the approved edit ran, or by approve.sh — never by Edit/Write
   needs-human/<change> written by post-tool-use on ESCALATE; removed by rework.sh / approve.sh
+  ship/<change>        empty file; written by post-tool-use on APPROVE with every lens PASS, or by approve.sh; removed by rework.sh
   worktrees/<change>/  the builder's checkout, branch praxis/<change> (scripts/worktree.sh)
 ```
 
@@ -102,34 +103,96 @@ and SKIP is not PASS, so the change escalates.
 
 | event | decision |
 |---|---|
-| `PreToolUse` Edit / Write | deny a source edit until `specs/<c>/spec.md` (legacy `design.md`) and `implementation.md` exist, naming the file to create; `ask` until `.praxis/approved/<c>`; deny any Edit/Write to `.praxis/approved/*` or `.praxis/needs-human/*`; from the main thread, a write under `review/round-*/` only with `verdict: SKIP` |
+| `PreToolUse` Edit / Write | deny a source edit until `specs/<c>/spec.md` (legacy `design.md`) and `implementation.md` exist, naming the file to create; `ask` until `.praxis/approved/<c>`; deny any Edit/Write to `.praxis/{approved,needs-human,intent,ship}/*`; from the main thread, a write under `review/round-*/` only with `verdict: SKIP` |
 | `PreToolUse` Agent (builder) / SendMessage (the builder id in the ledger) | the barrier and the round cap — rules below |
-| `PreToolUse` Bash `gh pr create`, `git push` naming `praxis/<c>` | the ship gate — rules below |
-| `PostToolUse` Write | `.praxis/approved/<c>` when the approved source edit ran; `.praxis/needs-human/<c>` when `decision.md` records ESCALATE, removed when it records APPROVE |
+| `PreToolUse` Bash | the ship gate and the trunk rule; denies Bash that touches a record directory or executes a Praxis hook — rules below |
+| `PostToolUse` Write | `.praxis/approved/<c>` when the approved source edit ran; `.praxis/needs-human/<c>` when `decision.md` records ESCALATE, removed when it records APPROVE; `.praxis/ship/<c>` when it records APPROVE and the last round is complete with every lens PASS |
 | `SubagentStart` | the role kernel (≤15 lines, `hooks/context/roles/`) + the spec path; lenses and the approver also get the project rules |
 | `UserPromptSubmit` | the ≤40-line kernel and the mode; the `factory` skill carries the cycle |
 | `Stop` | block once when source changed and no `implementation.md` did |
 
 ```
+open cycle of <c>  ⇔  implementation.md exists, stage ≠ shipped, and the ledger has `round:` or
+                       `builder:`, or specs/<c>/review/ exists. A pre-0.10 ledger is never open.
+change a ship command is about:
+  pushed or PR head branch praxis/<c>  → <c>
+  any other branch                     → .praxis/active-change, only if it is an open cycle
+  neither                              → not a ship → allow
+ship (`git push`, `gh pr create`, `gh api …pulls|merge` about <c>):
+  .praxis/ship/<c> exists and decision.md verdict is APPROVE or APPROVE (human) → allow
+  anything else                                                                  → deny with the reason
+trunk rule: push destination main, master or the ledger's `base:` while ANY change is an open
+  cycle → deny "the cycle never pushes trunk"; `--all`, `--mirror`, `--branches` likewise.
+  No open cycle → not Praxis's call → allow.
 builder dispatch (Agent subagent_type ~ builder) or resume (SendMessage to = ledger.builder):
   round = 0                                   → allow
   round = N ≥ 1, review/round-N incomplete     → deny  "barrier: waiting for <missing>"
   round = N, complete, all PASS                → allow
   round = N, complete, any CHANGES, N < 2      → allow  (the fix round)
-  round = 2, complete, any CHANGES/SKIP        → deny  "round cap: 2 rounds done → approver / ESCALATE"
-ship (Bash: `gh pr create`, or `git push` naming praxis/<c>):
-  decision.md verdict APPROVE (human)          → allow
-  decision.md verdict APPROVE, round complete, all PASS → allow
-  anything else                                → deny  with the reason
+  round = 2, complete, any CHANGES/SKIP        → deny  "round cap" — also every SendMessage and every
+                                                 builder|engineer|backend|design|platform dispatch,
+                                                 until rework.sh runs
+lens list: review/round-N/lenses when present, else the ledger's `lenses:`; always the union with
+  {correctness, security, tests}.
 decision.md written with verdict ESCALATE      → post-tool-use creates .praxis/needs-human/<c>
 decision.md written with verdict APPROVE*      → post-tool-use removes .praxis/needs-human/<c>
-Edit/Write to .praxis/approved/* or .praxis/needs-human/*  → deny
+Edit/Write to .praxis/{approved,needs-human,intent,ship}/*  → deny
+Bash touching those directories (after normalising `//`, `/./`, `./`, a preceding `cd .praxis`)
+  → deny unless every stage is a plain read; `find -exec|-delete`, `fd -x`, `rg --pre` are not reads
+Bash executing a Praxis hook (hooks/<name> as the command word or the script of sh|bash|zsh|dash,
+  through env/sudo/time/timeout/nohup/exec/`bash -c`) → deny; reading a hook → allow
+scripts/approve.sh, scripts/rework.sh → need the person's intent token; reading them is allowed
+Codex apply_patch → each path in the patch is classified on its own; one denied path denies the patch
 ```
 
 `PRAXIS_FLOOR=off` lifts the floor, the barrier, the cap and the ship gate together — the only
-override. A Bash write to a marker is a documented gap, unchanged in class. The hooks run on Claude
-Code and Codex (Codex has no SendMessage; the barrier gates the Agent call); Cursor, Gemini and
-Copilot receive the same rules as prose.
+override. The hooks run on Claude Code and Codex (Codex has no SendMessage; the barrier gates the
+Agent call); Cursor, Gemini and Copilot receive the same rules as prose.
+
+## Threat model (ADR-007)
+
+The hooks stop **drift**: a model that, mid-task, reaches for the direct spelling — an Edit on a
+record, a push to trunk, `scripts/approve.sh` without the person's token, a write to `decision.md`.
+They do not stop an **adversary**. A PreToolUse hook sees one command string and no history, and a
+shell has unbounded spellings for one action; the forms left open are git aliases, `GIT_DIR` /
+`--git-dir`, `$(…)`, variables, wrapper scripts, and interpreters (`python -c`, `node -e`) writing
+a record. Resistance to those belongs to the host's permission rules, which apply outside the model
+to every command. A project that wants it adds, in `.claude/settings.json`:
+
+```json
+{
+  "permissions": {
+    "deny": [
+      "Bash(*hooks/*)",
+      "Bash(*.praxis/approved*)",
+      "Bash(*.praxis/needs-human*)",
+      "Bash(*.praxis/intent*)",
+      "Bash(*.praxis/ship*)",
+      "Bash(*decision.md*)",
+      "Edit(.praxis/approved/**)",
+      "Edit(.praxis/needs-human/**)",
+      "Edit(.praxis/intent/**)",
+      "Edit(.praxis/ship/**)"
+    ]
+  }
+}
+```
+
+Syntax checked against <https://code.claude.com/docs/en/permissions>: a Bash rule matches the whole
+command text and `*` may stand at any position; a deny applies when any subcommand matches; an
+`Edit(path)` deny covers the Write tool and Bash output redirects (`> file`, `tee`). Two limits the
+docs state: a Bash deny does not match the same program by absolute path or inside `sh -c`, and
+rules that constrain arguments are fragile. `Bash(*hooks/*)` and `Bash(*decision.md*)` also block
+honest reads of those paths through Bash; use Read for them. There is no `Edit` rule for
+`decision.md`, because the approver subagent writes it and permission rules apply to subagents.
+Codex has an equivalent in its `permissions` config; its syntax is not documented here.
+
+## Plugin reload
+
+A session runs the plugin copy that was installed (`~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/`),
+not the repository. Agents, commands and hooks added in the repo reach a session only after the
+plugin is updated and the session restarts. For development, `claude --plugin-dir <repo>` loads the
+directory in place.
 
 ## Modes
 

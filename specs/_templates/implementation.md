@@ -25,5 +25,9 @@ owner: {who decides}
 ## Blocked
 {state: blocked(user) — what you need from the user. state: blocked(technical) — what failed and why.}
 
+## Cost
+<!-- Optional, cycle only. One line per dispatch wave, from each Agent result's usage line. -->
+- round-<N> | spec | approve: <agents> agents · <tokens> tokens · <tool uses> tool uses
+
 ## Session Notes
 {Anything the next session needs to resume without re-reading the diff. At ship: the PR URL and the rounds.}

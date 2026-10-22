@@ -17,6 +17,10 @@ every gate is mutation-tested.
 
 Also runs on **Codex · Cursor · Gemini CLI · Copilot**.
 
+A session runs the copy of the plugin that was installed, not your checkout: new agents, commands
+and hooks arrive after an update and a restart. To develop against a directory, start Claude Code
+with `claude --plugin-dir <path>`.
+
 ---
 
 ## What it looks like
@@ -88,10 +92,12 @@ What must hold whatever the model does is decided by shell, below the model:
 | no source edit before an approved spec | `pre-tool-use` denies until `spec.md` exists and asks until `.praxis/approved/<change>` exists — a record only your answer, or `/praxis:approve`, can write |
 | the builder waits for every lens | `pre-tool-use` denies a builder resume while a review file is missing |
 | at most two fix rounds | `pre-tool-use` denies the dispatch that would open round 3 |
-| nothing ships without APPROVE and every lens PASS | `pre-tool-use` gates `git push` and `gh pr create` on `decision.md` |
+| nothing ships without APPROVE and every lens PASS | `pre-tool-use` gates `git push` and `gh pr create` on the ship marker `.praxis/ship/<change>`, which only a hook or `/praxis:approve` writes |
+| the cycle never pushes trunk | `pre-tool-use` denies a push to `main`, `master` or the change's base while a cycle is open |
 | the stop is a record | `post-tool-use` writes `.praxis/needs-human/<change>` on ESCALATE |
 
-`PRAXIS_FLOOR=off` is the only override, and the README says so instead of hiding it. The floor
+The hooks stop a model that drifts, not one that attacks; the deny rules that add the second are in
+[docs/cycle.md](docs/cycle.md#threat-model-adr-007). `PRAXIS_FLOOR=off` is the only override, and the README says so instead of hiding it. The floor
 runs on Claude Code and Codex; on Cursor, Gemini and Copilot the same rules arrive as prose.
 
 ## You set the intensity

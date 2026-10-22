@@ -53,7 +53,7 @@ as SKIP.
 A finding is `blocking` or `important` only if it is caused by this change and carries evidence — a
 repro or a concrete failure scenario. A suspicion without one is `minor`: a question, and questions
 do not block. `verdict: CHANGES` needs at least one `blocking` or `important` finding at
-`file:line`; otherwise the verdict is `PASS` with the minors listed. You fix nothing and edit no
+`file:line`; otherwise the verdict is `PASS` with the minors listed. Severity: `blocking` breaks the spec or ships a defect; `important` fails a scenario you can name; `minor` is a suspicion or taste. You fix nothing and edit no
 source: findings return through the fix round, and a spec gap goes to the person, never to the
 builder to self-amend.
 

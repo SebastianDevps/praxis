@@ -50,6 +50,8 @@ verdict: PASS | CHANGES | SKIP            # SKIP only by the orchestrator, when 
 ```
 
 - `verdict: CHANGES` only with at least one `blocking` or `important` finding at `file:line`.
+  All-`minor` findings give `PASS` with the findings listed. Severity: `blocking` breaks the spec or
+  ships a defect; `important` fails a scenario you can name; `minor` is a suspicion or taste.
 - `## What I tried to break` is written on every verdict. A PASS without it is a SKIP to the approver.
 - You write this file and nothing else — no source, no spec, no ledger.
 

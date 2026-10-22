@@ -11,7 +11,7 @@ another arrived in a shape the receiver did not recognise.
 ## The ledger: `specs/<change>/implementation.md`
 
 One file per change, `specs/<change>/implementation.md`. Not `plan.md`, not `progress.md`, not
-`tasks/`. It holds the task lines below, under `## Tasks`, plus `## Completed`, `## Blocked` and
+`tasks/`. It holds the task lines below, under `## Tasks`, plus `## Completed`, `## Blocked`, an optional `## Cost` (one line per dispatch wave: `round-<N> | spec | approve: <agents> agents · <tokens> tokens · <tool uses> tool uses`, from each Agent result's usage) and
 `## Session Notes`; its frontmatter carries the change's `stage:`, `round:`, `builder:` and `lenses:`,
 and the orchestrator is its only writer. The folder around it — `spec.md`, `review/`, `decision.md`,
 `decisions.md` — is `spec-lifecycle`'s; the task lines are this file's.

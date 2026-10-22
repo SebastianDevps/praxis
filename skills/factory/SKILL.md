@@ -49,10 +49,13 @@ verify:   <the acceptance gate — the spec's Acceptance lines, re-run by the ap
    - `ready: true` → `stage: designed`; Run Card `Needs your decision`; STOP.
 3. **Approval.** The person approves — `/praxis:approve <change>`, or by answering the ask the first
    source edit raises. Either writes `.praxis/approved/<change>`; when it exists, `stage: planned`.
-4. **Build.** Run `scripts/worktree.sh <change> <base>` (`.praxis/worktrees/<change>`, branch
+4. **Build.** Run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/worktree.sh" <change> <base>` — the plugin's
+   script, never a `scripts/worktree.sh` in the project (`.praxis/worktrees/<change>`, branch
    `praxis/<change>` from the ledger's `base:`). Dispatch `builder` with the worktree path, the base
    branch and the spec path — never the spec's content. Record `builder: <agent id>` in the ledger.
    On its handback: `stage: implemented`.
+   Cost: after each dispatch wave, add one line to the ledger's `## Cost` from the Agent results'
+   usage (`round-N | spec | approve: <agents> agents · <tokens> tokens · <tool uses> tool uses`).
 5. **Round N.** Set `round: N`. Add `ui` to `lenses:` when `git diff --name-only <base>...praxis/<change>`
    touches `components/`, `*.tsx`, `*.vue`, `*.css` or `*.html`. Write `specs/<change>/review/round-N/lenses`
    (one lens name per line) BEFORE dispatching. Then, in ONE message, dispatch every lens —

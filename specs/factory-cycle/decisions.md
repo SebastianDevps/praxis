@@ -142,8 +142,13 @@ of minting the token. The floor's adversary is a model that drifts, not one that
    produces (Write/Edit on records, `scripts/*.sh` without the token, a push whose destination
    is trunk, a direct write to `decision.md`), documents the open forms in its header, and the
    host's permission rules — outside the model, applied to every command — carry adversarial
-   resistance: `Bash(*hooks/*)`, `Bash(*.praxis/*)`, `Bash(*decision.md*)` denied in the
-   project's `.claude/settings.json`, the equivalent in Codex `permissions`.
+   resistance: deny rules in the project's `.claude/settings.json` — `Bash(*hooks/*)`,
+   `Bash(*.praxis/approved*)`, `Bash(*.praxis/needs-human*)`, `Bash(*.praxis/intent*)`,
+   `Bash(*.praxis/ship*)`, `Bash(*decision.md*)` (a `*` may sit at any position in a Bash rule;
+   a deny matches any subcommand of a compound command), and `Edit(.praxis/approved/**)` etc.,
+   which also cover Bash output redirects (code.claude.com/docs/en/permissions). Not
+   `Edit(**/decision.md)`: the approver subagent writes it by Write, and rules apply to subagents.
+   Codex: the equivalent is not documented here.
 3. Drop the Bash gates and rely on the host alone — no drift resistance on hosts without rules.
 
 ### Decision

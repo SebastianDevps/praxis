@@ -54,7 +54,7 @@ STATUS approve  | APPROVE — 5 checks run                     | next: ship
 | Specialist | When | What it gets |
 |---|---|---|
 | `spec-writer` | a substantial request opens a change | the request; paths to `AGENTS.md` and `agents/rules/` |
-| `builder` | `.praxis/approved/<change>` exists | the worktree path and `specs/<change>/spec.md`; on resume, the CHANGES file paths |
+| `builder` | `.praxis/approved/<change>` exists; the worktree made first by `bash "${CLAUDE_PLUGIN_ROOT}/scripts/worktree.sh" <change> <base>` — the plugin's script, not a project path | the worktree path and `specs/<change>/spec.md`; on resume, the CHANGES file paths |
 | `refuter-correctness`, `refuter-security`, `refuter-tests` | the builder handed back; round N ≤ 2 | round number, output path `specs/<change>/review/round-N/<lens>.md`, spec path, worktree, the diff command `git diff <base>...praxis/<change>` with the ledger's `base:` substituted — one message, one call each |
 | `lens-ui` | the same round, when the diff touches `components/`, `*.tsx`, `*.vue`, `*.css`, `*.html` | the same |
 | `approver` | every lens PASS, or round 2 not all PASS | spec path, worktree, the same diff command, `specs/<change>/review/round-*/` |
@@ -67,7 +67,7 @@ Shared files between dispatched writers → sequential; disjoint → one paralle
 ## The ledger — yours alone
 
 `specs/<change>/implementation.md`, frontmatter `stage:`, `round:`, `base:`, `builder:`, `lenses:`,
-`owner:`, body Tasks · Completed · Blocked · Session Notes. You advance `stage:` one step at a time
+`owner:`, body Tasks · Completed · Blocked · Session Notes, and an optional `## Cost` — one line per dispatch wave from the Agent results' usage. You advance `stage:` one step at a time
 as the record of what happened — `new → designed → planned → implemented → shipped`, or `needs-human` —
 and it unlocks nothing: the markers and the review files do. The person writes it too, through
 `scripts/approve.sh` and `scripts/rework.sh` (`stage:`, `round:`); nobody else. You never write a
