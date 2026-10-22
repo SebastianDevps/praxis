@@ -11,9 +11,10 @@ another arrived in a shape the receiver did not recognise.
 ## The ledger: `specs/<change>/implementation.md`
 
 One file per change, `specs/<change>/implementation.md`. Not `plan.md`, not `progress.md`, not
-`tasks/`. It holds the task lines below, under `## Tasks`, plus `## Completed`, `## Blocked` and
-`## Session Notes`; its frontmatter carries the change's `stage:`. The folder around it — `design.md`,
-`decisions.md`, `future-work.md` — is `spec-lifecycle`'s; the task lines are this file's.
+`tasks/`. It holds the task lines below, under `## Tasks`, plus `## Completed`, `## Blocked`, an optional `## Cost` (one line per dispatch wave: `round-<N> | spec | approve: <agents> agents · <tokens> tokens · <tool uses> tool uses`, from each Agent result's usage) and
+`## Session Notes`; its frontmatter carries the change's `stage:`, `round:`, `builder:` and `lenses:`,
+and the orchestrator is its only writer. The folder around it — `spec.md`, `review/`, `decision.md`,
+`decisions.md` — is `spec-lifecycle`'s; the task lines are this file's.
 
 It is durable state, and that is its whole reason for existing: **it is what survives compaction.**
 A plan that lives in the conversation is gone the moment the context is trimmed, and the next
@@ -34,12 +35,12 @@ Which change a Run Card is about is `.praxis/active-change`: one line, the chang
 
 | phase | writes | who |
 |---|---|---|
-| `define` | `design.md` Problem, User Stories, Scope | orchestrator (`brainstorming` when ambiguous) |
-| `plan` | `design.md` Technical Design + Acceptance; `decisions.md`; `implementation.md` tasks | orchestrator; `writing-plans` fills the tasks |
-| `build` | `implementation.md` task `state:` + Completed | engineer / backend / design / platform |
-| `verify` | `implementation.md` verify evidence, PASS · FAIL · SKIP · GAP | the builder, then `reviewer` |
-| `review` | `decisions.md` when a finding changed a decision | reviewer; refuters in `deep` |
-| `ship` | `docs/`, `future-work.md`, `stage: shipped` | `release-readiness` |
+| `define` | `spec.md` Goal, Scope, Open questions (`[NEEDS CLARIFICATION]`) | `spec-writer`; `brainstorming` on the fast path when ambiguous |
+| `plan` | `spec.md` Approach + Acceptance; `implementation.md` tasks; `decisions.md` when a decision passes the three gates | `spec-writer`; the orchestrator fills the ledger (`writing-plans` on the fast path) |
+| `build` | source, tests, commits on `praxis/<change>`; the orchestrator records `state:` + Completed in `implementation.md` | `builder` in the cycle; `engineer` / `backend` / `design` / `platform` on the fast path |
+| `verify` | the builder runs every Acceptance line; `decision.md` Checks run, PASS · FAIL · SKIP · GAP | `approver`, re-running the checks itself — never from the builder's report |
+| `review` | `review/round-N/<lens>.md`; `decisions.md` when a finding changed a decision | the lenses: `refuter-correctness`, `refuter-security`, `refuter-tests`, `lens-ui` when the diff touches UI |
+| `ship` | the PR on `praxis/<change>`; `stage: shipped`; `future-work.md`, `docs/` when kept | the orchestrator, behind the hook's ship gate (APPROVE + every lens PASS) |
 
 ## A task line
 
@@ -99,7 +100,7 @@ The four states apply to each kind, and `GAP` is the one that differs:
 | `PASS` | exit 0 | the reviewer read the diff and reports no findings, in those words | the person read the diff and accepted it |
 | `FAIL` | non-zero exit | findings | rejected |
 | `SKIP` | the runner could not start — missing tool, missing target | no diff, or no reviewer could run | nobody read it |
-| `GAP` | it ran and asserted nothing — zero tests matched, an assertion-free test, a linter with no rules | the Spec axis with no `design.md` to judge against (a missing `agents/rules/` is not a GAP: the Standards axis runs on the Fowler floor and says so) | the summary was read, not the diff |
+| `GAP` | it ran and asserted nothing — zero tests matched, an assertion-free test, a linter with no rules | the Spec axis with no `spec.md` (or legacy `design.md`) to judge against (a missing `agents/rules/` is not a GAP: the Standards axis runs on the Fowler floor and says so) | the summary was read, not the diff |
 
 A `GAP` never sets the failure flag; it reports, and someone decides. Silence is not a state.
 
@@ -126,8 +127,11 @@ is not a suggestion the agent weighs.
 | mode | phases |
 |---|---|
 | `fast` | `build → verify` |
-| `full` | `plan → build → verify → review` |
-| `deep` | `define → plan → build → verify → review → ship` |
+| `full` | `define → plan → build → verify → review → ship` — the cycle, `docs/cycle.md` |
+
+`deep` was removed in 0.10.0 (ADR-004, `specs/factory-cycle/decisions.md`): review and ship are
+always on in `full`, and the diff — not the dial — decides which lenses run. `/praxis:mode deep`
+maps to `full` with a notice for one release.
 
 A skipped phase is skipped, not faked. Never write `phase: review` on a task nothing reviewed.
 
@@ -161,8 +165,9 @@ the only thing the state is for.
 
 ## Not to be confused with `stage:`
 
-`spec-lifecycle` tracks a **change** through `new → designed → planned → implemented → shipped` in
-the `stage:` frontmatter field of `implementation.md`. That is a different granularity: one change
+`spec-lifecycle` tracks a **change** through `new → designed → planned → implemented → shipped` —
+plus `needs-human`, the side exit when the approver escalates and the person decides — in the
+`stage:` frontmatter field of `implementation.md`. That is a different granularity: one change
 contains many tasks.
 
 Three words, three meanings, no overlap:
@@ -181,6 +186,7 @@ cheapest moment to fix it is before anything depends on the ambiguity.
 
 | concern | skill |
 |---|---|
+| running a substantial change through the cycle — spec-writer, builder, lenses, approver, PR | `factory` |
 | breaking work into tasks and writing the ledger's task lines | `writing-plans` |
 | executing it, one subagent per task, review between | `subagent-driven-development` |
 | executing it unattended, one task per iteration | `autonomous-loop` |
@@ -193,12 +199,12 @@ repo knows how to run, which is how `define` and `ship` stayed unclaimed after t
 
 | phase | owner |
 |---|---|
-| `define` | `brainstorming`, and `spec-lifecycle` for a tracked change |
-| `plan` | `writing-plans`, `strategy-compare`, `decision-challenge` |
-| `build` | `subagent-driven-development`, `autonomous-loop` |
-| `verify` | `test-coverage-plan`, `web-testing`, `systematic-debugging` |
-| `review` | `design-review`, and the `reviewer` / `refuter-*` agents |
-| `ship` | `release-readiness` |
+| `define` | `factory` (the `spec-writer` role); `brainstorming` on the fast path |
+| `plan` | `factory` (`spec.md` Approach + Acceptance); `writing-plans`, `strategy-compare`, `decision-challenge` |
+| `build` | `factory` (the `builder` role); `subagent-driven-development`, `autonomous-loop` |
+| `verify` | `factory` (the `approver` role); `test-coverage-plan`, `web-testing`, `systematic-debugging` |
+| `review` | `factory` (the lenses: `refuter-*`, `lens-ui`); `design-review`, and the `reviewer` agent outside the cycle |
+| `ship` | `factory` (the PR behind the ship gate); `release-readiness` |
 
 Each of those describes its own job and links here for the shape. If you find yourself writing a
 second definition of a phase, a state, or a ledger filename, that is the drift this file exists to

@@ -2,15 +2,17 @@
 # UserPromptSubmit hook for the Praxis plugin.
 #
 # SessionStart primes the router ONCE. By turn 40 that context is buried and the
-# agent drifts back to inline-everything defaults. This re-states the compact
-# operating contract every turn, at the active intensity.
+# agent drifts back to inline-everything defaults. This re-states the operating
+# kernel every turn — at most 40 lines (specs/factory-cycle, "Contract diet"); the
+# cycle itself lives in the `factory` skill, loaded when a change opens.
 #
 # It also owns the dial. Parsing the switch here rather than in a skill is the
 # point: a Markdown command is read by the model and followed most of the time,
-# a flag file is read by the hook and applied every time.
+# a flag file is read by the hook and applied every time. Two levels, `fast` and
+# `full`; `deep` is gone (ADR-004) and maps to `full` with a notice, for one release.
 #
 # Reading stdin is bounded by `read -t`, so a host that never delivers the prompt
-# costs one second and falls through to injecting the contract unchanged.
+# costs one second and falls through to injecting the kernel unchanged.
 
 set -uo pipefail
 
@@ -27,14 +29,47 @@ notice=""
 # registered command before the hook sees it, or pass the raw text through.
 switch=$(printf '%s' "$prompt" | sed -n 's|^[[:space:]]*/praxis\(:mode\)\{0,1\}[[:space:]]\{1,\}\([a-z]\{1,\}\).*|\2|p' | head -1)
 case "$switch" in
-  fast|full|deep)
+  fast|full)
     if praxis_set_mode "$switch"; then
       notice="PRAXIS MODE CHANGED — ${switch}"$'\n\n'
     fi
     ;;
+  deep)
+    if praxis_set_mode full; then
+      notice="PRAXIS MODE CHANGED — full · deep is now full (ADR-004)"$'\n\n'
+    fi
+    ;;
 esac
 
+# The person's one-shot command token (specs/factory-cycle, round-1 security review). The host
+# runs this hook on a prompt the PERSON submits, so a prompt that starts with
+# `/praxis:approve <c>` or `/praxis:rework <c>` mints `.praxis/intent/<kind>-<c>`, which is the
+# only thing that lets `pre-tool-use` run `scripts/approve.sh` / `rework.sh`; `post-tool-use`
+# deletes it once the script ran. pre-tool-use denies Edit/Write and Bash writes to
+# `.praxis/intent/` and denies running this hook from Bash; an interpreter or a wrapper script
+# that runs it is open by design (ADR-007) and closed by the host's permission rules.
+# `#` delimits the expression so the alternation's `|` is unescaped: BSD and GNU sed -E agree.
+intent=$(printf '%s' "$prompt" | sed -nE 's#^[[:space:]]*/praxis:(approve|rework)[[:space:]]+([A-Za-z0-9][A-Za-z0-9._-]*).*#\1 \2#p' | head -1)
+if [ -n "$intent" ]; then
+  kind="${intent%% *}"; change="${intent#* }"
+  if praxis_valid_change_name "$change"; then
+    project="$(praxis_project_root "${CLAUDE_PROJECT_DIR:-${CODEX_PROJECT_DIR:-$(praxis_json_string "$payload" cwd)}}")"
+    if [ -n "$project" ] && praxis_ensure_praxis_dir "$project" && mkdir -p "${project}/.praxis/intent" 2>/dev/null; then
+      : > "$(praxis_intent_token "$project" "$kind" "$change")" 2>/dev/null || true
+      praxis_trace "UserPromptSubmit" "intent ${kind} ${change}"
+    fi
+  fi
+fi
+
 mode="$(praxis_mode)"
+# A dial left on `deep` before ADR-004: rewrite it once, say so once, run as `full`
+# either way — the kernel has no `deep` blocks left to filter for.
+if [ "$mode" = deep ]; then
+  praxis_set_mode full || true
+  mode=full
+  notice="${notice}PRAXIS MODE — deep is now full (ADR-004)"$'\n\n'
+fi
+
 contract=$(praxis_contract "$PRAXIS_ROOT" orchestrator "$mode")
 [ -n "$contract" ] || exit 0
 

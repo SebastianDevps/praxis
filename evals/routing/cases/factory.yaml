@@ -1,0 +1,36 @@
+skill: factory
+
+should_trigger:
+  - prompt: "Run this feature through the cycle: spec it, build it in a worktree, review with the lenses, approve, open the PR."
+    why: "Names every step of the cycle the orchestrator runs."
+  - prompt: "Open a change for the invoice export and take it from spec-writer to approver."
+    why: "Opening a change and running the roles end to end is the skill's whole job."
+  - prompt: "The builder handed back; dispatch the lenses in one wave and wait at the barrier."
+    why: "The review round, the one-message fan-out and the barrier are steps of the cycle."
+  - prompt: "Continue the checkout change — read the ledger and resume at the round it is in."
+    why: "The resume rule: ledger fields first, then the step they name."
+  - prompt: "Corre el ciclo completo para este cambio: spec, builder, lentes, approver y PR."
+    why: "The full cycle, in Spanish."
+
+should_not_trigger:
+  - prompt: "What files does specs/<change>/ hold, and when does stage advance from designed to planned?"
+    route_to: "spec-lifecycle"
+    why: "The per-change folder and the stage machine, not the cycle that fills them."
+  - prompt: "Keep iterating on a fresh context until the tests pass, unattended, overnight."
+    route_to: "autonomous-loop"
+    why: "One agent re-run until done — no roles, no barrier, no approver."
+  - prompt: "Execute the plan task by task, with a reviewer between each task."
+    route_to: "subagent-driven-development"
+    why: "Task-by-task execution of a ledger, not the spec → build → lenses → approve → PR cycle."
+  - prompt: "Break this feature into bite-sized tasks in the ledger before anyone builds."
+    route_to: "writing-plans"
+    why: "Authoring the task checklist; the cycle consumes a spec, not a task list."
+
+capability:
+  - scenario: "A substantial feature request arrives with the dial on full."
+    must_include:
+      - "Dispatches spec-writer first and asks the person ONE question when the handback carries [NEEDS CLARIFICATION]."
+      - "Stops once on Needs your decision and proceeds only when .praxis/approved/<change> exists."
+      - "Writes review/round-N/lenses before dispatching every lens in ONE message, and waits for every lens file."
+      - "Never opens a third round; routes a round-2 CHANGES to the approver, which writes decision.md."
+      - "Pushes praxis/<change> and opens the PR only after APPROVE, and records the PR URL in the ledger."

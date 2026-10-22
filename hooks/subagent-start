@@ -6,17 +6,23 @@
 # verify discipline, no research-first. The whole premise — a team of seniors
 # that self-orchestrates — needs the method to travel WITH the dispatch.
 #
-# Injects two things: the operating contract (subagent variant at the active
-# intensity, orchestrator-only sections stripped) and the crafts declared under
-# od.craft.requires. That frontmatter existed all along and nothing read it, so
-# "always-on crafts" was a claim in a README rather than a mechanism.
+# What travels (specs/factory-cycle, "Contract diet"): a ROLE KERNEL of at most
+# 15 lines chosen by agent_type — spec-writer, builder, lens (every refuter-*
+# and lens-ui), approver, or the default for every other agent — plus one line
+# naming the active change's files, plus the crafts the agent declares under
+# od.craft.requires. The 103-line operating contract no longer travels: it was
+# measured at 1.08–1.40× baseline tokens on every dispatch and produced none of
+# the fan-out it asked for. Skill pointers reach the default roles only; a cycle
+# role's own body already invokes the skills it declares. The project's rules
+# reach the roles that judge code — reviewer, the lenses, the approver — and no
+# builder (ADR-002, specs/mattpocock-imports).
 #
 # Scoping (opt-in): set PRAXIS_SUBAGENT_MATCHER to an extended regex and the
-# contract is injected only into subagents whose agent_type matches. Unanchored
+# kernel is injected only into subagents whose agent_type matches. Unanchored
 # and case-insensitive: "design|engineer" matches either, "^engineer$" is exact.
 # Unset injects into every subagent. A bad regex, a missing agent_type, or a
 # stalled payload all FAIL OPEN (inject) — scoping must never silently drop the
-# method, and neither must craft resolution.
+# method, and neither must craft or kernel resolution.
 
 set -uo pipefail
 
@@ -25,16 +31,14 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PRAXIS_ROOT="$(praxis_root "$SCRIPT_DIR")"
 
 mode="$(praxis_mode)"
-contract=$(praxis_contract "$PRAXIS_ROOT" subagent "$mode")
-[ -n "$contract" ] || exit 0
+case "$mode" in deep) mode=full ;; esac   # ADR-004 (specs/factory-cycle): two modes
 
-# Resolving crafts needs agent_type, so stdin is read on every spawn. Safe here
-# because bash's `read -t` is bounded: a host that never delivers the payload
-# costs one second and falls through to the contract-only path. (Node's stdin is
-# event-based with no native timeout, which is why ponytail had to avoid this.)
+# Resolving the kernel and the crafts needs agent_type, so stdin is read on every
+# spawn. Safe here because bash's `read -t` is bounded: a host that never
+# delivers the payload costs one second and falls through to the default kernel.
 payload=""
 IFS= read -r -d '' -t 1 payload
-agent_type=$(printf '%s' "$payload" | sed -n 's/.*"agent_type"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+agent_type=$(praxis_json_string "$payload" agent_type)
 
 # Skip only on a definite mismatch against a valid regex.
 if [ -n "${PRAXIS_SUBAGENT_MATCHER:-}" ] && [ -n "$agent_type" ]; then
@@ -45,9 +49,35 @@ if [ -n "${PRAXIS_SUBAGENT_MATCHER:-}" ] && [ -n "$agent_type" ]; then
   [ $? -eq 1 ] && exit 0
 fi
 
+# The kernel is chosen from a fixed set of filenames, so a host-supplied
+# agent_type can never name a file: the case maps, it never interpolates.
+role="${agent_type##*:}"
+case "$role" in
+  spec-writer)       kernel_file=spec-writer.md ;;
+  builder)           kernel_file=builder.md ;;
+  refuter-*|lens-ui) kernel_file=lens.md ;;
+  approver)          kernel_file=approver.md ;;
+  *)                 kernel_file=default.md ;;
+esac
+context=$(cat "${PRAXIS_ROOT}/hooks/context/roles/${kernel_file}" 2>/dev/null)
+[ -n "$context" ] || context=$(cat "${PRAXIS_ROOT}/hooks/context/roles/default.md" 2>/dev/null)
+
+# The active change, by path: the role reads the files itself (ADR-006). The spec
+# path is `spec.md`, or the legacy `design.md` of a change closed before the
+# cycle, or `spec.md` again for a change whose spec is about to be written.
+project="$(praxis_project_root)"
+change=""
+[ -f "${project}/.praxis/active-change" ] && change="$(praxis_active_change "$project")"
+if [ -n "$change" ]; then
+  spec="$(praxis_spec_file "$project" "$change")"
+  context="${context}
+
+Change: ${change} · spec: ${spec:-specs/${change}/spec.md} · ledger: specs/${change}/implementation.md (orchestrator-only)"
+fi
+
 crafts=$(praxis_agent_crafts "$PRAXIS_ROOT" "$agent_type")
 if [ -n "$crafts" ]; then
-  contract="${contract}
+  context="${context}
 
 ---
 
@@ -58,13 +88,16 @@ task names them.
 ${crafts}"
 fi
 
-# Level-1 pointers only. The framing is load-bearing: a specialist matching a
-# task against the 1-5 skills its role declares is a far easier decision than
-# matching against all 34, and "declared for your role" says these were chosen
-# for this work — not that they merely exist somewhere.
-skills=$(praxis_agent_skills "$PRAXIS_ROOT" "$agent_type")
-if [ -n "$skills" ]; then
-  contract="${contract}
+# Level-1 pointers only, and only for the roles outside the cycle. The framing is
+# load-bearing: a specialist matching a task against the 1-5 skills its role
+# declares is a far easier decision than matching against all of them, and
+# "declared for your role" says these were chosen for this work. A cycle role
+# (spec-writer, builder, lens, approver) gets no pointer section: its body names
+# the skill it invokes, and its kernel budget is the point.
+if [ "$kernel_file" = default.md ]; then
+  skills=$(praxis_agent_skills "$PRAXIS_ROOT" "$agent_type")
+  if [ -n "$skills" ]; then
+    context="${context}
 
 ---
 
@@ -75,35 +108,40 @@ each carries the non-obvious delta beyond what you already know. Listed by name
 and trigger only; invoking one loads its full instructions.
 
 ${skills}"
-fi
-
-# The project's documented standard travels with `reviewer` and with no builder
-# (ADR-002, specs/mattpocock-imports): sandcastle loads CODING_STANDARDS.md only
-# in review "without costing tokens during implementation", and the implementer
-# already carries the most context pressure. Pointers, never bodies. Fail-open:
-# a project that documents nothing gets no section, and a resolution error costs
-# one stderr line and the Fowler floor alone — never the dispatch.
-if [ "${agent_type##*:}" = "reviewer" ]; then
-  rules=$(praxis_project_rules "$(praxis_project_root)" 2>/dev/null) \
-    || { printf 'praxis: project rules unavailable; reviewer dispatched on the Fowler floor alone\n' >&2; rules=""; }
-  if [ -n "$rules" ]; then
-    contract="${contract}
-
----
-
-# Project standards for \`reviewer\`
-
-This repo documents how its code should be written. The builders never received
-these (the rules are enforced in review, not paid for on every build turn); the
-Standards axis reads each before it runs, and a documented rule overrides the
-Fowler floor. Listed by path and title; read the file for the rule.
-
-${rules}"
   fi
 fi
 
+# The project's documented standard travels with the roles that JUDGE code —
+# `reviewer`, every lens, the approver — and with no builder (ADR-002,
+# specs/mattpocock-imports): sandcastle loads CODING_STANDARDS.md only in review
+# "without costing tokens during implementation", and the implementer already
+# carries the most context pressure. Pointers, never bodies. Fail-open: a project
+# that documents nothing gets no section, and a resolution error costs one stderr
+# line and the Fowler floor alone — never the dispatch.
+case "$role" in
+  reviewer|refuter-*|lens-ui|approver)
+    rules=$(praxis_project_rules "$project" 2>/dev/null) \
+      || { printf 'praxis: project rules unavailable; %s dispatched on the Fowler floor alone\n' "$role" >&2; rules=""; }
+    if [ -n "$rules" ]; then
+      context="${context}
+
+---
+
+# Project standards for \`${agent_type}\`
+
+This repo documents how its code should be written. The builder never received
+these (the rules are enforced in review, not paid for on every build turn); read
+each before you judge, and a documented rule overrides the Fowler floor. Listed
+by path and title; read the file for the rule.
+
+${rules}"
+    fi
+    ;;
+esac
+
+[ -n "$context" ] || exit 0
 praxis_trace "SubagentStart" "$agent_type"
 praxis_emit "SubagentStart" "$(escape_for_json "PRAXIS — active mode: ${mode}
 
-${contract}")"
+${context}")"
 exit 0

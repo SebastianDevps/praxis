@@ -16,6 +16,7 @@ evals/*
 !evals/routing/
 !evals/value/
 !evals/floor/
+!evals/cycle/
 
 # The run ledger. docs/task-model.md tells end users to create this in THEIR project root;
 # marketplace.json packages with "source": "./" and no allowlist, so a committed copy here
@@ -28,6 +29,7 @@ PROGRESS.md
 CONSTRAINTS.md
 evals/value/runs/
 evals/floor/runs/
+evals/cycle/runs/
 
 # Per-session pointer the spec floor reads; a teammate must not inherit it.
 .praxis/active-change

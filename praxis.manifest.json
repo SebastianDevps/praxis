@@ -3,7 +3,6 @@
     "agents": "agents/**/*.md",
     "skills": "skills/**/*.md",
     "crafts": "crafts/**/*.md",
-    "pipelines": "pipelines/**/*.md",
     "commands": "commands/**/*.md",
     "templates": "templates/**/*.md"
   },

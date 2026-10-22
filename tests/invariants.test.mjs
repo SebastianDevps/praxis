@@ -143,8 +143,13 @@ test("the phase and state vocabularies are defined once, in docs/task-model.md",
 // literal `define | plan | ...` match would not — a gate that fires on correct work gets muted.
 const PHASES = ["define", "plan", "build", "verify", "review", "ship"];
 
+// The Run Card left the kernel for the `factory` skill (specs/factory-cycle, "Contract diet"): the
+// kernel keeps the rules that must hold every turn, the card is rendered where the cycle runs. Every
+// Run Card assertion below reads the kernel's card from there.
+const RUN_CARD_HOME = (s) => (s === "hooks/context/contract.md" ? "skills/factory/SKILL.md" : s);
+
 test("every priming surface enumerates the phase vocabulary where the Run Card fills it in", () => {
-  for (const f of PRIMING_SURFACES) {
+  for (const f of PRIMING_SURFACES.map(RUN_CARD_HOME)) {
     const src = read(f);
     // The delimiter is a style choice, not the contract. Pinning `<` failed this gate on a
     // bracket swap that removed nothing — the same fire-on-correct-work class the comment
@@ -171,7 +176,9 @@ test("every priming surface enumerates the phase vocabulary where the Run Card f
 // "approach" is an ordinary word that appears in that file's prose. Presence in a file is not
 // presence in a Run Card. This version parses the two real shapes — `field:` inside the fenced
 // block, and `| \`field\` |` as a table row — and asserts against what it actually parsed.
-const RUN_CARD_SURFACES = [...PRIMING_SURFACES, "agents/orchestrator.md", "AGENTS.md"];
+// `agents/orchestrator.md` left this list with specs/factory-cycle: the card is defined once, in the
+// `factory` skill, and the orchestrator points at it instead of re-rendering the table.
+const RUN_CARD_SURFACES = [...PRIMING_SURFACES.map(RUN_CARD_HOME), "AGENTS.md"];
 // `spec` joined the card with the spec folder (specs/spec-driven-workflow §3). Its fenced form is
 // `spec:     specs/<change>/   (stage: <stage>)` — a literal path carrying a placeholder rather
 // than a bare `<placeholder>`, so the fenced parser accepts any value that holds one.
@@ -213,7 +220,6 @@ test("every surface that renders a Run Card renders the same five fields", () =>
 const SPEC_SURFACES = ["skills/using-praxis/SKILL.md", "hooks/context/contract.md", ".cursor/rules/praxis.mdc"];
 
 const SPEC_INVARIANTS = [
-  ["spec line on the Run Card", /spec:\s+specs\/<change>\/\s+\(stage: <stage>\)/],
   ["fast writes implementation.md before stopping", /specs\/<change>\/implementation\.md` — Status, Completed, verify evidence — before you stop/],
   ["resume reads the ledger first", /read `specs\/<change>\/implementation\.md` first/],
 ];
@@ -224,6 +230,12 @@ for (const surface of SPEC_SURFACES) {
       assert.match(read(surface), re);
     });
   }
+}
+
+for (const surface of SPEC_SURFACES.map(RUN_CARD_HOME)) {
+  test(`${surface} keeps the spec line on the Run Card`, () => {
+    assert.match(read(surface), /spec:\s+specs\/<change>\/\s+\(stage: <stage>\)/);
+  });
 }
 
 // The floor is hook-backed, so only the two surfaces on hosts that run the hooks may claim it. The
@@ -242,8 +254,10 @@ const FLOOR_INVARIANT = /`hooks\/pre-tool-use` denies source edits[^;]*asks unti
 // `.praxis/approved/<change>`, from `hooks/post-tool-use` or `/praxis:approve` — and `stage:
 // planned` is prose that unlocks nothing. Both surfaces must say so, or the model reads the old
 // contract and the field it owns looks like the gate again.
+// specs/factory-cycle retargets the floor to `spec.md` and keeps accepting the legacy `design.md`
+// (design.md, "Compatibility"); each surface names the file its hooks actually key on.
 const ASK_INVARIANTS = [
-  ["approval is the host's ask", /write `specs\/<change>\/design\.md` and set the Run Card to `Needs your decision`; the first source edit will ask/i],
+  ["approval is the host's ask", /`specs\/<change>\/(spec|design)\.md`[^.;]*set the Run Card to `Needs your decision`; the first source edit will ask/i],
   ["approval is a record the model cannot write", /The approval is a record the model cannot write: `\.praxis\/approved\/<change>`, written by `hooks\/post-tool-use` when the approved edit ran, or by the person with `\/praxis:approve <change>`/],
   ["planned is the human-readable record and unlocks nothing", /After approval set `stage: planned` in `implementation\.md` — the human-readable record, it unlocks nothing/],
 ];
@@ -268,7 +282,7 @@ test(".cursor/rules/praxis.mdc keeps the prose stop — it has no hook to ask wi
 });
 
 test("the spec line sits first on the Run Card, above phase", () => {
-  for (const surface of SPEC_SURFACES) {
+  for (const surface of SPEC_SURFACES.map(RUN_CARD_HOME)) {
     const src = read(surface);
     const spec = src.search(/spec:\s+specs\/<change>\//);
     const phase = src.search(/phase:\s*[<[{(]/);
@@ -297,6 +311,7 @@ test("every referenced template exists on disk", () => {
   // The spec templates moved to specs/_templates/ (one source; the two old copies diverged and
   // were deleted). spec-lifecycle promises every file in that folder, so every file is pinned.
   const cited = [
+    "specs/_templates/spec.md",
     "specs/_templates/implementation.md",
     "specs/_templates/design.md",
     "specs/_templates/decisions.md",
@@ -365,8 +380,8 @@ test("reviewer keeps the two axes separate — never merged or reranked", () => 
   assert.match(src, /## Spec/, "the Spec section header is gone");
 });
 
-test("reviewer reports GAP on a missing design.md and never infers requirements from the code", () => {
+test("reviewer reports GAP on a missing spec.md and never infers requirements from the code", () => {
   const src = read("agents/reviewer.md");
-  assert.match(src, /No `design\.md` → the Spec axis reports `GAP`/, "the GAP-on-missing-design rule is gone");
+  assert.match(src, /No `spec\.md` \(nor legacy `design\.md`\) → the Spec axis reports `GAP`/, "the GAP-on-missing-spec rule is gone");
   assert.match(src, /never infers requirements from the code/, "the axis may read the diff as its own spec again");
 });

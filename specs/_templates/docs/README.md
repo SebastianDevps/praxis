@@ -1,6 +1,6 @@
 # {Change Name}
 
-<!-- User-facing documentation. `deep` mode, when the change has a user-visible surface.
+<!-- User-facing documentation. Optional in every mode — when the change has a user-visible surface.
      Screenshots go in ./screenshots/ and are taken from the running product, not mocked. -->
 
 ## Overview

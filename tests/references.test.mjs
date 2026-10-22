@@ -61,7 +61,9 @@ for (const [file, header] of [
   });
 }
 
-for (const file of ["hooks/context/contract.md", "skills/using-praxis/SKILL.md"]) {
+// The kernel's Run Card moved to the `factory` skill (specs/factory-cycle, "Contract diet"); the
+// approach line is checked where the card is now rendered.
+for (const file of ["skills/factory/SKILL.md", "skills/using-praxis/SKILL.md"]) {
   test(`${file}: every Run Card approach target exists`, () => {
     const targets = approachTargets(read(file));
     assert.ok(targets, `${file} lost its Run Card approach line`);
@@ -116,6 +118,7 @@ test("every craft an agent requires exists on disk", () => {
 const CODE_AGENTS = [
   "engineer", "backend", "platform", "reviewer", "security",
   "refuter-correctness", "refuter-security", "refuter-tests",
+  "builder", "approver",
 ];
 
 test("every agent that writes or judges code requires evidence-discipline", () => {
@@ -127,8 +130,9 @@ test("every agent that writes or judges code requires evidence-discipline", () =
 // reciting five — a list that is wrong is worse than no list, because a reader trusts it. The
 // AGENTS.md gate below did not catch it: "documented somewhere in the file" is satisfied by the
 // crafts table while the always-on sentence three sections away still lies.
+// The kernel no longer recites the list (specs/factory-cycle, "Contract diet"): crafts stay as
+// files and reach only the roles that declare them, through `hooks/subagent-start`.
 const CRAFT_RECITERS = [
-  "hooks/context/contract.md",
   "skills/using-praxis/SKILL.md",
   "skills/using-praxis/references/claude-code-tools.md",
   ".cursor/rules/praxis.mdc",
@@ -205,7 +209,6 @@ test("the README resource table matches what is on disk", () => {
     skills: dirNames("skills").length,
     agents: readdirSync(join(ROOT, "agents")).filter((f) => f.endsWith(".md")).length,
     crafts: dirNames("crafts").length,
-    pipelines: readdirSync(join(ROOT, "pipelines")).filter((f) => f.endsWith(".md")).length,
     commands: readdirSync(join(ROOT, "commands")).filter((f) => f.endsWith(".md")).length,
   };
   for (const [kind, n] of Object.entries(actual)) {

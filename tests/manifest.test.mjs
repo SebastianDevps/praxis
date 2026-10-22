@@ -27,7 +27,7 @@ test("every declared version agrees with plugin.json", () => {
 });
 
 // Counted the way the README counts them: a skill is a directory carrying a
-// SKILL.md; a craft is a directory; agents, pipelines and commands are flat.
+// SKILL.md; a craft is a directory; agents and commands are flat.
 const dirs = (rel) =>
   readdirSync(join(ROOT, rel), { withFileTypes: true }).filter((e) => e.isDirectory());
 const mdFiles = (rel) =>
@@ -37,7 +37,6 @@ const ACTUAL = {
   skills: dirs("skills").filter((d) => existsSync(join(ROOT, "skills", d.name, "SKILL.md"))).length,
   agents: mdFiles("agents").length,
   crafts: dirs("crafts").length,
-  pipelines: mdFiles("pipelines").length,
   commands: mdFiles("commands").length,
 };
 

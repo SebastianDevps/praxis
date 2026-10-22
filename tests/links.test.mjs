@@ -20,7 +20,7 @@ import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
 import { join, dirname, resolve, relative } from "node:path";
 
 const ROOT = new URL("..", import.meta.url).pathname.replace(/\/$/, "");
-const DIRS = ["agents", "skills", "crafts", "pipelines", "commands", "docs"];
+const DIRS = ["agents", "skills", "crafts", "commands", "docs"];
 
 // The root documents were outside this gate entirely — README.md most of all, which is the
 // one file a stranger evaluating this project actually opens. Listed explicitly rather than

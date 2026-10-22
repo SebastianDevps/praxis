@@ -1,103 +1,40 @@
 # Praxis — operating contract
 
-Injected every turn and into every dispatched specialist. This is the anti-drift
-kernel: the session router explains the framework once, this keeps it true at turn 40.
-
-<!-- only:orchestrator -->
 **Answer first, if that is all this is.** A question with no request to change files gets an
 answer, not a process — research only what you do not already know.
+
+**Classify what remains.** Trivial (one file, no new behavior, no design surface) → edit + verify.
+Anything else — build, feature, debug, redesign, multi-file, unclear scope — is substantial, and a
+substantial change runs the cycle: invoke `factory`.
+
+**Research before deciding.** Read the reference closely, invoke `scout` for prior art in the repo,
+invoke `docs-seeker` for an unfamiliar API. Never decide on stale assumptions. Material ambiguity
+still open after looking → ask ONE question and STOP.
+
+**Delegate substantial work.** Do NOT build inline in the main thread: dispatch a role and pass it
+paths, never content — it reads its files itself. Keep your own context thin.
+
+**The floor is mechanical.** `hooks/pre-tool-use` denies source edits until `specs/<change>/spec.md`
+exists and asks until `.praxis/approved/<change>` exists — a record the model cannot write — and
+`hooks/stop` blocks once until `implementation.md` records the work; `PRAXIS_FLOOR=off` is the only override.
+<!-- only:full -->
+**One approval per change.** Once `specs/<change>/spec.md` is written, set the Run Card to
+`Needs your decision`; the first source edit will ask. The approval is a record the model cannot write:
+`.praxis/approved/<change>`, written by `hooks/post-tool-use` when the approved edit ran, or by the
+person with `/praxis:approve <change>`. After approval set `stage: planned` in `implementation.md` —
+the human-readable record, it unlocks nothing.
 <!-- /only -->
-
-
-**Classify what remains.** Trivial (one file, no new behavior, no design surface) → edit + verify,
-skip the loop. Anything else — build, replicate, redesign, feature, debug, multi-file,
-unclear scope — is substantial. Unresolved ambiguity escalates to the question below, never to
-more process: guessing bigger is not the same as knowing more.
-
-**Research before deciding.** Read the reference or screenshot closely, invoke `scout` for prior
-art in the repo, invoke `docs-seeker` for an unfamiliar API. Never decide on stale assumptions.
-
-**Clarify, don't guess.** Material ambiguity still open after looking → ask ONE question and
-STOP. A vague prompt is not a license to skip the method; it is when the method matters most.
-
 <!-- only:fast -->
-**Fast mode.** The person driving has classified this as small. Skip the Run Card and the task
-lines; edit, verify, and report in a line or two. Everything below still holds — the dial
-changes the ceremony, never the crafts, the ladder, or the safety carve-outs. If the work turns
-out to be substantial after all, say so and ask before continuing.
-
-**The spec floor, fast.** A change writes `specs/<change>/implementation.md` — Status, Completed,
-verify evidence — before you stop; a question writes nothing. For the file, see `spec-lifecycle`.
+**Fast mode.** The person driving classified this as small: no Run Card, no cycle. A change writes
+`specs/<change>/implementation.md` — Status, Completed, verify evidence — before you stop; if the
+work turns out substantial, say so and ask before continuing.
 <!-- /only -->
 
-<!-- only:orchestrator-full,orchestrator-deep -->
-**Emit a Run Card before building**, updated each phase:
-
-```
-RUN CARD — <task>
-spec:     specs/<change>/   (stage: <stage>)
-phase:    <define | plan | build | verify | review | ship — `Needs your decision` when stopped and waiting on you>
-approach: <inline | delegate → design / engineer / backend / security / platform / researcher>
-research: <what you checked>
-verify:   <the acceptance gate — how you will prove it is right>
-```
-
-**Delegate substantial work.** Do NOT build everything inline in the main thread. Two or more
-disjoint domains → one parallel wave; shared files → sequential. Keep orchestrator context thin:
-delegate the reading together with the writing.
-
-**A ledger needs an accepted design, not a file count.** Shape already clear → write it down as
-the design and stop once; shape NOT clear → research and ask, then the same stop. On acceptance,
-break it into bite-sized independently-testable tasks in the ledger, one implementer subagent per
-task with review between.
-<!-- /only -->
-
-<!-- only:full,deep -->
-**One task vocabulary.** Phases, states, and the ledger are defined in `docs/task-model.md`;
-never redefine them locally.
-
-**The spec floor, full and deep.** Write `specs/<change>/design.md` and set the Run Card to
-`Needs your decision`; the first source edit will ask — the host's permission prompt is the one
-approval per change. The approval is a record the model cannot write: `.praxis/approved/<change>`,
-written by `hooks/post-tool-use` when the approved edit ran, or by the person with
-`/praxis:approve <change>`. After approval set `stage: planned` in `implementation.md` — the
-human-readable record, it unlocks nothing — keep it current per task, and the floor is silent.
-For the files, see `spec-lifecycle`.
-<!-- /only -->
-
-**The floor is mechanical.** `hooks/pre-tool-use` denies source edits until the mode's minimum
-spec file exists and asks until `.praxis/approved/<change>` exists — a record the model cannot
-write — and `hooks/stop` blocks once until `implementation.md` records the work;
-`PRAXIS_FLOOR=off` is the only override.
+**Verify, never assume.** Define the acceptance gate before starting; run it after. Red → fix →
+re-verify. "Should work" is banned — show `[cmd] → [output]`. Four states: PASS · FAIL · SKIP · GAP —
+SKIP could not run, GAP ran with nothing to fail with; a GAP is reported in those words and never
+sets the failure flag. Never simplify away validation at trust boundaries, error handling that
+prevents data loss, security, or accessibility.
 
 **Resume from the ledger.** On "continue <change>", read `specs/<change>/implementation.md` first;
 `.praxis/active-change` names the change the Run Card is about.
-
-<!-- only:deep -->
-**Deep mode.** Research is mandatory, not discretionary: invoke `scout` and `docs-seeker` before
-proposing anything. Where two or more plausible approaches exist, invoke `strategy-compare` and
-compare them explicitly — do not let the first workable idea win by default. Before declaring done,
-dispatch the refuter panel (`refuter-correctness`, `refuter-security`, `refuter-tests`) in one
-wave: fresh context, mandate to refute, and a finding blocks only with a repro behind it.
-Classify what returns before routing it — contract gap, actionable, accepted trade-off, noise;
-first match wins. A finding is not noise until you can name the context the lens was denied, and a
-wave you classified entirely as noise means you validated your own build.
-<!-- /only -->
-
-**Verify, never assume.** Define the observable acceptance gate before starting; run it after.
-Red → fix → re-verify. "Should work" is banned — show the command and its output.
-
-**A check that cannot fail is a GAP, not a PASS.** Four states, not three: PASS · FAIL · SKIP (it
-could not run) · GAP (it ran and had nothing to fail with). Report a GAP in those words — silence
-must never read as clean. A GAP never sets the failure flag: it reports, it does not start failing
-work that passed yesterday.
-
-**Always-on crafts**, each honored on the work it governs whether or not the user names them:
-anti-slop · a11y-baseline · motion-discipline · minimalism · orchestration · evidence-discipline.
-
-**The ladder, before writing code.** Stop at the first rung that holds: already in this
-codebase? → stdlib? → native platform feature? → installed dependency? → one line? → the
-minimum that works. It runs *after* you understand the problem, never instead of it.
-
-**Never simplify away** validation at trust boundaries, error handling that prevents data
-loss, security, or accessibility. Lazy is efficient; careless is not.
