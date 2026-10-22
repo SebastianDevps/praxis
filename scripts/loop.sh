@@ -1,26 +1,34 @@
 #!/usr/bin/env bash
-# loop.sh — guarded autonomous build loop ("ralph") driver for Praxis.
+# loop.sh — guarded autonomous runner ("ralph") for the Praxis cycle (`/praxis:loop`).
 #
-# Re-invokes `claude -p` on a FRESH context each iteration. The loop's memory is the
-# filesystem: the active change's ledger, specs/<change>/implementation.md (ADR-002;
-# PROGRESS.md is only the index of changes) + the loop's own git commits. ALL stop-limits
-# are enforced HERE, in bash, OUTSIDE the model — a runner safety bound on an opt-in
-# process, never a gate on the user's interactive session.
+# Re-invokes `claude -p` on a FRESH context each iteration. Each iteration is told to continue
+# ONE change through the `factory` skill — spec → build → review → approve → ship — and to do
+# exactly one step of it. The loop's memory is the filesystem: the change's ledger,
+# specs/<change>/implementation.md (ADR-002; PROGRESS.md is only the index of changes), the
+# cycle's files under specs/<change>/ and .praxis/, and the loop's own git commits. ALL
+# stop-limits are enforced HERE, in bash, OUTSIDE the model — a runner safety bound on an
+# opt-in process, never a gate on the user's interactive session.
 #
-# The iteration prompt has the seven-section shape of Matt Pocock's ralph prompts
-# (ralph-workshop `plans/prompt.md` → total-typescript-monorepo `plans/backlog/prompt.md`
-# → sandcastle `simple-loop/prompt.md`) with Praxis's ledger in place of a PRD or an
-# issue list. The model talks back through three signals, each alone on its own line:
+# The prompt keeps the shape of Matt Pocock's ralph prompts (ralph-workshop `plans/prompt.md`
+# → total-typescript-monorepo `plans/backlog/prompt.md` → sandcastle `simple-loop/prompt.md`),
+# with the cycle's next step in place of a backlog pick. The model talks back through three
+# signals, each alone on its own line:
 #
-#   NO MORE TASKS   (or COMPLETE)   the ledger has no pending task      → exit 0
-#   ABORT                           the task is blocked; stop the run   → exit 1
-#   HANG ON A SECOND                the task was bigger than expected;
-#                                   it was split and the smaller chunk
-#                                   done — the loop simply continues
+#   NO MORE TASKS   (or COMPLETE)   the ledger says the change is shipped  → exit 0
+#   ABORT                           the step is blocked; stop the run     → exit 1
+#   HANG ON A SECOND                the step was bigger than expected; it
+#                                   was split and the smaller chunk done — the loop continues
+#
+# Two states of the cycle are read from files, not from the model, after every iteration
+# (specs/factory-cycle): `stage: shipped` in the ledger ends the run with 0; the escalation
+# record `.praxis/needs-human/<change>` (or `stage: needs-human`) ends it with 5 and prints the
+# two commands the person has — /praxis:rework and /praxis:approve. An unattended run cannot
+# answer the floor's ask, so `--approve` runs scripts/approve.sh before the first iteration:
+# the person approves the spec by starting the loop with that flag.
 #
 # Exit codes: 0 complete · 1 ABORT or claude error · 2 usage · 3 verifier tampered ·
 # 4 a guardrail stopped the run without completion (iteration cap, wall-clock, cost,
-# no progress). Each guardrail below is commented with WHY it exists.
+# no progress) · 5 the change needs a human. Each guardrail below is commented with WHY.
 
 set -euo pipefail
 
@@ -29,8 +37,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 . "${SCRIPT_DIR}/../hooks/lib.sh"
 
 # ---- defaults (every guardrail is a flag) -----------------------------------------------
-TASK=""                       # one-line goal injected into each iteration prompt
+TASK=""                       # one-line goal injected into each iteration prompt; default "continue <change>"
 LEDGER=""                     # durable progress file; resolved below unless --ledger is given
+APPROVE=0                     # WHY: the floor asks once per change and `-p` cannot answer; the flag is the answer
 MAX_ITERATIONS=20             # WHY: hard ceiling — the iteration cap is the primary cost proxy
 MAX_DURATION="2h"             # WHY: wall-clock kill-switch — catches a hung/runaway iteration
 MAX_COST=""                   # WHY: optional cumulative USD cap (best-effort; see note below)
@@ -47,9 +56,13 @@ LOOP_TRAILER="Praxis-Loop"
 
 usage() {
   cat <<'EOF'
-Usage: bash scripts/loop.sh --task "<goal>" [options]
+Usage: bash scripts/loop.sh [--task "<goal>"] [--approve] [options]
 
-  --task TEXT             One-line goal (required). Injected into every iteration prompt.
+  --task TEXT             One-line goal injected into every iteration prompt. Default:
+                          "continue <change>" for the active change; required when the repo
+                          has no spec folder to name one.
+  --approve               Run scripts/approve.sh <change> before the first iteration: the
+                          person approves the spec by starting the loop. Needs a spec file.
   --ledger PATH           Progress ledger file (default: specs/<active change>/implementation.md,
                           the change named in .praxis/active-change or the newest ledger;
                           PROGRESS.md when the repo has no spec folders).
@@ -63,23 +76,29 @@ Usage: bash scripts/loop.sh --task "<goal>" [options]
   --history N             Previous loop commits shown to each iteration (default: 10).
   -h, --help              Show this help.
 
+Each iteration continues the change through the `factory` skill: one step of
+spec → build → review → approve → ship, on a fresh context.
+
 Signals, each alone on its own line of the agent's output (a mention inside prose is not a signal):
-  NO MORE TASKS / COMPLETE   nothing pending in the ledger → exit 0
+  NO MORE TASKS / COMPLETE   the change is shipped → exit 0
   ABORT                      blocked → exit 1 after that iteration
-  HANG ON A SECOND           task re-scoped to a smaller chunk → the loop continues
+  HANG ON A SECOND           step re-scoped to a smaller chunk → the loop continues
 
 Exit codes:
-  0  complete (NO MORE TASKS / COMPLETE confirmed)
+  0  complete: the ledger says stage: shipped, or NO MORE TASKS / COMPLETE confirmed
   1  ABORT, or claude exited non-zero
-  2  usage error
+  2  usage error (also: --approve with nothing to approve)
   3  verifier-integrity guard: a test file was modified this iteration
   4  a guardrail stopped the run without completion: iteration cap, wall-clock,
      cost cap, or no progress
+  5  the change needs a human: .praxis/needs-human/<change> exists (the approver
+     recorded ESCALATE). /praxis:rework <change> "<note>" sends it back to the
+     builder; /praxis:approve <change> ships it as is.
 
 Stop-limits are enforced in bash, OUTSIDE the model. Guardrails:
   hard iteration cap · wall-clock timeout · best-effort cost cap · no-progress detection
   · completion confirmation · verifier-integrity guard (halts if a test file is touched)
-  · human checkpoint on stall (diagnostics written to the ledger, no thrashing).
+  · human checkpoint on stall or escalation (diagnostics written to the ledger, no thrashing).
 EOF
 }
 
@@ -87,6 +106,7 @@ EOF
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --task)             TASK="${2:-}"; shift 2 ;;
+    --approve)          APPROVE=1; shift ;;
     --ledger)           LEDGER="${2:-}"; shift 2 ;;
     --max-iterations)   MAX_ITERATIONS="${2:-}"; shift 2 ;;
     --max-duration)     MAX_DURATION="${2:-}"; shift 2 ;;
@@ -100,19 +120,31 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-[[ -n "$TASK" ]] || { echo "error: --task is required" >&2; usage; exit 2; }
 command -v "$CLAUDE_BIN" >/dev/null 2>&1 || { echo "error: '$CLAUDE_BIN' not found on PATH" >&2; exit 2; }
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
   echo "error: not inside a git repo — the loop uses git as its progress signal" >&2; exit 2; }
 
 # WHY: the ledger is per change. Same resolution as hooks/subagent-stop: the active change's
-# implementation.md, else the flat PROGRESS.md a pre-folder repo still carries.
+# implementation.md, else the flat PROGRESS.md a pre-folder repo still carries. The change
+# name is what the cycle's files and the needs-human marker are keyed on.
+PROJECT_ROOT="$(praxis_project_root "$PWD")"
+CHANGE=""
 if [[ -z "$LEDGER" ]]; then
-  project_root="$(praxis_project_root "$PWD")"
-  active="$(praxis_active_change "$project_root")"
-  if [[ -n "$active" ]]; then LEDGER="${project_root}/specs/${active}/implementation.md"
+  CHANGE="$(praxis_active_change "$PROJECT_ROOT")"
+  if [[ -n "$CHANGE" ]]; then LEDGER="${PROJECT_ROOT}/specs/${CHANGE}/implementation.md"
   else LEDGER="PROGRESS.md"
   fi
+else
+  case "$LEDGER" in
+    */specs/*/implementation.md|specs/*/implementation.md)
+      CHANGE="${LEDGER%/implementation.md}"; CHANGE="${CHANGE##*/}"
+      case "$CHANGE" in _templates) CHANGE="" ;; esac ;;
+  esac
+fi
+
+if [[ -z "$TASK" ]]; then
+  [[ -n "$CHANGE" ]] || { echo "error: --task is required when no change can be resolved (no .praxis/active-change, no specs/*/implementation.md)" >&2; usage; exit 2; }
+  TASK="continue ${CHANGE}"
 fi
 
 # WHY: the ledger is the loop's only memory. No ledger => no loop. Seed one if absent.
@@ -121,6 +153,15 @@ if [[ ! -f "$LEDGER" ]]; then
   printf '# Progress Ledger\n\nTask: %s\n\n- [ ] (define bite-sized, independently-testable tasks here)\n' \
     "$TASK" > "$LEDGER"
   echo "[loop] seeded ledger at $LEDGER — fill it with a real plan before relying on the loop"
+fi
+
+# WHY: an unattended run cannot answer the floor's ask. The person approves by starting the
+# loop with --approve; approve.sh refusing (no spec yet) is a precondition failure, not an
+# iteration's ABORT, so it exits 2 and nothing runs.
+if (( APPROVE == 1 )); then
+  [[ -n "$CHANGE" ]] || { echo "error: --approve needs a change to approve (no .praxis/active-change, no specs/*/implementation.md)" >&2; exit 2; }
+  ( cd "$PROJECT_ROOT" && bash "${SCRIPT_DIR}/approve.sh" "$CHANGE" ) || {
+    echo "[loop] STOP: --approve could not approve ${CHANGE}; nothing ran" >&2; exit 2; }
 fi
 
 # ---- duration -> deadline (epoch seconds) -----------------------------------------------
@@ -173,67 +214,84 @@ recent_loop_commits() {
   printf '%s' "${out:-none yet}"
 }
 
-# The seven-section iteration prompt. Rebuilt every iteration because the commit history
-# grows; the ledger is read by the model itself so its edits are never stale here.
+# WHY: the two end states of the cycle are files, not claims. Read before the first iteration
+# (a shipped or escalated change has nothing for the loop to do) and after every one. The
+# escalation record is written by the hook when the approver records ESCALATE; the person,
+# not the next iteration, decides what happens then — so the run stops and says how.
+#   cycle_state_exit <where>
+cycle_state_exit() {
+  [[ -n "$CHANGE" ]] || return 0
+  local stage; stage="$(praxis_ledger_stage "$LEDGER")"
+  if [[ -f "$(praxis_needs_human_marker "$PROJECT_ROOT" "$CHANGE")" ]] || [[ "$stage" == needs-human ]]; then
+    log_diag "STOP: ${CHANGE} needs a human — the approver recorded ESCALATE (${1})"
+    cat <<EOF
+[loop] STOP: ${CHANGE} needs a human — .praxis/needs-human/${CHANGE} exists (the approver recorded ESCALATE in specs/${CHANGE}/decision.md). Two ways on, both typed by a person:
+  /praxis:rework ${CHANGE} "<note>"   archive the review rounds and the decision, reset the round counter, resume the builder with your note
+  /praxis:approve ${CHANGE}           ship as is: decision.md APPROVE (human), push praxis/${CHANGE}, open the PR
+EOF
+    exit 5
+  fi
+  if [[ "$stage" == shipped ]]; then
+    echo "[loop] DONE: ${CHANGE} is shipped — the ledger says stage: shipped (${1})"; exit 0
+  fi
+}
+
+# The iteration prompt. Rebuilt every iteration because the commit history grows; the ledger
+# is read by the model itself so its edits are never stale here.
 build_prompt() {
+  local opening
+  if [[ -n "$CHANGE" ]]; then
+    opening="Continue the change \`${CHANGE}\` through the \`factory\` skill: invoke it first, then do exactly ONE step of the cycle (spec → approve → build → review → approve → ship) this iteration. The cycle's state is in files under specs/${CHANGE}/ and .praxis/, never in this conversation."
+  else
+    opening="Continue the work in the ledger through the \`factory\` skill: invoke it first, then do exactly ONE step this iteration. The state is in files, never in this conversation."
+  fi
   cat <<EOF
 You are ONE iteration of an autonomous loop. Your context is fresh: nothing from earlier iterations survives except the files and the commits below. Goal: ${TASK}
 
+${opening}
+
 # LEDGER
 
-Read ${LEDGER} (task lines, phases and states: docs/task-model.md). It is the only source of what exists to do. Then review the previous loop commits, newest first, to learn what was done, what was decided, and what blocked:
+Read ${LEDGER} (task lines, phases and states: docs/task-model.md). Its frontmatter says where the cycle stands: \`stage:\`, \`round:\`, \`builder:\`, \`lenses:\`. It is the only source of what exists to do. Then review the previous loop commits, newest first, to learn what was done, what was decided, and what blocked:
 
 $(recent_loop_commits)
 
-# TASK BREAKDOWN
+# ONE STEP
 
-If the next pending task is larger than one iteration can finish and verify, split it in the ledger first. Make each task the smallest possible unit of work. Do not outrun the headlights: one small change per task.
-
-# TASK SELECTION
-
-Pick ONE task in \`state: pending\` (never one in \`blocked(user)\`). Priority order:
-
-1. Critical bugfixes
-2. Tracer bullets — a thin end-to-end slice through every layer, proving the approach before it is widened
-3. Polish and quick wins
-4. Refactors
-
-If no task remains, emit the line
-${DONE_MARKER}
-and stop.
-
-# EXPLORATION
-
-Search the codebase before implementing: the feature may already exist, and the conventions it must match are in the files around it. Fill your context with what the task needs.
-
-# EXECUTION
-
-Complete the task. Real code: no placeholders, no stubs. Never modify or delete a test file to make it pass.
-
-If something blocks completion (missing context, a failing test you cannot fix, an external dependency), emit the line
-ABORT
-and stop.
-
-If the task turns out larger than expected (it needs a refactor first), emit the line
+Pick the single next step the \`factory\` skill names for this stage and round — never two. If the step is larger than one iteration can finish and verify, emit the line
 HANG ON A SECOND
 then split it in the ledger and do only the smaller chunk this iteration.
 
+If the ledger says \`stage: shipped\`, emit the line
+${DONE_MARKER}
+and stop.
+
+# EXECUTION
+
+Real work: no placeholders, no stubs. Never modify or delete a test file to make it pass. Dispatch the roles the step names and pass them paths, never content. Never write .praxis/approved/ or .praxis/needs-human/: the person writes the first, the hook the second.
+
+If something blocks completion (an approval this run cannot obtain, a check you cannot make green, an external dependency), emit the line
+ABORT
+and stop.
+
 # FEEDBACK LOOPS
 
-Before committing, run the typecheck and the tests. Both must pass. A red gate is not committed: fix it, or emit ABORT.
+Before committing, the step's own gate must be green: the builder's tests and Acceptance commands, every lens file of the round, the approver's checks. A red gate is not committed: fix it, or emit ABORT.
 
 # COMMIT
 
-Make exactly one git commit. Its message carries: the task completed · key decisions · files changed · blockers or notes for the next iteration. Update the task's line in ${LEDGER} in the same commit. End the message with the trailer
-${LOOP_TRAILER}: <task id>
+Make exactly one git commit in this checkout. Its message carries: the step completed · key decisions · files changed · blockers or notes for the next iteration. Update ${LEDGER} in the same commit. End the message with the trailer
+${LOOP_TRAILER}: <step>
 
 # FINAL RULES
 
-Work on a SINGLE task. Signals (${DONE_MARKER}, ABORT, HANG ON A SECOND) are read only when they stand alone on a line, nothing else on it.
+Do ONE step. Signals (${DONE_MARKER}, ABORT, HANG ON A SECOND) are read only when they stand alone on a line, nothing else on it.
 EOF
 }
 
 # ---- the loop ---------------------------------------------------------------------------
+cycle_state_exit "before the first iteration"
+
 done_streak=0
 no_progress=0
 prev_sig="$(failure_signature)"
@@ -252,7 +310,7 @@ for (( iter=1; iter<=MAX_ITERATIONS; iter++ )); do
   echo "[loop] iteration ${iter}/${MAX_ITERATIONS}"
   iter_start_head="$(git rev-parse HEAD 2>/dev/null || echo none)"
 
-  # Fresh context each iteration: a new `claude -p` invocation, fed the seven-section prompt.
+  # Fresh context each iteration: a new `claude -p` invocation, fed the iteration prompt.
   set +e
   OUTPUT="$("$CLAUDE_BIN" -p "$(build_prompt)" 2>&1)"
   rc=$?
@@ -271,6 +329,10 @@ for (( iter=1; iter<=MAX_ITERATIONS; iter++ )); do
     log_diag "HALT: a test file was modified/deleted this iteration — reward-hacking guard tripped"
     echo "[loop] HALT: test file changed — verifier integrity compromised" >&2; exit 3
   fi
+
+  # WHY: the cycle's end states are files, read before any signal the model emitted: a change
+  # the approver escalated is not complete whatever the output says.
+  cycle_state_exit "after iteration ${iter}"
 
   # WHY: best-effort cost cap. The CLI does not expose a stable machine-readable cost on stdout,
   # so we parse a 'cost: $X' line IF present. If absent, we cannot enforce --max-cost and say so —
@@ -301,7 +363,7 @@ for (( iter=1; iter<=MAX_ITERATIONS; iter++ )); do
     echo "[loop] HANG ON A SECOND: task re-scoped on iteration ${iter}; continuing"
   fi
 
-  # WHY: completion confirmation. The signal is a claim about the ledger (no pending task);
+  # WHY: completion confirmation. The signal is a claim about the ledger (the change shipped);
   # --done-streak asks for it N times when one sighting is not enough to trust.
   if has_signal "$OUTPUT" "$COMPLETE_RE"; then
     done_streak=$(( done_streak + 1 ))

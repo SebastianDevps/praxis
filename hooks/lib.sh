@@ -364,17 +364,31 @@ praxis_approved() { [ -n "${2:-}" ] && [ -f "$(praxis_approved_marker "$1" "$2")
 # (specs/factory-cycle). Like the approval marker, never the model's to Edit/Write.
 praxis_needs_human_marker() { printf '%s/.praxis/needs-human/%s' "$1" "$2"; }
 
-# Create `.praxis/` on first use and, only then, its .gitignore. `active-change`,
-# `approved/`, `needs-human/`, `worktrees/` and `session-started` are per-machine session
-# state, not the team's record — same rule as `sessions.jsonl` in the memory store. Written
-# only when absent: a project that has edited this file keeps its edit. The two entries
-# added by factory-cycle are appended to a .gitignore written before they existed.
+# The .gitignore Praxis writes into `.praxis/`: `active-change`, `approved/`, `needs-human/`,
+# `worktrees/` and `session-started` are per-machine session state, not the team's record —
+# same rule as `sessions.jsonl` in the memory store.
+PRAXIS_GITIGNORE=$'active-change\napproved/\nneeds-human/\nworktrees/\nsession-started\n'
+
+# Create `.praxis/` on first use and, only then, its .gitignore. An existing file is the
+# project's and is never rewritten — with one exception: a file byte-identical to a default
+# an earlier Praxis wrote, which nobody has edited, gains the entries added since
+# (`needs-human/`, `worktrees/`), appended after its own lines, so a `.praxis/` created before
+# they existed learns them. The appended shape is itself recognised, so the upgrade is
+# idempotent. One edited character and the file is the project's.
 praxis_ensure_praxis_dir() {
-  local dir="$1/.praxis"
+  local dir="$1/.praxis" file="$1/.praxis/.gitignore" current
   [ -d "$dir" ] || mkdir -p "$dir" 2>/dev/null || return 1
-  [ -f "${dir}/.gitignore" ] || printf 'active-change\napproved/\nneeds-human/\nworktrees/\nsession-started\n' > "${dir}/.gitignore" 2>/dev/null || true
-  praxis_ensure_ignored "$1" needs-human/
-  praxis_ensure_ignored "$1" worktrees/
+  if [ ! -f "$file" ]; then
+    printf '%s' "$PRAXIS_GITIGNORE" > "$file" 2>/dev/null || true
+    return 0
+  fi
+  current="$(cat "$file" 2>/dev/null; printf x)"; current="${current%x}"
+  case "$current" in
+    $'active-change\napproved/\nsession-started\n'|$'active-change\napproved/\n'| \
+    $'active-change\napproved/\nsession-started\nneeds-human/\nworktrees/\n'|$'active-change\napproved/\nneeds-human/\nworktrees/\n')
+      praxis_ensure_ignored "$1" needs-human/
+      praxis_ensure_ignored "$1" worktrees/ ;;
+  esac
 }
 
 # Append one entry to `.praxis/.gitignore` when it is not already listed. For a
@@ -468,19 +482,28 @@ EOF
   printf '%s' "$name"
 }
 
-# One frontmatter value, trailing comment stripped; empty when the file or the key is
-# missing. Scoped to the `---` block when the file opens with one. A file without a block
-# is scanned whole, so a lens that wrote `verdict:` as its first body line is still read:
-# the floor should stand on what a role recorded, not on where it put the dashes.
-praxis_frontmatter_field() {
-  [ -f "$1" ] || return 0
-  awk -v KEY="$2" '
+# One frontmatter value from stdin, trailing comment stripped; empty when the key is missing.
+# Scoped to the `---` block when the text opens with one. Text without a block is scanned
+# whole, so a lens that wrote `verdict:` as its first body line is still read: the floor
+# should stand on what a role recorded, not on where it put the dashes. Every hook that
+# reads a verdict — barrier, ship gate, the main thread's SKIP write — goes through this one
+# reader, so the file a hook accepts is the file the next hook reads the same way.
+#   praxis_frontmatter_read <key>   (stdin)
+praxis_frontmatter_read() {
+  awk -v KEY="$1" '
     NR == 1            { fm = ($0 ~ /^---[ \t]*$/); if (fm) next }
     fm && /^---[ \t]*$/ { exit }
     index($0, KEY ":") == 1 {
       sub(/^[^:]*:[ \t]*/, ""); sub(/[ \t]*#.*$/, ""); sub(/[ \t]+$/, ""); print; exit
     }
-  ' "$1"
+  '
+}
+
+# The same, from a file; empty when the file is missing.
+#   praxis_frontmatter_field <file> <key>
+praxis_frontmatter_field() {
+  [ -f "$1" ] || return 0
+  praxis_frontmatter_read "$2" < "$1"
 }
 
 # The `stage:` value from a ledger's frontmatter.
@@ -504,10 +527,33 @@ praxis_spec_file() {
   fi
 }
 
+# The change's ledger, absolute; empty when it does not exist. In a linked worktree — the
+# builder's checkout from scripts/worktree.sh — the ledger is not seeded: one ledger, in the
+# main checkout, the orchestrator's. So when <root> has none and is a linked worktree, the
+# main checkout's is read; the floor still requires it, it only looks where the design put it.
+# `git-common-dir` is `.git` in the main checkout and the main `.git` from a linked one, in
+# either spelling; no git, no fallback.
+#   praxis_ledger_path <root> <change>
+praxis_ledger_path() {
+  local root="$1" change="${2:-}" common main
+  [ -n "$change" ] || return 0
+  if [ -f "${root}/specs/${change}/implementation.md" ]; then
+    printf '%s/specs/%s/implementation.md' "$root" "$change"; return 0
+  fi
+  common="$(git -C "$root" rev-parse --git-common-dir 2>/dev/null)" || return 0
+  [ -n "$common" ] || return 0
+  case "$common" in /*) ;; *) common="${root}/${common}" ;; esac
+  main="$(cd "${common}/.." 2>/dev/null && pwd -P)" || return 0
+  [ "$main" != "$root" ] || return 0
+  [ -f "${main}/specs/${change}/implementation.md" ] && printf '%s/specs/%s/implementation.md' "$main" "$change"
+  return 0
+}
+
 # A frontmatter field of the change's ledger: `round:`, `builder:`, `lenses:`, `stage:`.
 praxis_ledger_field() {
-  [ -n "${2:-}" ] || return 0
-  praxis_frontmatter_field "$1/specs/$2/implementation.md" "$3"
+  local file; file="$(praxis_ledger_path "$1" "${2:-}")"
+  [ -n "$file" ] || return 0
+  praxis_frontmatter_field "$file" "$3"
 }
 
 # The ledger's round as a number. Missing or malformed reads as 0: no review yet.

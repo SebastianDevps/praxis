@@ -2,15 +2,17 @@
 # UserPromptSubmit hook for the Praxis plugin.
 #
 # SessionStart primes the router ONCE. By turn 40 that context is buried and the
-# agent drifts back to inline-everything defaults. This re-states the compact
-# operating contract every turn, at the active intensity.
+# agent drifts back to inline-everything defaults. This re-states the operating
+# kernel every turn — at most 40 lines (specs/factory-cycle, "Contract diet"); the
+# cycle itself lives in the `factory` skill, loaded when a change opens.
 #
 # It also owns the dial. Parsing the switch here rather than in a skill is the
 # point: a Markdown command is read by the model and followed most of the time,
-# a flag file is read by the hook and applied every time.
+# a flag file is read by the hook and applied every time. Two levels, `fast` and
+# `full`; `deep` is gone (ADR-004) and maps to `full` with a notice, for one release.
 #
 # Reading stdin is bounded by `read -t`, so a host that never delivers the prompt
-# costs one second and falls through to injecting the contract unchanged.
+# costs one second and falls through to injecting the kernel unchanged.
 
 set -uo pipefail
 
@@ -27,14 +29,27 @@ notice=""
 # registered command before the hook sees it, or pass the raw text through.
 switch=$(printf '%s' "$prompt" | sed -n 's|^[[:space:]]*/praxis\(:mode\)\{0,1\}[[:space:]]\{1,\}\([a-z]\{1,\}\).*|\2|p' | head -1)
 case "$switch" in
-  fast|full|deep)
+  fast|full)
     if praxis_set_mode "$switch"; then
       notice="PRAXIS MODE CHANGED — ${switch}"$'\n\n'
+    fi
+    ;;
+  deep)
+    if praxis_set_mode full; then
+      notice="PRAXIS MODE CHANGED — full · deep is now full (ADR-004)"$'\n\n'
     fi
     ;;
 esac
 
 mode="$(praxis_mode)"
+# A dial left on `deep` before ADR-004: rewrite it once, say so once, run as `full`
+# either way — the kernel has no `deep` blocks left to filter for.
+if [ "$mode" = deep ]; then
+  praxis_set_mode full || true
+  mode=full
+  notice="${notice}PRAXIS MODE — deep is now full (ADR-004)"$'\n\n'
+fi
+
 contract=$(praxis_contract "$PRAXIS_ROOT" orchestrator "$mode")
 [ -n "$contract" ] || exit 0
 

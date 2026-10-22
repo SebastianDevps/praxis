@@ -173,7 +173,9 @@ Runnable checks. Each must be green before `stage: implemented`. Four states: PA
 - [ ] `node --test tests/*.test.mjs` → all pass. New cases: a builder dispatch that would open
       round 3 is denied; builder resume is denied while a lens file is missing; `gh pr create` is
       denied without APPROVE and allowed with APPROVE + all PASS; legacy `design.md` satisfies the
-      floor; SubagentStart output for `builder` is ≤15 lines plus the spec path.
+      floor; SubagentStart output for `builder` is the role kernel (≤15 lines) + the change line +
+      its declared crafts, and nothing else (no contract, no skill pointers). Whether the crafts
+      pay inside the builder is a T06 measurement, not a wave-2 assumption.
 - [ ] `wc -l hooks/context/contract.md` → ≤ 40
 - [ ] `evals/cycle`, 3 cells on the fixture feature: `subagents_spawned ≥ 4`; every
       `review/round-1/*.md` exists before any builder resume (transcript order); rounds ≤ 2;

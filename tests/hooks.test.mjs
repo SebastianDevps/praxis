@@ -40,16 +40,26 @@ test("session-start emits valid JSON carrying the router", () => {
   assert.ok(ctx.length > 1000);
 });
 
-test("user-prompt-submit injects the orchestrator contract every turn", () => {
+// specs/factory-cycle, "Contract diet": the per-turn text is a kernel of at most 40 lines that
+// routes a substantial change into the `factory` skill; the Run Card, the ladder and the crafts
+// list left it. What must still arrive every turn is the routing and the four verification states.
+test("user-prompt-submit injects the orchestrator kernel every turn", () => {
   const ctx = context(claude("user-prompt-submit"));
-  assert.match(ctx, /RUN CARD/, "orchestrator variant must keep the Run Card");
-  assert.match(ctx, /ladder/);
+  assert.match(ctx, /invoke `factory`/, "the kernel must route a substantial change into the cycle");
+  assert.match(ctx, /PASS · FAIL · SKIP · GAP/, "and keep the four verification states");
 });
 
-test("subagent-start strips orchestrator-only sections", () => {
+test("the kernel file stays within its 40-line budget", () => {
+  // `wc -l` counts newlines, which is the number the design's acceptance gate names.
+  const newlines = readFileSync(join(ROOT, "hooks/context/contract.md"), "utf8").split("\n").length - 1;
+  assert.ok(newlines <= 40, `hooks/context/contract.md is ${newlines} lines; the budget is 40`);
+});
+
+test("subagent-start injects a role kernel, never the orchestrator's contract", () => {
   const ctx = context(claude("subagent-start"));
   assert.doesNotMatch(ctx, /RUN CARD/, "a specialist must not be told to render Run Cards");
-  assert.match(ctx, /ladder/, "but it keeps the universal discipline");
+  assert.doesNotMatch(ctx, /invoke `factory`/, "a specialist must not be told to run the cycle");
+  assert.match(ctx, /\[cmd\] → \[output\]/, "but it keeps the evidence rule");
 });
 
 // Membership plus a separately pinned count — never an exhaustive equality. This trap has now been
@@ -76,10 +86,10 @@ test("subagent-start resolves the dispatched agent's declared crafts", () => {
   assert.equal(engineer.length, 2, `engineer's craft count moved — confirm the number: ${engineer}`);
 });
 
-test("an unknown or stock agent still receives the contract", () => {
+test("an unknown or stock agent still receives the default kernel", () => {
   const ctx = context(claude("subagent-start", { input: '{"agent_type":"Explore"}' }));
   assert.deepEqual(craftsIn(ctx), []);
-  assert.match(ctx, /ladder/);
+  assert.match(ctx, /PASS · FAIL · SKIP · GAP/);
 });
 
 test("a host-supplied agent_type cannot traverse out of agents/", () => {
@@ -96,7 +106,7 @@ test("PRAXIS_SUBAGENT_MATCHER scopes injection, and only on a definite mismatch"
   const env = { PRAXIS_SUBAGENT_MATCHER: "design|engineer" };
   assert.match(
     context(claude("subagent-start", { env, input: '{"agent_type":"engineer"}' })),
-    /ladder/,
+    /\[cmd\] → \[output\]/,
   );
   assert.equal(
     claude("subagent-start", { env, input: '{"agent_type":"researcher"}' }).trim(),
@@ -120,7 +130,7 @@ test("a bad matcher regex fails open, quietly", () => {
 test("a stalled payload fails open instead of hanging the spawn", () => {
   const started = Date.now();
   const ctx = context(claude("subagent-start", { env: { PRAXIS_SUBAGENT_MATCHER: "design" } }));
-  assert.match(ctx, /ladder/);
+  assert.match(ctx, /\[cmd\] → \[output\]/);
   assert.ok(Date.now() - started < 5000, "stdin read must stay bounded");
 });
 
@@ -174,7 +184,7 @@ test("the dial defaults to full and states the active level every turn", () => {
   const { first } = withHome("fix the typo");
   const ctx = context(first);
   assert.match(ctx, /active mode: full/);
-  assert.match(ctx, /RUN CARD/);
+  assert.match(ctx, /One approval per change/, "full carries the approval stop");
 });
 
 test("a mode switch persists to the next turn", () => {
@@ -182,31 +192,32 @@ test("a mode switch persists to the next turn", () => {
   assert.match(context(call("/praxis fast")), /MODE CHANGED — fast/);
   const next = context(call("now fix the bug"));
   assert.match(next, /active mode: fast/, "the level must outlive the turn that set it");
-  assert.doesNotMatch(next, /RUN CARD/, "fast drops the ceremony");
+  assert.doesNotMatch(next, /One approval per change/, "fast drops the approval stop — it has no spec to approve");
   assert.match(next, /Fast mode/);
 });
 
-test("/praxis:mode deep adds the deep-only discipline", () => {
+// ADR-004 (specs/factory-cycle): two modes. `deep` is accepted for one release and persists as
+// `full`, with a notice, so a muscle-memory `/praxis:mode deep` never leaves a session unprimed.
+test("/praxis:mode deep maps to full and says so", () => {
   const { call } = withHome("noop");
-  call("/praxis:mode deep");
+  assert.match(context(call("/praxis:mode deep")), /deep is now full \(ADR-004\)/);
   const ctx = context(call("design the schema"));
-  assert.match(ctx, /active mode: deep/);
-  assert.match(ctx, /Deep mode/);
-  assert.match(ctx, /RUN CARD/, "deep keeps everything full has");
+  assert.match(ctx, /active mode: full/, "deep must persist as full, not as deep");
+  assert.doesNotMatch(ctx, /Deep mode/, "no deep-only block survives in the kernel");
 });
 
 test("an unrecognized level is ignored rather than applied", () => {
   const { call } = withHome("noop");
-  call("/praxis deep");
+  call("/praxis fast");
   const ctx = context(call("/praxis banana"));
-  assert.match(ctx, /active mode: deep/, "a bad argument must not silently change the level");
+  assert.match(ctx, /active mode: fast/, "a bad argument must not silently change the level");
 });
 
-test("the dial changes ceremony, never the crafts or the safety carve-outs", () => {
+test("the dial changes ceremony, never the verification rules or the safety carve-outs", () => {
   const { call } = withHome("noop");
   call("/praxis fast");
   const ctx = context(call("ship it"));
-  for (const kept of [/ladder/, /trust boundaries/, /accessibility/, /anti-slop/]) {
+  for (const kept of [/PASS · FAIL · SKIP · GAP/, /stale assumptions/, /trust boundaries/, /accessibility/]) {
     assert.match(ctx, kept, "fast mode must not trim discipline");
   }
 });
@@ -267,10 +278,9 @@ test("a question is answerable at every level without entering the process", () 
 test("a dispatched specialist inherits the active level", () => {
   const home = mkdtempSync(join(tmpdir(), "praxis-mode-"));
   const env = { CLAUDE_PLUGIN_ROOT: ROOT, HOME: home };
-  run("user-prompt-submit", { input: '{"prompt":"/praxis deep"}', env });
+  run("user-prompt-submit", { input: '{"prompt":"/praxis fast"}', env });
   const ctx = context(run("subagent-start", { input: '{"agent_type":"engineer"}', env }));
-  assert.match(ctx, /active mode: deep/, "the dial must travel with the dispatch");
-  assert.match(ctx, /Deep mode/);
+  assert.match(ctx, /active mode: fast/, "the dial must travel with the dispatch");
   assert.doesNotMatch(ctx, /RUN CARD/, "a specialist still never renders Run Cards");
 });
 
@@ -341,7 +351,7 @@ test("an agent with no declaration still receives the contract", () => {
   // A stock host agent, not a Praxis one: every Praxis agent now declares skills,
   // so the undeclared case is the one that comes from outside the plugin.
   const ctx = context(claude("subagent-start", { input: '{"agent_type":"Explore"}' }));
-  assert.match(ctx, /ladder/);
+  assert.match(ctx, /PASS · FAIL · SKIP · GAP/);
   assert.doesNotMatch(ctx, /Skills declared for/, "no declaration means no empty section");
 });
 
@@ -418,11 +428,100 @@ test("a project with no rules injects nothing into the reviewer, and raises no e
   assert.equal(out.stderr, "", "a project that documents nothing is a valid state, not an error");
   const ctx = context(out.stdout);
   assert.doesNotMatch(ctx, /Project standards for/, "no rules means no empty section");
-  assert.match(ctx, /ladder/, "the contract still arrives");
+  assert.match(ctx, /\[cmd\] → \[output\]/, "the kernel still arrives");
 
   // CONSTRAINTS.md alone is still a standard the reviewer reads.
   const only = rulesRepo({ rules: false, constraints: true });
   assert.match(context(only.dispatch("praxis:reviewer").stdout), /`CONSTRAINTS\.md` — Quality bar/);
+});
+
+// ── The cycle's roles receive a kernel, not the contract (specs/factory-cycle) ─────────────────
+//
+// Every subagent used to receive the 103-line contract plus crafts plus skill pointers. The cycle
+// gives each role a kernel of at most 15 lines and one line naming the active change's files; the
+// builder, the role under the most context pressure, is the one measured. Both directions again:
+// the builder must receive its crafts and the change line, and must NOT receive skill pointers, a
+// Run Card, the kernel's orchestrator rules or the project's standards.
+
+function dispatchRepo({ spec = "spec.md" } = {}) {
+  const repo = mkdtempSync(join(tmpdir(), "praxis-cycle-"));
+  mkdirSync(join(repo, ".praxis"), { recursive: true });
+  writeFileSync(join(repo, ".praxis/active-change"), "export-csv\n");
+  if (spec) {
+    mkdirSync(join(repo, "specs/export-csv"), { recursive: true });
+    writeFileSync(join(repo, `specs/export-csv/${spec}`), "---\ntitle: export-csv\n---\n");
+  }
+  const dispatch = (agent) =>
+    spawnSync("bash", [join(ROOT, "hooks", "subagent-start")], {
+      env: { ...CLEAN, CLAUDE_PLUGIN_ROOT: ROOT, CLAUDE_PROJECT_DIR: repo },
+      input: JSON.stringify({ agent_type: agent }),
+      encoding: "utf8",
+      timeout: 10_000,
+    });
+  return { repo, dispatch };
+}
+
+// The kernel is everything above the first `---` separator (crafts, pointers and rules follow it),
+// minus the mode header and the change line.
+const kernelLines = (ctx) =>
+  ctx.split(/^---$/m)[0].split("\n")
+    .filter((l) => l.trim() !== "" && !/^PRAXIS — active mode/.test(l) && !/^Change: /.test(l));
+
+const CHANGE_LINE = /^Change: export-csv · spec: specs\/export-csv\/spec\.md · ledger: specs\/export-csv\/implementation\.md \(orchestrator-only\)$/m;
+
+test("builder receives its role kernel, the change line and its crafts — nothing else", () => {
+  const ctx = context(dispatchRepo().dispatch("praxis:builder").stdout);
+  const kernel = kernelLines(ctx);
+  assert.ok(kernel.length <= 15, `builder kernel is ${kernel.length} lines:\n${kernel.join("\n")}`);
+  assert.match(ctx, CHANGE_LINE);
+  const crafts = craftsIn(ctx);
+  for (const craft of ["minimalism", "evidence-discipline"]) {
+    assert.ok(crafts.includes(craft), `builder lost the ${craft} craft — got ${crafts}`);
+  }
+  assert.equal(crafts.length, 2, `builder's craft count moved — confirm the number: ${crafts}`);
+  for (const absent of [/RUN CARD/, /Skills declared for/, /Project standards for/, /Answer first/, /invoke `factory`/]) {
+    assert.doesNotMatch(ctx, absent, "the builder received more than its kernel, the change line and its crafts");
+  }
+});
+
+test("every cycle role gets a kernel of at most 15 lines, the change line and the evidence rule", () => {
+  const { dispatch } = dispatchRepo({ spec: null }); // the spec is about to be written: the line still names it
+  for (const role of ["spec-writer", "builder", "refuter-correctness", "refuter-security", "refuter-tests", "lens-ui", "approver"]) {
+    const ctx = context(dispatch(`praxis:${role}`).stdout);
+    const kernel = kernelLines(ctx);
+    assert.ok(kernel.length <= 15, `${role} kernel is ${kernel.length} lines`);
+    assert.match(ctx, CHANGE_LINE, `${role} did not receive the change line`);
+    assert.match(ctx, /\[cmd\] → \[output\]/, `${role} lost the evidence rule`);
+    assert.match(ctx, /PASS · FAIL · SKIP · GAP/, `${role} lost the four states`);
+    assert.doesNotMatch(ctx, /RUN CARD/, `${role} was told to render Run Cards`);
+  }
+});
+
+test("the lenses and the approver receive the project's rules as pointers; the builder does not", () => {
+  const { dispatch } = rulesRepo();
+  for (const judge of ["praxis:refuter-correctness", "refuter-security", "praxis:refuter-tests", "lens-ui", "praxis:approver"]) {
+    const ctx = context(dispatch(judge).stdout);
+    assert.match(ctx, /`agents\/rules\/quality-x\.md` — Quality X/, `${judge} received no rule pointer`);
+    assert.ok(!ctx.includes("RULE-BODY-SENTINEL"), `a rule body leaked into ${judge}`);
+  }
+  assert.doesNotMatch(context(dispatch("praxis:builder").stdout), /Project standards for/, "the builder received the rules section");
+});
+
+test("the change line names the legacy design.md when the change has no spec.md", () => {
+  const ctx = context(dispatchRepo({ spec: "design.md" }).dispatch("engineer").stdout);
+  assert.match(ctx, /^Change: export-csv · spec: specs\/export-csv\/design\.md · ledger: specs\/export-csv\/implementation\.md \(orchestrator-only\)$/m);
+});
+
+test("a project with no active change injects no change line", () => {
+  const repo = mkdtempSync(join(tmpdir(), "praxis-nochange-"));
+  const out = spawnSync("bash", [join(ROOT, "hooks", "subagent-start")], {
+    env: { ...CLEAN, CLAUDE_PLUGIN_ROOT: ROOT, CLAUDE_PROJECT_DIR: repo },
+    input: '{"agent_type":"engineer"}',
+    encoding: "utf8",
+    timeout: 10_000,
+  });
+  assert.equal(out.status, 0);
+  assert.doesNotMatch(context(out.stdout), /^Change: /m);
 });
 
 // ── subagent-stop: the memory write path ──────────────────────────────────────────────────────
@@ -1198,12 +1297,11 @@ function cycleRepo({ mode = "full", round = 0, builder = "agent-b1", lenses = "c
 const dispatchBuilder = (subagent_type = "praxis:builder") =>
   ({ tool_name: "Agent", tool_input: { subagent_type, prompt: "build it", description: "builder" } });
 const messageTo = (to) => ({ tool_name: "SendMessage", tool_input: { to, message: "fix these" } });
-const bash = (command) => ({ tool_name: "Bash", tool_input: { command, description: "ship" } });
+const bash = (command, cwd) => ({ tool_name: "Bash", tool_input: { command, description: "ship" }, ...(cwd ? { cwd } : {}) });
 
 test("builder dispatch at round 0 is allowed: no review has run, nothing to wait for", () => {
   const { hook } = cycleRepo({ round: 0 });
   assert.equal(decision(hook("pre-tool-use", dispatchBuilder())), "allow");
-  assert.equal(decision(hook("pre-tool-use", dispatchBuilder("builder"))), "allow", "the bare name, as a host without the namespace sends it");
   assert.equal(decision(hook("pre-tool-use", messageTo("agent-b1"))), "allow");
 });
 
@@ -1212,7 +1310,8 @@ test("the barrier: a builder dispatch is denied while a lens file is missing, na
   lensList(1, ["correctness", "security", "tests"]);
   lens(1, "correctness", "PASS");
   lens(1, "tests", "CHANGES");
-  for (const payload of [dispatchBuilder(), dispatchBuilder("Builder"), dispatchBuilder("praxis:Builder")]) {
+  // Every spelling a host may send: namespaced, bare, and either case.
+  for (const payload of [dispatchBuilder(), dispatchBuilder("builder"), dispatchBuilder("Builder"), dispatchBuilder("praxis:Builder")]) {
     const out = hook("pre-tool-use", payload);
     assert.equal(decision(out), "deny", JSON.stringify(payload.tool_input.subagent_type));
     assert.match(reason(out), /barrier: waiting for security\b/, "the deny names exactly the lens that has not written");
@@ -1292,6 +1391,39 @@ test("the ship gate: gh pr create and git push of praxis/<c> are denied without 
   }
 });
 
+test("the ship gate matches the change branch as a whole token: praxis/xy is not praxis/x", () => {
+  const { hook } = cycleRepo({ round: 1 });
+  for (const cmd of ["git push origin praxis/xy", "git push -u origin praxis/x-old", "git push origin HEAD:praxis/xylophone"]) {
+    assert.equal(decision(hook("pre-tool-use", bash(cmd))), "allow", cmd);
+  }
+  for (const cmd of ["git push origin praxis/x", "git push origin praxis/x ", "git push origin praxis/x:praxis/x", 'git push origin "praxis/x"', "git push origin HEAD:praxis/x"]) {
+    const out = hook("pre-tool-use", bash(cmd));
+    assert.equal(decision(out), "deny", cmd);
+    assert.match(reason(out), /ship gate/);
+  }
+});
+
+test("the ship gate reads the current branch when the push names no refspec, or HEAD", () => {
+  const { repo, hook, write, commit } = cycleRepo({ round: 1 });
+  write("src/a.js", "1\n");
+  commit();
+  execFileSync("git", ["checkout", "-q", "-b", "praxis/x"], { cwd: repo });
+  for (const cmd of ["git push", "git push origin", "git push -u origin HEAD", "git push --force-with-lease origin HEAD"]) {
+    const out = hook("pre-tool-use", bash(cmd, repo));
+    assert.equal(decision(out), "deny", `${cmd} from praxis/x`);
+    assert.match(reason(out), /ship gate: specs\/x\/decision\.md does not exist/);
+  }
+  // An explicit refspec that is not the change branch is not a ship, even from that branch.
+  assert.equal(decision(hook("pre-tool-use", bash("git push origin HEAD:feature/y", repo))), "deny", "HEAD: to another name still ships the change's commits");
+  assert.equal(decision(hook("pre-tool-use", bash("git push origin feature/y", repo))), "allow");
+  // Off the change branch the implicit push is free; so is a cwd git cannot read (fail-open).
+  execFileSync("git", ["checkout", "-q", "-b", "feature/y"], { cwd: repo });
+  assert.equal(decision(hook("pre-tool-use", bash("git push", repo))), "allow");
+  assert.equal(decision(hook("pre-tool-use", bash("git push origin HEAD", repo))), "allow");
+  const elsewhere = mkdtempSync(join(tmpdir(), "praxis-nogit-"));
+  assert.equal(decision(hook("pre-tool-use", bash("git push", elsewhere))), "allow", "no repo under cwd: nothing to compare, allow");
+});
+
 test("the ship gate: ESCALATE denies, APPROVE (human) allows, APPROVE needs every lens PASS", () => {
   const { hook, lens, lensList, recordDecision } = cycleRepo({ round: 1 });
   lensList(1, ["correctness", "security"]);
@@ -1318,12 +1450,58 @@ test("the ship gate: ESCALATE denies, APPROVE (human) allows, APPROVE needs ever
   recordDecision("APPROVE (human)");
   assert.equal(decision(hook("pre-tool-use", bash("gh pr create"))), "allow", "the human override ships whatever the lenses say");
 
+  // A SKIP — the orchestrator's record of a lens that never returned — is not a PASS either.
+  recordDecision("APPROVE");
+  lens(1, "security", "SKIP");
+  out = hook("pre-tool-use", bash("gh pr create"));
+  assert.equal(decision(out), "deny", "APPROVE over a SKIP does not ship");
+  assert.match(reason(out), /security: SKIP/);
+
   // APPROVE with no review round at all is not "round complete, all PASS".
   const unreviewed = cycleRepo({ round: 0 });
   unreviewed.recordDecision("APPROVE");
   out = unreviewed.hook("pre-tool-use", bash("gh pr create"));
   assert.equal(decision(out), "deny");
   assert.match(reason(out), /round is 0/);
+});
+
+test("a lens file with no verdict: line completes the barrier and counts as not PASS", () => {
+  const { repo, hook, write, lensList, recordDecision } = cycleRepo({ round: 2 });
+  lensList(2, ["correctness"]);
+  write("specs/x/review/round-2/correctness.md", "---\nlens: correctness\nround: 2\n---\n\n## Findings\n");
+  // The file exists, so the barrier is not waiting — but nothing recorded PASS, so the cap bites.
+  let out = hook("pre-tool-use", dispatchBuilder());
+  assert.equal(decision(out), "deny");
+  assert.match(reason(out), /round cap/);
+  assert.doesNotMatch(reason(out), /waiting for/);
+  assert.match(reason(out), /correctness: no verdict/);
+  recordDecision("APPROVE");
+  out = hook("pre-tool-use", bash("gh pr create"));
+  assert.equal(decision(out), "deny");
+  assert.match(reason(out), /lenses not all PASS/);
+  assert.match(reason(out), /correctness: no verdict/);
+  assert.ok(fsExists(join(repo, "specs/x/review/round-2/correctness.md")));
+});
+
+test("a ledger with no round: or builder: field sits at round 0 with no builder to resume", () => {
+  // The fields are the cycle's; a ledger that predates them (or an orchestrator that has not
+  // set them yet) is read as "no review yet", and no SendMessage target can equal an empty id.
+  const fixture = floorRepo({ mode: "full" });
+  fixture.write("specs/x/spec.md", "# x\n");
+  fixture.write("specs/x/implementation.md", ledger("planned"));
+  fixture.write(".praxis/active-change", "x\n");
+  fixture.approve("x");
+  assert.equal(decision(fixture.hook("pre-tool-use", dispatchBuilder())), "allow");
+  assert.equal(decision(fixture.hook("pre-tool-use", messageTo("agent-b1"))), "allow");
+  assert.equal(decision(fixture.hook("pre-tool-use", messageTo(""))), "allow");
+  // The ship gate reads decision.md, not those fields: without a decision nothing ships, with the
+  // person's APPROVE (human) everything does. A missing round: must not read as "exempt", or
+  // leaving the field out would be the way around the gate.
+  const out = fixture.hook("pre-tool-use", bash("gh pr create"));
+  assert.equal(decision(out), "deny");
+  assert.match(reason(out), /decision\.md does not exist/);
+  fixture.write("specs/x/decision.md", "---\nverdict: APPROVE (human)\n---\n");
+  assert.equal(decision(fixture.hook("pre-tool-use", bash("gh pr create"))), "allow");
 });
 
 test("the cycle gates stay silent with no ledger, in fast, and under PRAXIS_FLOOR=off", () => {
@@ -1374,20 +1552,62 @@ test("the floor keys on spec.md, and accepts a legacy design.md in its place", (
   assert.ok(post.approved("x"), "the marker is written for a spec.md change");
 });
 
+test("a spec with no ledger is denied for the ledger, not for a spec it has", () => {
+  const { repo, hook, write } = floorRepo({ mode: "full" });
+  write("specs/x/spec.md", "# x\n");
+  write(".praxis/active-change", "x\n");
+  const out = hook("pre-tool-use", edit(join(repo, "src/a.js")));
+  assert.equal(decision(out), "deny");
+  assert.match(reason(out), /specs\/x\/implementation\.md does not exist \(specs\/x\/spec\.md does\)/);
+  assert.match(reason(out), /Read specs\/_templates\/implementation\.md, then Write specs\/x\/implementation\.md/);
+  assert.doesNotMatch(reason(out), /has no spec yet/, "the deny must name what is missing, not what is there");
+});
+
+// The builder works in a linked worktree (scripts/worktree.sh) that carries the spec and the
+// markers but not the ledger — one ledger, in the main checkout, the orchestrator's. The floor
+// still requires it; it reads it where the design put it.
+test("from a linked worktree the floor reads the main checkout's ledger", () => {
+  const { repo, hook, write, commit, approve } = floorRepo({ mode: "full" });
+  write("README.md", "x\n");
+  commit();
+  write("specs/x/spec.md", "# x\n");
+  write("specs/x/implementation.md", `---\ntitle: x\nstage: planned\nround: 0\nbuilder: agent-b1\n---\n\n## Tasks\n`);
+  write(".praxis/active-change", "x\n");
+  approve("x");
+  const wt = join(repo, ".praxis/worktrees/x");
+  execFileSync("git", ["worktree", "add", "-q", "-b", "praxis/x", wt], { cwd: repo });
+  // What worktree.sh seeds: the spec and the markers, never the ledger.
+  write(".praxis/worktrees/x/specs/x/spec.md", "# x\n");
+  write(".praxis/worktrees/x/.praxis/active-change", "x\n");
+  write(".praxis/worktrees/x/.praxis/approved/x", "");
+  const inWorktree = (input) => hook("pre-tool-use", { ...input, cwd: wt }, { CLAUDE_PROJECT_DIR: wt });
+  assert.equal(decision(inWorktree(edit(join(wt, "src/a.js")))), "allow", "spec + approval in the worktree, ledger in the main checkout");
+  // The ledger's fields are read from there too: round 1 with a lens missing closes the barrier.
+  write("specs/x/implementation.md", `---\ntitle: x\nstage: built\nround: 1\nbuilder: agent-b1\nlenses: correctness\n---\n`);
+  const out = inWorktree(dispatchBuilder());
+  assert.equal(decision(out), "deny");
+  assert.match(reason(out), /barrier: waiting for correctness/);
+  // Remove the main ledger and the floor closes: the fallback finds a ledger, it does not invent one.
+  execFileSync("rm", [join(repo, "specs/x/implementation.md")]);
+  const closed = inWorktree(edit(join(wt, "src/a.js")));
+  assert.equal(decision(closed), "deny");
+  assert.match(reason(closed), /specs\/x\/implementation\.md does not exist/);
+});
+
 test("post-tool-use writes .praxis/needs-human/<c> on ESCALATE and removes it on APPROVE", () => {
-  const { repo, hook, write, recordDecision } = cycleRepo({ round: 2 });
+  const { repo, hook, recordDecision } = cycleRepo({ round: 2 });
   const marker = join(repo, ".praxis/needs-human/x");
   const wroteDecision = () => hook("post-tool-use", edit(join(repo, "specs/x/decision.md")));
-  // A .praxis/.gitignore written before these entries existed gets them appended.
-  write(".praxis/.gitignore", "active-change\napproved/\nsession-started\n");
 
   recordDecision("ESCALATE");
   assert.equal(wroteDecision().trim(), "", "post-tool-use never speaks");
   assert.ok(fsExists(marker), "ESCALATE must leave a record a hook can read");
   const ignore = fsRead(join(repo, ".praxis/.gitignore"), "utf8");
-  assert.match(ignore, /^needs-human\/$/m);
+  assert.match(ignore, /^needs-human\/$/m, "a new project gets the full list");
   assert.match(ignore, /^worktrees\/$/m);
-  assert.match(ignore, /^approved\/$/m, "the existing lines are kept");
+  assert.match(ignore, /^approved\/$/m);
+  assert.match(ignore, /^active-change$/m);
+  assert.match(ignore, /^session-started$/m);
 
   recordDecision("APPROVE (human)");
   wroteDecision();
@@ -1406,6 +1626,31 @@ test("post-tool-use writes .praxis/needs-human/<c> on ESCALATE and removes it on
   other.hook("post-tool-use", edit(join(other.repo, "specs/y/decision.md")));
   assert.ok(!fsExists(join(other.repo, ".praxis/needs-human/y")));
   assert.ok(!fsExists(join(other.repo, ".praxis/needs-human/x")));
+});
+
+test("the .praxis/.gitignore upgrade touches only a Praxis default; an edited file is the project's", () => {
+  const escalate = (fixture) => {
+    fixture.recordDecision("ESCALATE");
+    fixture.hook("post-tool-use", edit(join(fixture.repo, "specs/x/decision.md")));
+    return fsRead(join(fixture.repo, ".praxis/.gitignore"), "utf8");
+  };
+  // The two defaults earlier Praxis wrote, byte for byte: the new entries are appended after
+  // their own lines, and a second pass changes nothing.
+  for (const stale of ["active-change\napproved/\nsession-started\n", "active-change\napproved/\n"]) {
+    const fixture = cycleRepo({ round: 2 });
+    fixture.write(".praxis/.gitignore", stale);
+    const ignore = escalate(fixture);
+    assert.ok(ignore.startsWith(stale), `the default's own lines must come first, unchanged: ${JSON.stringify(ignore)}`);
+    assert.match(ignore, /^needs-human\/$/m, `not upgraded from: ${JSON.stringify(stale)}`);
+    assert.match(ignore, /^worktrees\/$/m);
+    assert.equal(escalate(fixture), ignore, "the upgrade is idempotent");
+  }
+  // One edited character and the file is the project's: never rewritten.
+  for (const mine of ["mine\n", "active-change\napproved/\nsession-started\nmine\n", "active-change\napproved/\n\n"]) {
+    const fixture = cycleRepo({ round: 2 });
+    fixture.write(".praxis/.gitignore", mine);
+    assert.equal(escalate(fixture), mine, "a user-edited .gitignore was rewritten");
+  }
 });
 
 test("pre-tool-use denies Edit/Write to the escalation record, in every mode", () => {
@@ -1428,6 +1673,9 @@ test("the main thread may write a review file only with verdict: SKIP; a lens wr
   assert.equal(decision(out), "deny", "a PASS the lens never wrote");
   assert.match(reason(out), /verdict: SKIP/);
   assert.equal(decision(hook("pre-tool-use", review(skip))), "allow");
+  // The verdict the gates will read is the frontmatter one; a SKIP in the body does not count.
+  const smuggled = "---\nlens: security\nround: 1\nverdict: PASS\n---\n\n## Reason\nverdict: SKIP\n";
+  assert.equal(decision(hook("pre-tool-use", review(smuggled))), "deny", "a body line must not pass what the frontmatter fails");
   // Inside a subagent the payload carries agent_id (Claude Code hooks reference, common input
   // fields); the lens writes its own file freely.
   assert.equal(decision(hook("pre-tool-use", review(pass, { agent_id: "agent-l1", agent_type: "praxis:refuter-security" }))), "allow");

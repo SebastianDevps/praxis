@@ -115,7 +115,7 @@ mode="$(praxis_mode)"
 host="$(praxis_host)"
 change="$(praxis_active_change "$root")"
 name="${change:-<change>}"
-ledger="${root}/specs/${change}/implementation.md"
+ledger="$(praxis_ledger_path "$root" "$change")"   # the main checkout's, from a linked worktree
 spec="$(praxis_spec_file "$root" "$change")"
 target=""
 
@@ -166,6 +166,42 @@ builder_gate() {
   decide deny "PRAXIS round cap: 2 rounds done → approver / ESCALATE. Round ${round} of specs/${change} is complete and not all PASS (${not_pass}). A third fix round never starts: dispatch the approver, which records ESCALATE in specs/${change}/decision.md; the person then decides with /praxis:approve ${change} or /praxis:rework ${change} \"<note>\". ${override}"
 }
 
+# Whether a Bash command ships the change: `gh pr create`; `git push` naming praxis/<change>
+# as a whole token — praxis/xy is not praxis/x; or `git push` with no refspec (or HEAD) while
+# the hook's cwd sits on that branch. Anything git cannot answer (no repo, unborn branch)
+# reads as "not on the branch": fail-open.
+names_branch() {
+  case "$1" in
+    *"praxis/${change}"|*"praxis/${change}"[[:space:]]*|*"praxis/${change}:"*|*"praxis/${change}\""*|*"praxis/${change}'"*) return 0 ;;
+  esac
+  return 1
+}
+# The refspecs of the first `git push`: its non-option tokens after the remote, one per line,
+# up to the next shell operator. Empty means "the current branch".
+push_refspecs() {
+  printf '%s\n' "$1" | awk '
+    {
+      i = index($0, "git push"); if (!i) next
+      s = substr($0, i + 8)
+      if (match(s, /[;&|]/)) s = substr(s, 1, RSTART - 1)
+      n = split(s, t, /[ \t]+/); pos = 0
+      for (k = 1; k <= n; k++) {
+        if (t[k] == "" || t[k] ~ /^-/) continue
+        if (++pos >= 2) print t[k]
+      }
+      exit
+    }'
+}
+ship_command() {
+  case "$1" in *"gh pr create"*) return 0 ;; esac
+  case "$1" in *"git push"*) ;; *) return 1 ;; esac
+  names_branch "$1" && return 0
+  case "$(push_refspecs "$1")" in
+    ''|HEAD|HEAD:*) [ "$(git -C "$cwd" rev-parse --abbrev-ref HEAD 2>/dev/null)" = "praxis/${change}" ] ;;
+    *) return 1 ;;
+  esac
+}
+
 # A push of the change branch or a PR against the approver's decision.
 ship_gate() {
   local verdict round not_pass
@@ -204,10 +240,7 @@ case "$tool" in
         ;;
       Bash)
         cmd="$(praxis_json_strings "$payload" command)"
-        ship=0
-        case "$cmd" in *"gh pr create"*) ship=1 ;; esac
-        case "$cmd" in *"git push"*) case "$cmd" in *"praxis/${change}"*) ship=1 ;; esac ;; esac
-        [ "$ship" = 1 ] || exit 0
+        ship_command "$cmd" || exit 0
         target="bash:ship"; ship_gate
         ;;
     esac
@@ -226,13 +259,15 @@ paths="$(praxis_edit_paths "$payload")"
 review_gate() {
   [ "$host" = claude ] || return 0
   [ -z "$(praxis_json_string "$payload" agent_id)" ] || return 0
-  local rel
+  local rel verdict
   while IFS= read -r rel; do
     case "$rel" in specs/*/review/round-*/*.md) ;; *) continue ;; esac
-    { praxis_json_strings "$payload" content; praxis_json_strings "$payload" new_string; } \
-      | awk '/^verdict:[ \t]*SKIP([ \t]|$)/ { found = 1 } END { exit !found }' && return 0
+    # The same reader the barrier and the ship gate use, on the content this edit carries: the
+    # file the main thread may write is exactly the file those gates will read as SKIP.
+    verdict="$({ praxis_json_strings "$payload" content; praxis_json_strings "$payload" new_string; } | praxis_frontmatter_read verdict)"
+    [ "$verdict" = SKIP ] && return 0
     target="$rel"
-    decide deny "PRAXIS review: ${rel} is a lens's file and the main thread is writing it. Each lens writes its own review in its own context. The orchestrator writes one only to record a lens that never returned, with 'verdict: SKIP' and the reason — SKIP counts as not PASS, so the change goes to the approver, never to the builder. Dispatch the lens, or wait for it. ${override}"
+    decide deny "PRAXIS review: ${rel} is a lens's file and the main thread is writing it. Each lens writes its own review in its own context. The orchestrator writes one only to record a lens that never returned, with 'verdict: SKIP' in its frontmatter and the reason — SKIP counts as not PASS, so the change goes to the approver, never to the builder. Dispatch the lens, or wait for it. ${override}"
   done <<EOF
 $(praxis_project_targets "$root" "$cwd" "$paths")
 EOF
@@ -298,7 +333,7 @@ comment_gate
 # The spec's shape, repeated in the deny for a model that cannot read the template. The
 # template itself ships with factory-cycle (T05); until the plugin carries spec.md the deny
 # points at design.md as the form to read, and still names spec.md as the file to write.
-sections="Goal, Scope (In / Out), Acceptance (runnable checks: command → expected output; the approver executes these), Approach (files and the seam, no code), Open questions ([NEEDS CLARIFICATION] items; status: ready when none remain)"
+sections="Goal, Scope (In / Out), Acceptance (runnable checks: command → expected output; the approver executes these), Approach (files and the seam, no code), Open questions ([NEEDS CLARIFICATION] items; ready: true when none remain)"
 spec_template="specs/_templates/spec.md"
 [ -f "${PRAXIS_ROOT}/specs/_templates/spec.md" ] || [ -f "${root}/specs/_templates/spec.md" ] || spec_template="specs/_templates/design.md"
 
@@ -319,7 +354,12 @@ ${trailer}"
         *) decide deny "${reason} (This host cannot ask, so the floor denies: stop and wait for the person to run /praxis:approve ${change}.)" ;;
       esac
     fi
-    if [ -z "$change" ] || [ ! -f "$ledger" ]; then
+    if [ -n "$spec" ] && [ ! -f "$ledger" ]; then
+      deny "PRAXIS floor (${mode}): ${target} is a source edit and specs/${change}/implementation.md does not exist (${spec} does).
+1. Read specs/_templates/implementation.md, then Write specs/${change}/implementation.md with 'stage: designed' in its frontmatter and the task list.
+2. STOP: the first source edit after that asks the person to approve the spec.
+${trailer}"
+    elif [ -z "$change" ] || [ ! -f "$ledger" ]; then
       deny "PRAXIS floor (${mode}): ${target} is a source edit and specs/${name}/ has no spec yet.
 1. Read ${spec_template}, then Write specs/${name}/spec.md (kebab-case change name) with: ${sections}. A legacy specs/${name}/design.md is accepted in its place.
 2. Read specs/_templates/implementation.md, then Write specs/${name}/implementation.md with 'stage: designed' in its frontmatter and the task list.
